@@ -1,15 +1,31 @@
-site_name: "DfE CSC API Dataflow"
+site_name: "CSC API Dataflow"
+
 theme:
   name: material
   logo: assets/images/d2ilogo.png
+  localization:
+    toc: "Page Sections" 
+  palette:
+    primary: blue
+    accent: light-blue
+  features:
+    # - navigation.tabs       # swap to tabs in ribbon (depreciated)
+    - navigation.top          # shift TOC into left sidebar
+    - navigation.sections     # highlight current section during scroll
+  toc:
+    depth: 3  # (alter if h-depth deepens beyond h3. Current : H1, H2, H3)
 nav:
   - Overview: index.md
   - Stakeholders: stakeholders.md
   - Configuration and Setup: setup.md
-  - API Usage: api_usage.md
+  - JSON structure: payload_structure.md
+  - API Configuration: api_config.md
 plugins:
   - search
   - pdf-export
+  - mermaid2  # enable Mermaid diagram
 
 extra_css:
   - assets/css/styles.css
+extra_javascript:
+  - assets/js/scripts.js

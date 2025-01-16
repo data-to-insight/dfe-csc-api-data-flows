@@ -2,3 +2,30 @@
     max-height: 40px; 
     margin: 0;       
 }
+
+html {
+    scroll-behavior: smooth;
+}
+
+
+/* Doc menu + sub menu items */
+
+/* right|split sidebar TOC headings */
+/* .md-sidebar {
+    width: 200px; 
+} */
+
+
+/* left sidebar sub/TOC headings */
+.md-sidebar__toc {
+    font-size: 0.9rem; 
+    margin-left: 10px; /* indentation */
+}
+
+/* highlight active section */
+.md-sidebar__toc .md-nav__item--active > .md-nav__link {
+    color: #007bff; /* active link colour */
+    font-weight: bold; 
+}
+
+/* End Doc menu + sub menu items */

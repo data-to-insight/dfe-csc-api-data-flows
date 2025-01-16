@@ -1,13 +1,6 @@
 # Stakeholders
 
 ## Key Stakeholders
-### tbc
-- **Role**: Data recipient and system owner
-- **Responsibilities**:
-  - Define JSON payload structure [done]
-  - Maintain API endpoint [done]
-  - Monitor and manage data flow/ingress 
-
 ### Data to Insight (D2I)
 - **Role**: Core development and wider pilot partner support for LA's
 - **Responsibilities**:
@@ -25,8 +18,15 @@
 - Selected Local Authorities collaborating in the early stages to test the API and data flow
 - Feedback from pilot partners will inform improvements and broader rollout
 
-### Local Authorities (LAs) | Wider Team
-- **IT Support**: If required, potential permissions set up, acces to CMS DB, addition of API script to server, SSD refresh (e.g. in overnights)
+- **IT Support**: If required, if elevated permissions requ, CMS DB access, add API script to server, SSD refresh (e.g. overnights)
 - **Data Analysts**: Oversee the accuracy and completeness of extracted data
 - **Security Teams**: Ensure proper permissions and secure handling of sensitive information
 
+### API System Owner
+- **Role**: Data recipient and system owner
+- **Responsibilities**:
+  - Define JSON payload structure 
+  - Maintain API endpoint
+  - Monitor and manage data flow/ingress 
+  - Define endpoint response codes if not standard
+  - Ensure received data security/encryption/persistance
