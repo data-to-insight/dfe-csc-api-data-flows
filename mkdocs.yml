@@ -17,6 +17,7 @@ theme:
 nav:
   - Overview: index.md
   - Stakeholders: stakeholders.md
+  - System requirements: system_requirements.md
   - Configuration and Setup: setup.md
   - JSON structure: payload_structure.md
   - API Configuration: api_config.md

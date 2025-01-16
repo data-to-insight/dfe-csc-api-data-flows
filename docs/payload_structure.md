@@ -1,4 +1,5 @@
 # Payload Structure
+[draft: 160125]
 
 Using specification v0.7
 The following represent the hierarchical JSON structure expected for data payload. 

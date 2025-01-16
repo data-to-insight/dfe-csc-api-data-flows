@@ -1,16 +1,9 @@
-# Configuration and Setup
+# LA Configuration and Setup
+[draft: 160125]
 
 ## Pre-requisites
-Before setting up the CSC API Dataflow, ensure the following are in place:
+Before setting up the CSC API Dataflow, ensure the [minimum system requirements ](system_requirements.md) are met 
 
-### System Requirements
-- SQL Server 2017 or later with compatibility settings at 120+
-- SSD structure deployed on the CMS database (e.g., HDM_Local)
-- Security settings to enable PowerShell or Python for automation
-
-### Stakeholder Engagement
-- To ensure that we can implement both the SSD(initially) and enable security settings(Powershell, SSD refresh, Outgoing API)
-- Agreement on the SSD refresh frequency (daily recommended)
 
 ## Configuration Steps
 1. **Deploy the SSD**:
@@ -19,6 +12,7 @@ Before setting up the CSC API Dataflow, ensure the following are in place:
    - Ensure all required tables and fields are present in the CMS database (e.g., HDM_Local)
 
 2. **Set Up the $ap_collection_table**:
+   This an add-on table to the core SSD structure to enable change tracking.
    - Prepopulate table with pending JSON payloads
    - Fields for tracking submission statuses
 
@@ -27,19 +21,21 @@ Before setting up the CSC API Dataflow, ensure the following are in place:
    - Python (optional) for alternative automation scripts
 
 4. **Configure the API**:
-   - The API endpoint URL and authentication token from will be supplied/pre-configured.
+   - The API endpoint URL and auth token from will be supplied/pre-configured.
    - Main script parameters:
      - `$server`: SQL Server instance
      - `$database`: SSD database
      - `$url`: API endpoint
-     - `$token`: Authentication token
+     - `$token`: Auth token
 
 5. **Test the Setup**:
    - Run the script in testing mode to validate the process without submitting data
    - Verify submission statuses update correctly in the $api_collection_table
 
 ## JSON Structure
-Child-level data will be included in the JSON payload in line with the spec. Inlcuding:
+Child-level data will be included in the JSON payload in line with the spec. 
+See full [json payload structure specification](payload_structure.md)
+Inlcuding:
 - **Children**:
   - LA Child ID, UPN, Former UPN, UPN Unknown Reason
   - First name, Surname, Date of Birth, Expected Date of Birth, Sex, Ethnicity, Disabilities
@@ -51,19 +47,7 @@ Child-level data will be included in the JSON payload in line with the spec. Inl
   - Social Care Workers
 
 
-## Stakeholder Responsibilities
-### Local Authorities (Pilot Development Partners)
-- Deploy the SSD structure and agree on refresh frequency
-- Extract and submit JSON payloads as per requirements
-- Actively participate in testing and feedback during pilot phases
 
-### Data Analysts
-- Oversee the completeness and validation of extracted data
-- Address any API failure response codes
-
-### Security Teams
-- Agree and set up the permissions required for the API script to run (ideally on a server)
-- Facilitate the deployment of the SSD structure on the CMS database (e.g., HDM_Local)
 
 ---
 
