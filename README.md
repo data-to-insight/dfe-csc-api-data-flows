@@ -2,8 +2,9 @@
 Collaboration towards a CSC API data collection project
 
 ## Commands
-* `mkdocs serve` - Start live-reloading docs server
-* `mkdocs build` - Build documentation site
+* `mkdocs serve` - live-reload docs server
+* `mkdocs build` - Build docs site
+* `mkdocs gh-deploy` - Push to Gitpage front-end(public)
 
 ## Project layout
 
