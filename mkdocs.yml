@@ -1,6 +1,7 @@
 site_name: "DfE CSC API Dataflow"
 theme:
-  name: material  # MkDocs theme
+  name: material
+  logo: assets/images/d2ilogo.png
 nav:
   - Overview: index.md
   - Stakeholders: stakeholders.md
@@ -9,3 +10,6 @@ nav:
 plugins:
   - search
   - pdf-export
+
+extra_css:
+  - assets/css/styles.css

@@ -1,16 +1,16 @@
 # csc_api_data_collection
-Collaboration towards the DfE API data collection project
+Collaboration towards a CSC API data collection project
 
 ## Commands
 
-* `mkdocs new [dir-name]` - Create a new project.
-* `mkdocs serve` - Start the live-reloading docs server.
-* `mkdocs build` - Build the documentation site.
-* `mkdocs -h` - Print help message and exit.
+* `mkdocs new [dir-name]` - Create new project
+* `mkdocs serve` - Start live-reloading docs server
+* `mkdocs build` - Build documentation site
+* `mkdocs -h` - Print help message and exit
 
 ## Project layout
 
-    mkdocs.yml    # The configuration file.
+    mkdocs.yml    # config file
     docs/
-        index.md  # The documentation homepage.
-        ...       # Other markdown pages, images and other files.
+        index.md  # documentation homepage
+        ...       # Other markdown pages, images and other files
