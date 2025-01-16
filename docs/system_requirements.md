@@ -2,7 +2,7 @@
 [draft: 160125]
 
 ## Pre-requisites
-Before setting up the CSC API Dataflow, ensure the following are in place.
+Before setting up, or in preparation towards the CSC API Dataflow, Local Authorities must ensure that the following are in place.
 
 
 ### System Requirements

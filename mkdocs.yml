@@ -12,15 +12,20 @@ theme:
     # - navigation.tabs       # swap to tabs in ribbon (depreciated)
     - navigation.top          # shift TOC into left sidebar
     - navigation.sections     # highlight current section during scroll
+    - tasklist                # checklist boxes in dev planning
+
   toc:
     depth: 3  # (alter if h-depth deepens beyond h3. Current : H1, H2, H3)
 nav:
   - Overview: index.md
   - Stakeholders: stakeholders.md
-  - System requirements: system_requirements.md
-  - Configuration and Setup: setup.md
-  - JSON structure: payload_structure.md
+  - System Requirements: system_requirements.md
+  - Step1 Deploy SSD: 1_deploy_ssd.md
+  - Step2 Test API: 2_test_api.md
+  - Step3 Deploy API: 3_deploy_api.md
+  - JSON Structure: payload_structure.md
   - API Configuration: api_config.md
+  - Development Plan: development_plan.md
 plugins:
   - search
   - pdf-export

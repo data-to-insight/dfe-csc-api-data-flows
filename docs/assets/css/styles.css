@@ -29,3 +29,31 @@ html {
 }
 
 /* End Doc menu + sub menu items */
+
+
+/* checkbox styles */
+
+/* Increase checkbox size + spacing */
+ul.task-list {
+    list-style: none; /* Rem default bullet points */
+}
+
+.task-list-item {
+    display: flex;
+    align-items: center;
+}
+
+.task-list-item input[type="checkbox"] {
+    transform: scale(1.2); /* +checkbox size */
+    margin-right: 10px; /* spacing btwn checkbox and text */
+}
+
+/* End checkbox styles */
+
+
+/* shrink text on dev plan page */
+[data-md-file="development_plan"] .md-content {
+    font-size: 0.85rem !important;
+    line-height: 1.4 !important;
+}
+
