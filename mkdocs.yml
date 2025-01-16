@@ -1,0 +1,11 @@
+site_name: "DfE CSC API Dataflow"
+theme:
+  name: material  # MkDocs theme
+nav:
+  - Overview: index.md
+  - Stakeholders: stakeholders.md
+  - Configuration and Setup: setup.md
+  - API Usage: api_usage.md
+plugins:
+  - search
+  - pdf-export
