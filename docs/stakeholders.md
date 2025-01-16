@@ -6,6 +6,7 @@
 - **Responsibilities**:
   - Develop extract for JSON payload in line with spec [in progress]
   - Develop API scripted/automate process 
+  - Develop documentation and LA 'playbook' 
   - Collaborate & support pilot LAs to enable both SSD deployment and required API setup/running
 
 ### Local Authorities (LAs) | Development Partners
