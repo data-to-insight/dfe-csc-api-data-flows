@@ -15,20 +15,58 @@
 
 ## Development
 
+```mermaid
+flowchart TD
+    subgraph Source_DB ["Source DB (CMS)"]
+        cms_raw_tables["CMS Raw CSC Tables"]
+        specified_fields["Specified new SSD fields"]
+    end
+
+    subgraph SSD ["Standard Safeguarding Dataset (SSD)"]
+        ssd_tables["SSD Tables"]
+        hash_table_process["Hash Table & Change Management"]
+    end
+
+    subgraph Shell_Process ["Scripted-Shell Query Process"]
+        json_query["JSON Extract Query"]
+        api_payload["Prepare API Payload"]
+    end
+
+    subgraph API_System ["API System Owner"]
+        api_receive["Receive JSON Data"]
+        api_status["Send Response Status"]
+    end
+
+    %% Arrows showing data flow
+    cms_raw_tables -->|Extract| ssd_tables
+    specified_fields -->|Add to SSD| ssd_tables
+    ssd_tables -->|Hashes & Tracks Changes| hash_table_process
+    hash_table_process -->|Extract Changes| json_query
+    json_query -->|Format for API - Full or Delta| api_payload
+    json_query -->|Store Payload| hash_table_process
+    api_payload -->|Send Payload| api_receive
+    api_receive -->|Response Status| api_status
+    api_status -->|Update Change Tracking| hash_table_process
+```
+
+
 ### Stage 1
+**Key:**  
+[ ] Not started | [-] In progress | [*] Testing | [x] Completed | [>] Ready for Review | [~] Blocked | [D] Deferred  
+
 - **Review initial specification:**
   - [-] Review specification for project scope and json detail 
-  - [x] Ensure any project required permissions/software is available
-  - [x] Complete API to SSD fields mapping
+  - [*] Ensure any project required permissions/software is available
+  - [*] Complete API to SSD fields mapping
 
 - **SSD Changes:**
   - [ ] Add specified fields into SSD data spec *(pushed to public SSD front-end?)*
-  - [x] SystemOne (SQL Server)
+  - [*] SystemOne (SQL Server)
   - [ ] Mosaic (SQL Server)
   - [ ] Eclipse (Postgres)
 
 - **Create documentation:**
-  - [x] Initial documentation framework/update documentation concurrent with dev progress
+  - [-] Initial documentation framework/update documentation concurrent with dev progress
   - [ ] Write up final LA playbook details
   - [ ] End of Stage 1 - Update documentation based on pilot LA 1+ feedback
 
@@ -54,6 +92,7 @@
 - Develop mechanism(s) to enable SSD row-level change tracking towards delta extracts
 - Transition from initial full payload submissions to daily delta updates
 - Provide documentation|draft playbook and guidance for LA configurations
+
 
 
 ## Features

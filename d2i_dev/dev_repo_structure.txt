@@ -1,0 +1,119 @@
+csc_api_data_collection/
+├── .gitignore
+├── LICENSE
+├── README.md
+├── d2i_dev
+│   ├── d2i_anon_dummy_data
+│   │   └── dev_populate_anon_ssd.ps1
+│   ├── d2i_dev_setup
+│   │   ├── dev_setup_1_ssd_extract_ref_cpy.sql
+│   │   ├── dev_setup_2_ssd_dfe_api_data_collection_tbl.sql
+│   │   └── dev_setup_3_ssd_dfe_checksum_metadata_tbl.sql
+│   ├── d2i_json_outputs
+│   │   └── json_extract_ssd_base_plus_v3.json
+│   ├── dev_gen_repo_structure.py
+│   ├── output_sample_json_struc_fromDB.py
+│   └── output_sample_json_struct_fromSQL.py
+├── docs
+│   ├── 1_deploy_ssd.md
+│   ├── 2_test_api.md
+│   ├── 3_deploy_api.md
+│   ├── api_config.md
+│   ├── assets
+│   │   ├── css
+│   │   │   └── styles.css
+│   │   ├── images
+│   │   │   ├── d2ilogo.png
+│   │   │   └── json_payload_structure_diagram_v0.7.png
+│   │   └── js
+│   │       └── scripts.js
+│   ├── development_plan.md
+│   ├── index.md
+│   ├── payload_structure.md
+│   ├── stakeholders.md
+│   └── system_requirements.md
+├── json_extract
+│   ├── json_extract_ssd_base.sql
+│   └── json_extract_ssd_base_plus_v3.sql
+├── mkdocs.yml
+├── requirements.txt
+├── site
+│   ├── 404.html
+│   ├── api_config
+│   │   ├── api_config.pdf
+│   │   └── index.html
+│   ├── assets
+│   │   ├── css
+│   │   │   └── styles.css
+│   │   ├── images
+│   │   │   ├── d2ilogo.png
+│   │   │   ├── favicon.png
+│   │   │   └── json_payload_structure_diagram_v0.7.png
+│   │   ├── javascripts
+│   │   │   ├── bundle.88dd0f4e.min.js
+│   │   │   ├── bundle.88dd0f4e.min.js.map
+│   │   │   ├── lunr
+│   │   │   │   ├── min
+│   │   │   │   │   ├── lunr.ar.min.js
+│   │   │   │   │   ├── lunr.da.min.js
+│   │   │   │   │   ├── lunr.de.min.js
+│   │   │   │   │   ├── lunr.du.min.js
+│   │   │   │   │   ├── lunr.el.min.js
+│   │   │   │   │   ├── lunr.es.min.js
+│   │   │   │   │   ├── lunr.fi.min.js
+│   │   │   │   │   ├── lunr.fr.min.js
+│   │   │   │   │   ├── lunr.he.min.js
+│   │   │   │   │   ├── lunr.hi.min.js
+│   │   │   │   │   ├── lunr.hu.min.js
+│   │   │   │   │   ├── lunr.hy.min.js
+│   │   │   │   │   ├── lunr.it.min.js
+│   │   │   │   │   ├── lunr.ja.min.js
+│   │   │   │   │   ├── lunr.jp.min.js
+│   │   │   │   │   ├── lunr.kn.min.js
+│   │   │   │   │   ├── lunr.ko.min.js
+│   │   │   │   │   ├── lunr.multi.min.js
+│   │   │   │   │   ├── lunr.nl.min.js
+│   │   │   │   │   ├── lunr.no.min.js
+│   │   │   │   │   ├── lunr.pt.min.js
+│   │   │   │   │   ├── lunr.ro.min.js
+│   │   │   │   │   ├── lunr.ru.min.js
+│   │   │   │   │   ├── lunr.sa.min.js
+│   │   │   │   │   ├── lunr.stemmer.support.min.js
+│   │   │   │   │   ├── lunr.sv.min.js
+│   │   │   │   │   ├── lunr.ta.min.js
+│   │   │   │   │   ├── lunr.te.min.js
+│   │   │   │   │   ├── lunr.th.min.js
+│   │   │   │   │   ├── lunr.tr.min.js
+│   │   │   │   │   ├── lunr.vi.min.js
+│   │   │   │   │   └── lunr.zh.min.js
+│   │   │   │   ├── tinyseg.js
+│   │   │   │   └── wordcut.js
+│   │   │   └── workers
+│   │   │       ├── search.6ce7567c.min.js
+│   │   │       └── search.6ce7567c.min.js.map
+│   │   ├── js
+│   │   │   └── scripts.js
+│   │   └── stylesheets
+│   │       ├── main.6f8fc17f.min.css
+│   │       ├── main.6f8fc17f.min.css.map
+│   │       ├── palette.06af60db.min.css
+│   │       └── palette.06af60db.min.css.map
+│   ├── index.html
+│   ├── index.pdf
+│   ├── payload_structure
+│   │   ├── index.html
+│   │   └── payload_structure.pdf
+│   ├── search
+│   │   └── search_index.json
+│   ├── setup
+│   │   ├── index.html
+│   │   └── setup.pdf
+│   ├── sitemap.xml
+│   ├── sitemap.xml.gz
+│   ├── stakeholders
+│   │   ├── index.html
+│   │   └── stakeholders.pdf
+│   └── system_requirements
+│       ├── index.html
+│       └── system_requirements.pdf
+└── ssd_json_payload-sql-server-agent_v0.1.4.ps1

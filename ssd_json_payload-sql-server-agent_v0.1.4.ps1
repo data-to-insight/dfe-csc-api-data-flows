@@ -1,26 +1,26 @@
 <#
-Script Name: Data Submission Script for DfE API
+Script Name: SSD API
 Description:
-    This PowerShell script automates extraction of a pre-defined/DfE agreed JSON payload from the SSD running on SQL Server, 
-    submitting payload to a DfE API, and updating the submission status within the $dfe_collection_table in the SSD.
-    The frequency of data refresh within $dfe_collection_table and the execution of this script is set by the pilot LA,
+    This PowerShell script automates extraction of a pre-defined JSON payload from the SSD (SQL Server), 
+    submitting payload to an API, and updating a submission status within an $api_collection_table in the SSD.
+    The frequency of data refresh within $api_collection_table and the execution of this script is set by the pilot LA,
     and is not defined/set/automated within this process. 
 
 Key Features:
-- Extracts pending JSON payload from the specified/pre-populated $dfe_collection_table
-- Sends data to the DfE API OR simulates the process for testing
-- Updates submission statuses on SSD $dfe_collection_table: Sent, Error, or Testing as submission history
+- Extracts pending JSON payload from the specified/pre-populated $api_collection_table
+- Sends data to a defined API endpoint OR simulates the process for testing
+- Updates submission statuses on SSD $dapi_collection_table: Sent, Error, or Testing as submission history
 
 Parameters:
 - $testingMode: Boolean flag to toggle testing mode. When true, no data is sent to the API
 - $server: SQL Server instance name
 - $database: Database name
-- $dfe_collection_table: Table containing the JSON payloads and status information
-- $url: DfE API endpoint
+- $api_collection_table: Table containing the JSON payloads and status information
+- $url: API endpoint
 - $token: Authentication token for the API
 
 Usage:
-- Set $testingMode to true during testing to simulate API call without actually sending data to DfE API
+- Set $testingMode to true during testing to simulate API call without actually sending data to API endpoint
 - Update $server, $database to match LA environment
 
 Prerequisites:
@@ -37,31 +37,31 @@ Last Updated: 070125
 Import-Module SqlServer
 
 # # test flag
-$testingMode = $true  # $false to (re)enable dfe api calls
+$testingMode = $true  # $false to (re)enable api calls
 
 # # connection
 $server = "ESLLREPORTS04V"
 $database = "HDM_Local"
-$dfe_collection_table = "ssd_dfe_api_data_collection"
+$api_collection_table = "ssd_api_data_collection"
 
 # # api 
-$dfe_endpoint = "https://api.dfe.gov.uk/endpoint"
+$api_endpoint = "https://api.gov.uk/endpoint"
 
 # # api token setting
 
 # # 1) set in env variable 
-# [Environment]::SetEnvironmentVariable("DFE_API_TOKEN", "your-auth-token", "User")
-$token = $env:DFE_API_TOKEN  # token stored in environment var for security
+# [Environment]::SetEnvironmentVariable("API_TOKEN", "supplied-auth-token", "User")
+$token = $env:API_TOKEN  # token stored in environment var for security
 
 # # 2) if using Windows Credential Manager
-# cmdkey /add:"DFE_API" /user:"API" /pass:"your-auth-token"
-# $token = (Get-StoredCredential -Target "DFE_API").Password
+# cmdkey /add:"SSD_API" /user:"API" /pass:"supplied-auth-token"
+# $token = (Get-StoredCredential -Target "SSD_API").Password
 
 
 # # collect unsubmitted json payload(s)
 $query = @"
 SELECT id, json_payload
-FROM $dfe_collection_table
+FROM $api_collection_table
 WHERE submission_status = 'Pending' 
 "@ # should only be one record at pending
 
@@ -75,7 +75,7 @@ try {
 
 # # no data retrieved?
 if ($data -eq $null -or $data.Count -eq 0) {
-    Write-Host "no payload record with 'pending' status found. Check ssd and/or $dfe_collection_table has been refreshed."
+    Write-Host "no payload record with 'pending' status found. Check ssd and/or $api_collection_table has been refreshed."
     return
 }
 
@@ -93,7 +93,7 @@ foreach ($row in $data) {
             while ($retryCount -lt $maxRetries) {
                 try {
                     # api call with timeout and certificate validation
-                    $response = Invoke-RestMethod -Uri $dfe_endpoint -Method Post -Headers @{
+                    $response = Invoke-RestMethod -Uri $api_endpoint -Method Post -Headers @{
                         Authorization = "Bearer $token" # HTTP specification defined/RFC 7235
                         ContentType = "application/json"
                     } -Body $json -TimeoutSec 30 -SkipCertificateCheck:$false
@@ -101,7 +101,7 @@ foreach ($row in $data) {
                     # log success api response
                     $responseJson = $response | ConvertTo-Json -Depth 10 -Compress
                     $updateQuery = @"
-UPDATE $dfe_collection_table
+UPDATE $api_collection_table
 SET submission_status = 'Sent',
     api_response = '$responseJson'
 WHERE id = $id
@@ -153,7 +153,7 @@ WHERE id = $id
 
             # submission_status to 'testing'
             $updateQuery = @"
-UPDATE $dfe_collection_table
+UPDATE $api_collection_table
 SET submission_status = 'Testing',
     api_response = 'Simulated API Call'
 WHERE id = $id
@@ -172,7 +172,7 @@ WHERE id = $id
 
         # log api-specific error to db/attempted payload record
         $updateErrorQuery = @"
-UPDATE $dfe_collection_table
+UPDATE $api_collection_table
 SET submission_status = 'Error',
     api_response = 'API Error: $errorMessage'
 WHERE id = $id
@@ -182,7 +182,7 @@ WHERE id = $id
 
         # log sql-specific error to db/attempted payload record
         $updateErrorQuery = @"
-UPDATE $dfe_collection_table
+UPDATE $api_collection_table
 SET submission_status = 'Error',
     api_response = 'SQL Error: $errorMessage'
 WHERE id = $id
@@ -192,7 +192,7 @@ WHERE id = $id
 
         # log generic error to db/attempted payload record
         $updateErrorQuery = @"
-UPDATE $dfe_collection_table
+UPDATE $api_collection_table
 SET submission_status = 'Error',
     api_response = 'Unexpected Error: $errorMessage'
 WHERE id = $id
