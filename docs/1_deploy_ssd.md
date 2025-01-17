@@ -3,7 +3,7 @@
 
 ## Pre-requisites
 Ensure that the [minimum system requirements ](system_requirements.md) are already met. 
-Note that support for LAs to set up the SSD will be given by D2I
+
 
 ## Configuration Steps
 1. **Deploy the SSD**:

@@ -20,11 +20,11 @@ nav:
   - Overview: index.md
   - Stakeholders: stakeholders.md
   - System Requirements: system_requirements.md
-  - Step1 Deploy SSD: 1_deploy_ssd.md
-  - Step2 Test API: 2_test_api.md
-  - Step3 Deploy API: 3_deploy_api.md
+  - 1 Deploy SSD: 1_deploy_ssd.md
+  - 2 Test API: 2_test_api.md
+  - 3 API Configuration: 3_api_config.md
+  - 4 Deploy API: 4_deploy_api.md
   - JSON Structure: payload_structure.md
-  - API Configuration: api_config.md
   - Development Plan: development_plan.md
 plugins:
   - search
