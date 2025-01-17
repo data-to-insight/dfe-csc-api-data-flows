@@ -1,10 +1,14 @@
 # csc_api_data_collection
 Collaboration towards a CSC API data collection project
 
-## Commands
+## Repo commands
 * `mkdocs serve`        - live-reload docs server
 * `mkdocs build`        - build docs site
 * `mkdocs gh-deploy`    - push to Gitpage front-end(public)
+
+## DB commands
+* `EXEC sp_who2;`       - running processes to get kill id, + KILL [session_id];
+
 
 ## Project| Repo Overview
 
