@@ -58,6 +58,8 @@ flowchart TD
   - [-] Review specification for project scope and json detail 
   - [*] Ensure any project required permissions/software is available
   - [*] Complete API to SSD fields mapping
+  - [>] Define development plan stage 1
+  - [-] Define development plan stage 2 
 
 - **SSD Changes:**
   - [ ] Add specified fields into SSD data spec *(pushed to public SSD front-end?)*
@@ -66,7 +68,7 @@ flowchart TD
   - [ ] Eclipse (Postgres)
 
 - **Create documentation:**
-  - [-] Initial documentation framework/update documentation concurrent with dev progress
+  - [-] Create initial documentation framework
   - [ ] Write up final LA playbook details
   - [ ] End of Stage 1 - Update documentation based on pilot LA 1+ feedback
 
