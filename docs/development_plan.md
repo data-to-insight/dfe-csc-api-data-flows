@@ -1,4 +1,4 @@
-# TEMPORARY NON-LIVE PAGE SECTION
+# D2I DEV (non-prod workbench)
 
 ## D2I Development Plan Overview
 
