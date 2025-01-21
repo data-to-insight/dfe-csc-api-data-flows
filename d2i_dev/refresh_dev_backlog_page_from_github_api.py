@@ -1,0 +1,72 @@
+import requests
+
+TOKEN = "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"
+URL = "https://api.github.com/graphql"
+
+# GraphQL Query for the Specific Project
+QUERY = """
+{
+  organization(login: "data-to-insight") {
+    projectsV2(first: 10) {
+      nodes {
+        id
+        title
+        url
+        items(first: 10) {
+          nodes {
+            content {
+              ... on Issue {
+                title
+                url
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+HEADERS = {
+    "Authorization": f"Bearer {TOKEN}",
+    "Content-Type": "application/json"
+}
+
+response = requests.post(URL, headers=HEADERS, json={"query": QUERY})
+data = response.json()
+
+# Filter CSC_API_Data_Flows project (from all d2i projects)
+PROJECT_NAME = "CSC_API_Data_Flows"
+
+if "data" in data:
+    projects = data["data"]["organization"]["projectsV2"]["nodes"]
+
+    # Find the specific project
+    project = next((p for p in projects if p["title"] == PROJECT_NAME), None)
+
+    if project:
+        title = project["title"]
+        url = project["url"]
+        issues = project["items"]["nodes"]
+
+        # open markdown git_dev_backlog file to write
+        with open("docs/git_dev_backlog.md", "w") as f:
+            f.write(f"# {title} Git Development Backlog Board\n\n")
+            f.write(f"[View Board]({url})\n\n")
+
+            if issues:
+                for issue in issues:
+                    content = issue["content"]
+                    if content:
+                        issue_title = content["title"]
+                        issue_url = content["url"]
+                        f.write(f"- [{issue_title}]({issue_url})\n")
+            else:
+                f.write("_No issues found._\n")
+
+        print("Generated git_dev_backlog.md - deploy to front-end")
+    else:
+        print(f"Project '{PROJECT_NAME}' not found.")
+else:
+    print("Failed to fetch project data:", data.get("errors", "Unknown error"))

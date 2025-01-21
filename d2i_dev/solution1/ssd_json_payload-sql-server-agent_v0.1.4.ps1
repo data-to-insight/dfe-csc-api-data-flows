@@ -45,7 +45,7 @@ $database = "HDM_Local"
 $api_collection_table = "ssd_api_data_collection"
 
 # # api 
-$api_endpoint = "https://api.gov.uk/endpoint"
+$api_endpoint = "https://api.uk/endpoint"
 
 # # api token setting
 

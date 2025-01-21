@@ -208,3 +208,10 @@ SELECT
 FROM ssd_ehcp_named_plan;
 
 
+-- Update PreviousHash for all rows
+-- This only occurs once at set up! 
+UPDATE ssd_change_log_hash
+SET 
+    PreviousHash = CurrentHash
+WHERE 
+    PreviousHash IS NULL;

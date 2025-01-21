@@ -1,4 +1,4 @@
-site_name: "CSC API Dataflow"
+site_name: "CSC API Dataflow [ver: 0.0.2 / specification document 0.7 ]"
 
 theme:
   name: material
@@ -19,13 +19,14 @@ theme:
 nav:
   - Overview: index.md
   - Stakeholders: stakeholders.md
-  - System Requirements: system_requirements.md
+  - 0 System Requirements: system_requirements.md
   - 1 Deploy SSD: 1_deploy_ssd.md
   - 2 Test API: 2_test_api.md
   - 3 API Configuration: 3_api_config.md
   - 4 Deploy API: 4_deploy_api.md
   - JSON Structure: payload_structure.md
   - Development Plan: development_plan.md
+  - Development Backlog: git_dev_backlog.md
 plugins:
   - search
   - pdf-export
@@ -35,3 +36,4 @@ extra_css:
   - assets/css/styles.css
 extra_javascript:
   - assets/js/scripts.js
+  - assets/js/colorCells.js # dev plan cell status colouration
