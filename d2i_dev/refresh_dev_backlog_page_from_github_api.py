@@ -52,7 +52,9 @@ if "data" in data:
 
         # open markdown git_dev_backlog file to write
         with open("docs/git_dev_backlog.md", "w") as f:
-            f.write(f"# {title} Git Development Backlog Board\n\n")
+            f.write(f"# {title} Github Dev Backlog\n\n")
+            f.write(f"## Simplified Tasks Overview\n")
+            f.write(f"### Note: list combines multiple streams Backlog/Epic/InProg/Completed\n")
             f.write(f"[View Board]({url})\n\n")
 
             if issues:
@@ -65,7 +67,7 @@ if "data" in data:
             else:
                 f.write("_No issues found._\n")
 
-        print("Generated git_dev_backlog.md - deploy to front-end")
+        print("Generated git_dev_backlog.md - ready to deploy/serve to front-end now")
     else:
         print(f"Project '{PROJECT_NAME}' not found.")
 else:
