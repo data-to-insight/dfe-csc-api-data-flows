@@ -106,7 +106,7 @@ flowchart TD
 |                                     | Ensure any project required permissions/software is available                           | [ * ]    |
 |                                     | Complete API to SSD fields mapping                                                     | [ * ]    |
 | **SSD Changes**                     | Add API specified fields into SSD and data spec (?) *(pushed to public SSD front-end?)* | [ - ]    |
-|                                     | SystemOne (SQL Server)                                                                  | [ * ]    |
+|                                     | SystemC (SQL Server)                                                                  | [ * ]    |
 |                                     | Mosaic (SQL Server)                                                                     | [   ]    |
 |                                     | Eclipse (Postgres)                                                                      | [   ]    |
 | **Create Documentation (Framework & Plan)** | Request client guidance on documentation preferences/standards                        | [ * ]    |
@@ -196,7 +196,7 @@ flowchart TD
 |-------------------------------------------|-----------------------------------------------------------------------------|--------|
 | **Enable SSD Row-Level Change Tracking**  | Develop mechanism(s) to enable SSD/record change tracking                  | [   ]    |
 |                                           | Re-develop API process to integrate change tracking/record-level deltas    | [   ]    |
-| **Provide Configuration Playbook and Guidance for LAs** | SystemOne                                                                  | [   ]    |
+| **Provide Configuration Playbook and Guidance for LAs** | SystemC                                                                | [   ]    |
 |                                           | Mosaic                                                                     | [   ]    |
 |                                           | Eclipse                                                                    | [   ]    |
 | **Expand Pilot**                          | Expand pilot to further LAs with D2I support                               | [   ]    |
