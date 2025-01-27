@@ -37,7 +37,7 @@ response = requests.post(URL, headers=HEADERS, json={"query": QUERY})
 data = response.json()
 
 # Filter CSC_API_Data_Flows project (from all d2i projects)
-PROJECT_NAME = "CSC_API_Data_Flows"
+PROJECT_NAME = "csc_api_data_flows" # note: named based search so name musty match 1:1 
 
 if "data" in data:
     projects = data["data"]["organization"]["projectsV2"]["nodes"]
