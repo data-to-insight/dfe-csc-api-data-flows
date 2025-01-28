@@ -8,7 +8,7 @@
 - [Define JSON query Meta structure. Add JSON Spec relevant meta data](https://github.com/data-to-insight/csc_api_data_collection/issues/12)
 - [EPIC: Maintain record-level change-management within the SSD](https://github.com/data-to-insight/csc_api_data_collection/issues/3)
 - [EPIC: Be able to transfer a JSON type payload to an API endpoint](https://github.com/data-to-insight/csc_api_data_collection/issues/4)
-- [EPIC: Extend the SSD to further enable useful data work & partners](https://github.com/data-to-insight/csc_api_data_collection/issues/7)
+- [EPIC: Extend the SSD to further enable (agreed)extended data work](https://github.com/data-to-insight/csc_api_data_collection/issues/7)
 - [EPIC: Inclusion of META data within processes enables improved alignment with specifications](https://github.com/data-to-insight/csc_api_data_collection/issues/11)
 - [[Non delta] extract of specified JSON data payload to API endpoint](https://github.com/data-to-insight/csc_api_data_collection/issues/5)
 - [[Delta] extract of specified JSON data payload to API endpoint](https://github.com/data-to-insight/csc_api_data_collection/issues/6)
