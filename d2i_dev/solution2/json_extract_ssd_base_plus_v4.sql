@@ -137,8 +137,7 @@ SELECT
                         SELECT 
                             s47e.s47e_s47_enquiry_id AS [section_47_assessment_id],             -- metadata={29,,True,Max 36 Chars}
                             CONVERT(VARCHAR(10), s47e.s47e_s47_start_date, 23) AS [start_date], -- metadata={30,,False,YYYY-MM-DD}
-                            s47e.s47e_s47_nfa AS [icpc_required_flag],                          -- metadata={31,,False,TRUE|FALSE}
-                            -- Extract the ICPC date
+                            JSON_VALUE(s47e.s47e_s47_outcome_json, '$.CP_CONFERENCE_FLAG') AS [icpc_required_flag], -- metadata={31,S47E007A,False,TRUE|FALSE}
                             CONVERT(VARCHAR(10), icpc.icpc_icpc_date, 23) AS [icpc_date],       -- metadata={32,,False,YYYY-MM-DD}
                             CONVERT(VARCHAR(10), s47e.s47e_s47_end_date, 23) AS [end_date]      -- metadata={33,,False,YYYY-MM-DD}
                         FROM ssd_s47_enquiry s47e
@@ -147,7 +146,6 @@ SELECT
                         WHERE s47e.s47e_referral_id = cine.cine_referral_id
                         FOR JSON PATH
                     ) AS [section_47_assessments],
-
 
 
                     -- Attribute Group: Child Protection Plans
@@ -169,9 +167,9 @@ SELECT
                         SELECT 
                             clae.clae_cla_placement_id AS [child_looked_after_placement_id],            -- metadata={37,CLAE001A,True,Max 36 Chars} # TESTING
                             CONVERT(VARCHAR(10), clae.clae_cla_episode_start_date, 23) AS [start_date], -- metadata={38,CLAE003A,False,YYYY-MM-DD} # TESTING (should this be clap.? as below)
-                            clae.clae_cla_episode_start_reason AS [start_reason],                       -- metadata={39,CLAE004A,False,See Additional Notes for list}
+                            LEFT(clae.clae_cla_episode_start_reason, 3) AS [start_reason],                       -- metadata={39,CLAE004A,False,See Additional Notes for list}
                             clae.clae_cla_episode_ceased AS [ceased],                                   -- metadata={42,CLAE005A,False,YYYY-MM-DD} # TESTING
-                            clae.clae_cla_episode_ceased_reason AS [end_reason],                        -- metadata={43,CLAE006A,False,See Additional Notes for list|e.g. E11} # TESTING
+                            LEFT(clae.clae_cla_episode_ceased_reason, 3) AS [end_reason],                        -- metadata={43,CLAE006A,False,See Additional Notes for list|e.g. E11} # TESTING
 
                             -- Nested CLA Placement () # TESTING - some sub elements are likely not correctly nested here! 
                             (
@@ -181,11 +179,11 @@ SELECT
                                     clap.clap_cla_placement_postcode AS [placement_postcode],                       -- metadata={40,CLAP008A,False, tbc}
                                     clap.clap_cla_placement_type AS [placement_type],                               -- metadata={41,CLAP004A,False,See Additional Notes for list|E.g. R1}
                                     CONVERT(VARCHAR(10), clap.clap_cla_placement_end_date, 23) AS [end_date],       -- metadata={42,CLAP009A,False,YYYY-MM-DD}
-                                    -- clap. [end_reason] -- metadata={43?, UNAVAILABLE?? # TESTING
                                     clap.clap_cla_placement_change_reason AS [placement_change_reason]              -- metadata={44,CLAP010A,False,See Additional Notes for list|E.g. CARPL}
                                 
                                 FROM ssd_cla_placement clap
                                 WHERE clap.clap_cla_id = clae.clae_cla_id
+                                ORDER BY clap.clap_cla_placement_start_date desc -- most recent placement first
                                 FOR JSON PATH
                             ) AS [placement_details] 
                         FROM ssd_cla_episodes clae 
@@ -202,6 +200,7 @@ SELECT
                             csdq.csdq_sdq_score AS [sdq_score]                                                  -- metadata={46,,False,Integer between 0 and 40 (Inclusive)}
                         FROM ssd_sdq_scores csdq
                         WHERE csdq.csdq_person_id = p.pers_person_id
+                        ORDER BY csdq.csdq_sdq_completed_date DESC -- most recent first
                         FOR JSON PATH
                     ) AS [health_and_wellbeing], 
 
@@ -227,11 +226,12 @@ SELECT
                     (
                         SELECT 
                             CONVERT(VARCHAR(10), clea.clea_care_leaver_latest_contact, 23) AS [contact_date],   -- metadata={50,,False,YYYY-MM-DD}
-                            clea.clea_care_leaver_activity AS [activity],                                       -- metadata={51,,False,See Additional Notes for list}
-                            clea.clea_care_leaver_accommodation AS [accommodation]                              -- metadata={52,,False,See Additional Notes for list}
+                            LEFT(clea.clea_care_leaver_activity, 2) AS [activity],                                       -- metadata={51,,False,See Additional Notes for list}
+                            LEFT(clea.clea_care_leaver_accommodation, 1) AS [accommodation]                              -- metadata={52,,False,See Additional Notes for list}
                         FROM ssd_care_leavers clea
                         WHERE clea.clea_person_id = p.pers_person_id
                         FOR JSON PATH
+                        ORDER BY clea.clea_care_leaver_latest_contact DESC -- most recent contact first
                     ) AS [care_leavers] 
 
                 FROM ssd_cin_episodes cine
@@ -254,6 +254,7 @@ SELECT
                 INNER JOIN ssd_professionals pr 
                     ON i.invo_professional_id = pr.prof_professional_id
                 WHERE i.invo_person_id = p.pers_person_id
+                ORDER BY i.invo_involvement_start_date DESC -- most recent involvement first
                 FOR JSON PATH
             ) AS [social_workers], 
 
