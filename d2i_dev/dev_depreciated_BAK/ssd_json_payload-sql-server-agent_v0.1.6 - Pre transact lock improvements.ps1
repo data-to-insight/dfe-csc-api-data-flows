@@ -152,7 +152,7 @@ WHERE submission_status = 'Pending';
             Write-Host "Failed to write payload to file: $($_.Exception.Message)"
         }
 
-        # Update status to 'Testing'
+        # Update staging table row/record label status to 'Testing'
         $updateQuery = @"
 UPDATE ssd_api_data_staging
 SET submission_status = 'Testing',

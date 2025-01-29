@@ -309,3 +309,8 @@ SET
     current_hash = HASHBYTES('SHA2_256', CAST(json_payload AS NVARCHAR(MAX))), -- reset/re-evaluate every data refresh
     previous_hash = COALESCE(previous_hash, HASHBYTES('SHA2_256', CAST(json_payload AS NVARCHAR(MAX)))) -- only set if NULL using single pass
                                                                                                         -- Incl. blanket populate during SET-UP (initialisation)
+
+-- Reset status(es) during TESTING
+UPDATE ssd_api_data_staging_anon  -- note this is the ANON table
+SET submission_status = 'Pending'
+WHERE submission_status <> 'Pending' OR submission_status IS NULL;
