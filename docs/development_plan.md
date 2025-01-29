@@ -189,6 +189,79 @@ flowchart TD
 
 ```
 
+
+## Stage 1 Suggested Solution 2 Overview
+
+```mermaid
+flowchart TD
+
+    Title["**CSC API Data Flow - Stage 1 Solution 2 **"]
+
+    %% SystemC Reporting Instance DB (Containing all DB-related and API elements)
+    subgraph SystemC_DB ["SystemC Reporting Instance DB"]
+        style SystemC_DB fill:#d9ead3,stroke:#000,stroke-width:1px;  %% Light Green, same as CMS CSC Schema
+
+        subgraph CMS_CSC_Schema ["CMS CSC Schema"]
+        end
+        style CMS_CSC_Schema fill:#d9ead3,stroke:#000,stroke-width:1px;  %% Light Green
+
+        CMS_CSC_Schema -->|Extract SSD Data| SSD_Tables["SSD Tables"]
+
+        %% Child-Level JSON Extract Step
+        SSD_Tables -->|SQL JSON Extract| Child_JSON_Extract["Child-level JSON Extract Process"]
+        Child_JSON_Extract -->|Extract API JSON Data| Bulk_Populate["ssd_api_data_staging table submission_status=Pending curr_prev_hash_vals=checksums"]
+
+        %% Anonymised Data in DB
+        SSD_Staging_Anon["Replicated but ANON ssd_api_data_staging_anon"]
+
+        %% API Processing (INSIDE SystemC DB)
+        SSD_Staging_Anon -->|Extract JSON Rows and combine to API array| API_Powershell["API - Powershell"]
+        API_Powershell -->|Send Payload and Header| API_Endpoint["API Endpoint"]
+        API_Endpoint -->|Return Response Codes| API_Powershell
+        API_Powershell -->|Update Response Codes and set submission_status| SSD_Staging_Anon
+
+    end
+
+    %% Local Anaconda Environment for Python Processing
+    subgraph Local_Anaconda_Env ["Local Anaconda Env."]
+        style Local_Anaconda_Env fill:#ffe599,stroke:#000,stroke-width:1px;  %% Light Yellow
+        Python_Anon["Python Anonymisation"]
+    end
+
+    %% Anonymisation Flow (now separated)
+    Bulk_Populate -->|Process Data for Anonymisation| Python_Anon
+    Python_Anon -->|Store Anonymised Data| SSD_Staging_Anon
+
+    %% Apply Colors Using Class Definitions
+    classDef processNode fill:#cfe2f3,stroke:#000,stroke-width:1px;  %% Light Blue for processes
+    classDef apiNode fill:#f9cb9c,stroke:#000,stroke-width:1px;  %% Light Orange for API interaction
+    classDef hostedNode fill:#d9ead3,stroke:#000,stroke-width:1px;  %% Light Green for Hosted DB elements
+    classDef containerNode stroke:#000,stroke-dasharray: 5,5;  %% Dashed border for SystemC Reporting DB
+    classDef pythonEnv fill:#ffe599,stroke:#000,stroke-width:1px;  %% Light Yellow for Python Processing
+
+    %% Assign Classes
+    class SystemC_DB hostedNode;
+    class CMS_CSC_Schema hostedNode;
+    class SSD_Tables,Child_JSON_Extract,Bulk_Populate,SSD_Staging_Anon processNode;
+    class API_Powershell,API_Endpoint apiNode;
+    class Local_Anaconda_Env pythonEnv;
+    class Python_Anon pythonEnv;
+
+    %% Legend
+    subgraph Legend ["Legend"]
+        process_key["Process Steps"]
+        style process_key fill:#cfe2f3,stroke:#000,stroke-width:1px;
+        api_key["API Interaction"]
+        style api_key fill:#f9cb9c,stroke:#000,stroke-width:1px;
+        hosted_key["Hosted within CMS DB instance|Server"]
+        style hosted_key fill:#d9ead3,stroke:#000,stroke-width:1px;
+        python_key["Python Processing Environment"]
+        style python_key fill:#ffe599,stroke:#000,stroke-width:1px;
+    end
+```
+
+
+
 ## Stage 2 Task Breakdown (tbc - still flushing this out)
 
 

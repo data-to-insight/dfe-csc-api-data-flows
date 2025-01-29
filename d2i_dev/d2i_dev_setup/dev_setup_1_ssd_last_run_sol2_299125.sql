@@ -9,7 +9,7 @@ DECLARE @schema_name NVARCHAR(128) = N'ssd_development';    -- Set your schema n
 /* persistent|perm SSD tables */
 PRINT CHAR(13) + CHAR(10) + 'Removing SSD persistent tables, prefixed as ssd_' + CHAR(13) + CHAR(10);
 
--- ensure schema name is provided
+-- schema name must be provided (fail safe to sandbox destructive changes below)
 IF @schema_name = N'' OR @schema_name IS NULL
 BEGIN
     RAISERROR('Schema name must be provided and cannot be empty.', 16, 1);
@@ -27,7 +27,8 @@ FROM sys.foreign_keys AS fk
 INNER JOIN sys.tables AS t ON fk.parent_object_id = t.object_id
 INNER JOIN sys.schemas AS s ON t.schema_id = s.schema_id
 WHERE s.name = @schema_name
-AND t.name LIKE 'ssd_%';  -- Filter for tables prefixed with 'ssd_'
+AND t.name LIKE 'ssd_%'  -- Filter for tables prefixed with 'ssd_'
+AND t.name NOT IN ('ssd_change_log_hash', 'ssd_table_metadata', 'ssd_api_data_staging');  -- Exclude specific persistent change tracking tables
 
 -- execute drop FK
 EXEC sp_executesql @sql;
@@ -45,13 +46,15 @@ END;
 FROM sys.tables AS t
 INNER JOIN sys.schemas AS s ON t.schema_id = s.schema_id
 WHERE s.name = @schema_name
-AND t.name LIKE 'ssd_%';  -- Filter for tables prefixed with 'ssd_'
+AND t.name LIKE 'ssd_%'  -- Filter tables prefixed with 'ssd_'
+AND t.name NOT IN ('ssd_change_log_hash', 'ssd_table_metadata');  -- Exclude specific persistent change tracking tables
 
 -- execute drop tables
 EXEC sp_executesql @sql;
 
 -- reset var
 SET @sql = N'';
+
 
 /* END SSD pre-extract clean up (remove all prevQious SSD objects) */
 /* *********************************************A************************************************************* */
@@ -103,7 +106,7 @@ GO
 SET NOCOUNT ON;
 
 -- META-ELEMENT: {"type": "ssd_timeframe"}
-DECLARE @ssd_timeframe_years INT = 5;
+DECLARE @ssd_timeframe_years INT = 2;
 DECLARE @ssd_sub1_range_years INT = 1;
 
 -- CASELOAD count Date (Currently: September 30th)
@@ -128,7 +131,7 @@ DECLARE @CaseloadTimeframeStartDate DATE = DATEADD(YEAR, -@ssd_timeframe_years, 
 USE HDM_Local;
 DECLARE @schema_name NVARCHAR(128) = '';
 
-ALTER USER [ESCC\RobertHa] WITH DEFAULT_SCHEMA = [ssd_development];
+-- ALTER USER [ESCC\RobertHa] WITH DEFAULT_SCHEMA = [ssd_development];
 
 
 -- META-CONTAINER: {"type": "settings", "name": "testing"}
@@ -234,6 +237,8 @@ IF OBJECT_ID('tempdb..#ssd_person') IS NOT NULL DROP TABLE #ssd_person;
 CREATE TABLE ssd_person (
     pers_legacy_id          NVARCHAR(48),               -- metadata={"item_ref":"PERS014A"}               
     pers_person_id          NVARCHAR(48) PRIMARY KEY,   -- metadata={"item_ref":"PERS001A"}   
+    pers_forename            NVARCHAR(100),
+    pers_surname             NVARCHAR(255),
     pers_sex                NVARCHAR(20),               -- metadata={"item_ref":"PERS002A", "item_status":"P", "info":"If -additional- status to Gender is held, otherwise duplicate pers_gender"}    
     pers_gender             NVARCHAR(10),               -- metadata={"item_ref":"PERS003A", "item_status":"R", "expected_data":["unknown",NULL,"F","U","M","I"]}       
     pers_ethnicity          NVARCHAR(48),               -- metadata={"item_ref":"PERS004A", "expected_data":[NULL, tbc]} 
@@ -264,6 +269,8 @@ WITH f903_data_CTE AS (
 INSERT INTO ssd_person (
     pers_legacy_id,
     pers_person_id,
+    pers_forename,
+    pers_surname,
     pers_sex,       -- sex and gender currently extracted as one
     pers_gender,    -- 
     pers_ethnicity,
@@ -281,8 +288,10 @@ SELECT
     -- TOP 100                              -- Limit returned rows to speed up run-time tests [TESTING]
     p.LEGACY_ID,
     CAST(p.DIM_PERSON_ID AS NVARCHAR(48)),  -- Ensure DIM_PERSON_ID is cast to NVARCHAR(48)
-    'SSD_PH' AS pers_sex,                   -- Placeholder for those LAs that store sex and gender independently
-    p.GENDER_MAIN_CODE,                     -- Gender as used in stat-returns
+    p.FORENAME, 
+    p.SURNAME,
+    p.GENDER_MAIN_CODE AS pers_sex,        -- Sex/Gender as used in stat-returns
+    p.GENDER_MAIN_CODE,                     -- Placeholder for those LAs that store sex and gender independently
     p.ETHNICITY_MAIN_CODE,
     CASE WHEN (p.DOB_ESTIMATED) = 'N'              
         THEN p.BIRTH_DTTM -- Set to BIRTH_DTTM when DOB_ESTIMATED = 'N'
@@ -4411,8 +4420,6 @@ FOREIGN KEY (send_person_id) REFERENCES ssd_person(pers_person_id);
 CREATE NONCLUSTERED INDEX idx_ssd_send_person_id ON ssd_send (send_person_id);
 
 
-
-
 -- META-CONTAINER: {"type": "table", "name": "ssd_sen_need"}
 -- =============================================================================
 -- Description: Placeholder structure as source data not common|confirmed
@@ -4550,5 +4557,196 @@ CREATE TABLE ssd_ehcp_active_plans (
     ehcp_ehcp_request_id                NVARCHAR(48),               -- metadata={"item_ref":"EHCP002A"}
     ehcp_active_ehcp_last_review_date   DATETIME                    -- metadata={"item_ref":"EHCP003A"}
 );
+
+
+
+
+
+
+
+
+
+
+
+-- Use HDM_Local;
+
+-- IF OBJECT_ID('ssd_api_data_staging', 'U') IS NOT NULL DROP TABLE ssd_api_data_staging;
+
+-- CREATE TABLE ssd_api_data_staging (
+--     id INT IDENTITY(1,1) PRIMARY KEY,           -- Unique identifier for each JSON entry
+--     person_id NVARCHAR(48) NULL,               -- Link value (_person_id or equivalent)
+--     json_payload NVARCHAR(MAX) NOT NULL,       -- The JSON data from your query
+--     current_hash BINARY(32) NULL,              -- Current hash of the JSON payload
+--     previous_hash BINARY(32) NULL,             -- Previous hash of the JSON payload
+--     submission_status NVARCHAR(50) DEFAULT 'Pending', -- Status: Pending, Sent, Error
+--     submission_timestamp DATETIME DEFAULT GETDATE(),  -- Timestamp of data insertion
+--     api_response NVARCHAR(MAX) NULL,          -- Store the API response or error messages
+--     row_state NVARCHAR(10) DEFAULT 'new',     -- State: new, updated, deleted, unchanged
+--     last_updated DATETIME DEFAULT GETDATE()   -- Last update timestamp
+-- );
+
+
+
+
+
+-- -- INSERT INTO ssd_api_data_staging (person_id, json_payload)
+-- -- Step 1: Extract Child Details
+-- IF OBJECT_ID('ssd_testing_ChildDetails', 'U') IS NOT NULL
+--     TRUNCATE TABLE ssd_testing_ChildDetails;
+-- ELSE
+--     CREATE TABLE ssd_testing_ChildDetails (
+--         person_id INT,
+--         child_details NVARCHAR(MAX)
+--     );
+
+-- INSERT INTO ssd_testing_ChildDetails (person_id, child_details)
+-- SELECT 
+--     p.pers_person_id AS person_id,
+--     JSON_QUERY((
+--         SELECT
+--             p.pers_person_id AS [la_child_id],
+--             p.pers_common_child_id AS [common_person_id],
+--             'SSD_PH' AS [FirstName],
+--             'SSD_PH' AS [Surname],
+--             (
+--                 SELECT TOP 1 link_identifier_value
+--                 FROM ssd_linked_identifiers
+--                 WHERE CAST(link_person_id AS INT) = CAST(p.pers_person_id AS INT)
+--                   AND link_identifier_type = 'Unique Pupil Number'
+--                 ORDER BY link_valid_from_date DESC
+--             ) AS [UPN],
+--             (
+--                 SELECT TOP 1 link_identifier_value
+--                 FROM ssd_linked_identifiers
+--                 WHERE CAST(link_person_id AS INT) = CAST(p.pers_person_id AS INT)
+--                   AND link_identifier_type = 'Former Unique Pupil Number'
+--                 ORDER BY link_valid_from_date DESC
+--             ) AS [Former_UPN],
+--             p.pers_upn_unknown AS [UPN_Unknown],
+--             CONVERT(VARCHAR(10), p.pers_dob, 23) AS [Date_of_Birth],
+--             CONVERT(VARCHAR(10), p.pers_expected_dob, 23) AS [Expected_Date_of_Birth],
+--             CASE 
+--                 WHEN p.pers_sex = 'M' THEN 'M'
+--                 WHEN p.pers_sex = 'F' THEN 'F'
+--                 ELSE 'U'
+--             END AS [Sex],
+--             p.pers_ethnicity AS [Ethnicity],
+--             (
+--                 SELECT 
+--                     d.disa_disability_code AS [Disability]
+--                 FROM ssd_disability d
+--                 WHERE CAST(d.disa_person_id AS INT) = CAST(p.pers_person_id AS INT)
+--                 FOR JSON PATH
+--             ) AS [Disabilities],
+--             (
+--                 SELECT TOP 1 a.addr_address_postcode
+--                 FROM ssd_address a
+--                 WHERE CAST(a.addr_person_id AS INT) = CAST(p.pers_person_id AS INT)
+--                 ORDER BY a.addr_address_start_date DESC
+--             ) AS [Postcode]
+--         FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
+--     )) AS child_details
+-- FROM ssd_person p;
+
+-- select top 10 * from ssd_testing_ChildDetails ;
+
+
+
+
+-- -- Step 2: Extract Social Care Episodes
+-- IF OBJECT_ID('ssd_testing_CareEpisodes', 'U') IS NOT NULL
+--     TRUNCATE TABLE ssd_testing_CareEpisodes;
+-- ELSE
+--     CREATE TABLE ssd_testing_CareEpisodes (
+--         person_id INT,
+--         social_care_episodes NVARCHAR(MAX)
+--     );
+
+-- INSERT INTO ssd_testing_CareEpisodes (person_id, social_care_episodes)
+-- SELECT 
+--     cine.cine_person_id AS person_id,
+--     JSON_QUERY((
+--         SELECT 
+--             cine.cine_referral_id AS [social_care_episodes.social_care_episode_id],
+--             CONVERT(VARCHAR(10), cine.cine_referral_date, 23) AS [social_care_episodes.referral_date],
+--             cine.cine_referral_source_code AS [social_care_episodes.referral_source],
+--             CONVERT(VARCHAR(10), cine.cine_close_date, 23) AS [social_care_episodes.closure_date],
+--             cine.cine_close_reason AS [social_care_episodes.closure_reason],
+--             -- Nested CP Plans
+--             (
+--                 SELECT 
+--                     cppl.cppl_cp_plan_start_date AS [start_date],
+--                     cppl.cppl_cp_plan_end_date AS [end_date]
+--                 FROM ssd_cp_plans cppl
+--                 WHERE CAST(cppl.cppl_referral_id AS INT) = CAST(cine.cine_referral_id AS INT)
+--                 FOR JSON PATH
+--             ) AS [child_protection_plans],
+--             -- Nested CIN Plans
+--             (
+--                 SELECT 
+--                     cinp.cinp_cin_plan_start_date AS [start_date],
+--                     cinp.cinp_cin_plan_end_date AS [end_date]
+--                 FROM ssd_cin_plans cinp
+--                 WHERE CAST(cinp.cinp_referral_id AS INT) = CAST(cine.cine_referral_id AS INT)
+--                 FOR JSON PATH
+--             ) AS [child_in_need_plans]
+--         FOR JSON PATH
+--     )) AS social_care_episodes
+-- FROM ssd_cin_episodes cine;
+
+-- -- Step 3: Extract Social Workers
+-- IF OBJECT_ID('ssd_testing_SocialWorkers', 'U') IS NOT NULL
+--     TRUNCATE TABLE ssd_testing_SocialWorkers;
+-- ELSE
+--     CREATE TABLE ssd_testing_SocialWorkers (
+--         person_id INT,
+--         social_workers NVARCHAR(MAX)
+--     );
+
+
+-- -- Step 4: Combine Results into Final JSON
+-- IF OBJECT_ID('ssd_testing_api_data_staging', 'U') IS NOT NULL
+--     TRUNCATE TABLE ssd_testing_api_data_staging;
+-- ELSE
+--     CREATE TABLE ssd_testing_api_data_staging (
+--         person_id INT,
+--         json_payload NVARCHAR(MAX)
+--     );
+
+-- INSERT INTO ssd_testing_api_data_staging (person_id, json_payload)
+-- SELECT 
+--     cd.person_id,
+--     JSON_QUERY((
+--         SELECT 
+--             cd.child_details,
+--             ce.social_care_episodes
+--         FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
+--     )) AS json_payload
+-- FROM ssd_testing_ChildDetails cd
+-- LEFT JOIN ssd_testing_CareEpisodes ce ON cd.person_id = ce.person_id;
+
+
+-- select top 100 * from ssd_testing_api_data_staging;
+
+-- -- hashing seperated from main query to ease performace
+-- UPDATE ssd_api_data_staging
+-- SET current_hash = HASHBYTES(
+--     'SHA2_256', 
+--     CAST(json_payload AS NVARCHAR(MAX))
+-- )
+-- WHERE current_hash IS NULL; -- records without a current hash
+
+
+-- -- only once at initialisation
+-- UPDATE ssd_api_data_staging
+-- SET previous_hash = current_hash;
+
+
+-- -- only once at initialisation
+-- UPDATE ssd_api_data_staging
+-- SET submission_status = 'Pending'
+-- WHERE person_id in (100006, 100009, 100014, 100097);
+
+-- select * from ssd_api_data_staging;
 
 
