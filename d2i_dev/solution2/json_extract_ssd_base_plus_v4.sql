@@ -234,8 +234,8 @@ SELECT
                             LEFT(clea.clea_care_leaver_accommodation, 1) AS [accommodation]                         -- metadata={52,CLEA006A,False,See Additional Notes for list}
                         FROM ssd_care_leavers clea
                         WHERE clea.clea_person_id = p.pers_person_id
-                        FOR JSON PATH
                         ORDER BY clea.clea_care_leaver_latest_contact DESC -- most recent contact first
+                        FOR JSON PATH
                     ) AS [care_leavers] 
 
                 FROM ssd_cin_episodes cine

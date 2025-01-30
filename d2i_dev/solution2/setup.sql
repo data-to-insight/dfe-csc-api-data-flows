@@ -12,7 +12,7 @@ CREATE TABLE ssd_api_data_staging (
     submission_status NVARCHAR(50) DEFAULT 'Pending', -- Status: Pending, Sent, Error
     submission_timestamp DATETIME DEFAULT GETDATE(),  -- data submitted timestamp
     api_response NVARCHAR(MAX) NULL,          -- API response or error
-    row_state NVARCHAR(10) DEFAULT 'new',     -- record state : new, updated, deleted, unchanged
+    row_state NVARCHAR(10) DEFAULT 'New',     -- record state : New, Updated, Deleted, Unchanged
     last_updated DATETIME DEFAULT GETDATE()   -- timestamp data update/insertion
 );
 

@@ -1,14 +1,13 @@
 -- KEY: metadata={AttributeReferenceNum ,SSDReference,Mandatory,GuidanceNotes}
 
-MERGE INTO ssd_api_data_staging AS target
-USING (
-SELECT top 3000
-    p.pers_person_id AS person_id,
-    (
-        SELECT 
-        -- Attribute Group: Children
-            p.pers_person_id AS [la_child_id],                                          -- metadata={2 ,PERS001A,True,Max 36 Chars|CHILD12345}  
-            -- p.pers_common_child_id AS [common_person_id],
+WITH ComputedData AS (
+    SELECT top 4000
+        p.pers_person_id AS person_id,
+        (
+            SELECT 
+            -- Attribute Group: Children
+                p.pers_person_id AS [la_child_id],                                      -- metadata={2 ,PERS001A,True,Max 36 Chars|CHILD12345}  
+            -- p.pers_common_child_id AS [common_person_id],                            -- metadata={N/A, PERS002A, False, FUTURE USE Max 20 Chars}
             'SSD_PH' AS [first_name],                                                   -- metadata={6,PERS0015A,False,Max 128 chars} 
             'SSD_PH' AS [surname],                                                      -- metadata={7,PERS0016A,False,Max 128 chars} 
             (
@@ -215,8 +214,9 @@ SELECT top 3000
                             LEFT(clea.clea_care_leaver_accommodation, 1) AS [accommodation]                         -- metadata={52,CLEA006A,False,See Additional Notes for list}
                         FROM ssd_care_leavers clea
                         WHERE clea.clea_person_id = p.pers_person_id
-                        FOR JSON PATH
                         ORDER BY clea.clea_care_leaver_latest_contact DESC -- most recent contact first
+                        FOR JSON PATH
+                        
                     ) AS [care_leavers] 
 
                 FROM ssd_cin_episodes cine
@@ -267,27 +267,36 @@ SELECT top 3000
             ) AS [education_health_care_plans]
 
             FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
-        ) AS json_payload,
-        HASHBYTES('SHA2_256', CAST((
-            SELECT 
-                p.pers_person_id AS [la_child_id],
-                ....<snip>....
-            FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
-        ) AS NVARCHAR(MAX))) AS new_hash
+        ) AS json_payload
     FROM ssd_person p
+)
+
+-- end of CTE
+
+
+-- Opt 1: Combined update and compute hash vals
+-- (1) Update/merge the API staging data
+MERGE INTO ssd_api_data_staging AS target
+USING (
+    SELECT 
+        person_id, 
+        json_payload,
+        HASHBYTES('SHA2_256', CAST(json_payload AS NVARCHAR(MAX))) AS new_hash
+    FROM ComputedData
 ) AS source
 ON target.person_id = source.person_id
 
-WHEN MATCHED AND target.current_hash <> source.new_hash THEN
+-- WHEN MATCHED clauses in one
+WHEN MATCHED THEN
     UPDATE SET 
         target.json_payload = source.json_payload,
         target.current_hash = source.new_hash,
         target.last_updated = GETDATE(),
-        target.row_state = 'Updated'
-
-WHEN MATCHED AND target.current_hash = source.new_hash THEN
-    UPDATE SET 
-        target.row_state = 'Unchanged'
+        target.row_state = 
+            CASE 
+                WHEN target.current_hash <> source.new_hash THEN 'Updated'
+                ELSE 'Unchanged' 
+            END
 
 WHEN NOT MATCHED THEN
     INSERT (person_id, json_payload, current_hash, submission_status, row_state, last_updated)
@@ -297,3 +306,63 @@ WHEN NOT MATCHED BY SOURCE THEN
     UPDATE SET 
         target.row_state = 'Deleted',
         target.last_updated = GETDATE();
+--- End opt1
+
+
+
+
+
+
+
+
+-- Opt 2: Compute hash vals in seperate process - reduced update overheads on high date loads
+-- (1) Update/merge the API staging data
+
+-- MERGE INTO ssd_api_data_staging AS target
+-- USING ComputedData AS source
+-- ON target.person_id = source.person_id
+
+-- -- WHEN MATCHED logic into single update
+-- WHEN MATCHED THEN
+--     UPDATE SET 
+--         target.json_payload = source.json_payload,
+--         target.last_updated = GETDATE(),
+--         target.row_state = 
+--             CASE 
+--                 WHEN target.json_payload <> source.json_payload THEN 'Updated'
+--                 ELSE 'Unchanged' 
+--             END
+
+-- WHEN NOT MATCHED THEN
+--     INSERT (person_id, json_payload, submission_status, row_state, last_updated)
+--     VALUES (source.person_id, source.json_payload, 'Pending', 'New', GETDATE())
+
+-- WHEN NOT MATCHED BY SOURCE THEN
+--     UPDATE SET 
+--         target.row_state = 'Deleted',
+--         target.last_updated = GETDATE();
+
+
+-- -- (2)Update hash vals
+-- UPDATE ssd_api_data_staging
+-- SET 
+--     current_hash = HASHBYTES('SHA2_256', CAST(json_payload AS NVARCHAR(MAX))),
+--     previous_hash = COALESCE(previous_hash, HASHBYTES('SHA2_256', CAST(json_payload AS NVARCHAR(MAX))))
+-- WHERE current_hash IS NULL;
+-- --- End opt 2
+
+
+
+
+-- -- Reduce data in staging table for testing
+-- DECLARE @percent INT = 50;
+-- DECLARE @rows_to_delete INT;
+
+-- SELECT @rows_to_delete = COUNT(*) * @percent / 100 FROM ssd_api_data_staging;
+
+-- DELETE FROM ssd_api_data_staging
+-- WHERE id IN (
+--     SELECT TOP (@rows_to_delete) id
+--     FROM ssd_api_data_staging
+--     ORDER BY NEWID()
+-- );

@@ -193,10 +193,12 @@ flowchart TD
 ## Stage 1 Suggested Solution 2 Overview
 
 ```mermaid
+
 flowchart TD
 
     Title["**CSC API Data Flow - Stage 1 Solution 2 **"]
 
+subgraph LA_Server_Instance
     %% SystemC Reporting Instance DB (Containing all DB-related and API elements)
     subgraph SystemC_DB ["SystemC Reporting Instance DB"]
         style SystemC_DB fill:#d9ead3,stroke:#000,stroke-width:1px;  %% Light Green, same as CMS CSC Schema
@@ -211,21 +213,23 @@ flowchart TD
         SSD_Tables -->|SQL JSON Extract| Child_JSON_Extract["Child-level JSON Extract Process"]
         Child_JSON_Extract -->|Extract API JSON Data| Bulk_Populate["ssd_api_data_staging table submission_status=Pending curr_prev_hash_vals=checksums"]
 
+        subgraph Development_Phase_Only_DB
         %% Anonymised Data in DB
         SSD_Staging_Anon["Replicated but ANON ssd_api_data_staging_anon"]
+        end
+    end
 
-        %% API Processing (INSIDE SystemC DB)
+        %% API Processing
         SSD_Staging_Anon -->|Extract JSON Rows and combine to API array| API_Powershell["API - Powershell"]
         API_Powershell -->|Send Payload and Header| API_Endpoint["API Endpoint"]
         API_Endpoint -->|Return Response Codes| API_Powershell
         API_Powershell -->|Update Response Codes and set submission_status| SSD_Staging_Anon
+end
 
-    end
 
     %% Local Anaconda Environment for Python Processing
-    subgraph Local_Anaconda_Env ["Local Anaconda Env."]
-        style Local_Anaconda_Env fill:#ffe599,stroke:#000,stroke-width:1px;  %% Light Yellow
-        Python_Anon["Python Anonymisation"]
+    subgraph Development_Phase_Only_Py ["Development Phase only"]
+        Python_Anon["Python Anonymisation within Local Anaconda Env."]
     end
 
     %% Anonymisation Flow (now separated)
@@ -237,14 +241,15 @@ flowchart TD
     classDef apiNode fill:#f9cb9c,stroke:#000,stroke-width:1px;  %% Light Orange for API interaction
     classDef hostedNode fill:#d9ead3,stroke:#000,stroke-width:1px;  %% Light Green for Hosted DB elements
     classDef containerNode stroke:#000,stroke-dasharray: 5,5;  %% Dashed border for SystemC Reporting DB
-    classDef pythonEnv fill:#ffe599,stroke:#000,stroke-width:1px;  %% Light Yellow for Python Processing
+    classDef Testing fill:#ffe599,stroke:#000,stroke-width:1px;  %% Light Yellow for Python Processing
 
     %% Assign Classes
     class SystemC_DB hostedNode;
     class CMS_CSC_Schema hostedNode;
     class SSD_Tables,Child_JSON_Extract,Bulk_Populate,SSD_Staging_Anon processNode;
     class API_Powershell,API_Endpoint apiNode;
-    class Local_Anaconda_Env pythonEnv;
+    class Development_Phase_Only_Py Testing;
+    class Development_Phase_Only_DB Testing;
     class Python_Anon pythonEnv;
 
     %% Legend
@@ -255,11 +260,15 @@ flowchart TD
         style api_key fill:#f9cb9c,stroke:#000,stroke-width:1px;
         hosted_key["Hosted within CMS DB instance|Server"]
         style hosted_key fill:#d9ead3,stroke:#000,stroke-width:1px;
-        python_key["Python Processing Environment"]
+        python_key["During Development Phase"]
         style python_key fill:#ffe599,stroke:#000,stroke-width:1px;
     end
 ```
 
+### Example ssd api data staging table 
+The Phase|Stage 1 payload data is agreed as the full refresh of all payload data. Using a staging table, example shown, enables all staged 'Pending' records to be extracted by the API process. (Note: Hashed/Anonymised test data table shown here). 
+![Anon JSON records](assets/images/ssd_api_data_staging_anon_row-statuses.png)
+As per the above diagram, during development, we're aiming to replicate the live staging table using anonymised data. It's from this replicated oject that all Phase 1 & 2 tests will be run. At the point where live data from an agreed pilot/project LA can be sent, the shown api data flows will switch over to using the live staging table. During Phase|Stage 2 development (From May 2025->), the staging and API process will be further developed such that a row|record status provides the flag of which records form each delta-payload, e.g. 'New', 'Deleted', 'Updated' included with 'Unchanged' records being ignored. 
 
 
 ## Stage 2 Task Breakdown (tbc - still flushing this out)

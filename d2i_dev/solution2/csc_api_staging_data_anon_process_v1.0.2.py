@@ -1,15 +1,15 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# !! Cannot be run from Git/Spaces. Must be run locally within such as Anaconda/Python as requ' connect direct to CMS DB !! 
+# Extracts the contents of HDM_Local.ssd_api_data_staging (should already include hashed change tracking column data etc). It takes each json record from ssd_api_data_staging.json_payload and applies an anonymisation process to it, before duplicating the entire table structure and (anon)data into HDM_Local.ssd_development.ssd_api_data_staging_anon (if this already exists it will be dropped not truncated).
 
 
-# Extracts the contents of HDM_Local.ssd_api_data_staging (should already include hashed change tracking column data etc). Takes each json record from ssd_api_data_staging.json_payload and applies an anonymisation process to it. 
-# 
+# !! Cannot be run from Git/Spaces. Must be run locally( Anaconda/Python), within trusted environmemnt with ability to connect direct to CMS DB.  
+
+
 # The process takes a while. 
 # Expect to wait ~15mins start to end. E.g. "script completed in 837.49 seconds (13.96 minutes)".
-# Better to reduce row count in source tables first!! 
-# 
+
 # Current process anons the following fields:
 # - all id's incl. child (maintains duplication of entries with new hashed vals if same id exists, e.g. workers)
 # - all dates, incl. dob (random but for someone aged 10-21yrs)
@@ -18,15 +18,13 @@
 # - sex (random from DfE list of 3)
 # - postcode (random generated uk code)
 # -- and more, **ENSURE THAT YOU VERIFY your expectations against the output list produced during the processing**. 
-# 
+
 # **Note regarding ID/Data security:**
 # Within this process: 
-# #             - names are replaced entirely with fake names. 
-# #             - all ID's (person and worker) are hashed (but not salted), - deterministic one-way process and  
-# #             - in combination with the replacement of all date values with generated dates, disabilities, and ethnicity. 
+#             - names are replaced entirely with fake names. 
+#             - all ID's (person and worker) are hashed (but not salted), - deterministic one-way process and  
+#             - in combination with the replacement of all date values with generated dates, disabilities, and ethnicity. 
 # It would be computationally impossible to regenerate any persons natural|source data from the anonimised data. 
-
-# In[ ]:
 
 
 import pyodbc
