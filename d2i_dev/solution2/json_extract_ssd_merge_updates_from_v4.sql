@@ -1,5 +1,9 @@
 -- KEY: metadata={AttributeReferenceNum ,SSDReference,Mandatory,GuidanceNotes}
 
+-- maintain copy of previous/current json data  needed for purge tracking
+UPDATE ssd_api_data_staging SET previous_json_payload = json_payload;
+
+
 WITH ComputedData AS (
     SELECT top 4000
         p.pers_person_id AS person_id,
@@ -152,7 +156,7 @@ WITH ComputedData AS (
                             clae.clae_cla_placement_id AS [child_looked_after_placement_id],                        -- metadata={37,CLAE001A,True,Max 36 Chars} # TESTING
                             CONVERT(VARCHAR(10), clae.clae_cla_episode_start_date, 23) AS [start_date],             -- metadata={38,CLAE003A,False,YYYY-MM-DD} # TESTING (should this be clap.? as below)
                             LEFT(clae.clae_cla_episode_start_reason, 3) AS [start_reason],                          -- metadata={39,CLAE004A,False,See Additional Notes for list}
-                            clae.clae_cla_episode_ceased AS [ceased],                                               -- metadata={42,CLAE005A,False,YYYY-MM-DD} # TESTING
+                            clae.clae_cla_episode_ceased_date AS [ceased],                                               -- metadata={42,CLAE005A,False,YYYY-MM-DD} # TESTING
                             LEFT(clae.clae_cla_episode_ceased_reason, 3) AS [end_reason],                           -- metadata={43,CLAE006A,False,See Additional Notes for list|e.g. E11} # TESTING
 
                             -- Nested CLA Placement () # TESTING - some sub elements potentially not correctly nested here! 

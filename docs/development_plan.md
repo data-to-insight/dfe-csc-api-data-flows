@@ -14,7 +14,7 @@
 8. *Design towards potential additional fields inclusion/future changes*
 
 
-## Stage 1 Overview
+## Stage 1 Conceptual Overview
 ```mermaid
 flowchart TD
     %% Local Authority systems
@@ -102,31 +102,224 @@ flowchart TD
 
 | Task Area                           | Task                                                                                     | Status |
 |-------------------------------------|-----------------------------------------------------------------------------------------|--------|
-| **Review Initial Specification**    | Review specification for project scope                                                  | [ - ]    |
+| **Review Initial Specification**    | Review specification for project scope                                                  | [ > ]    |
 |                                     | Ensure any project required permissions/software is available                           | [ * ]    |
 |                                     | Complete API to SSD fields mapping                                                     | [ * ]    |
 | **SSD Changes**                     | Add API specified fields into SSD and data spec (?) *(pushed to public SSD front-end?)* | [ - ]    |
-|                                     | SystemC (SQL Server)                                                                  | [ * ]    |
+|                                     | SystemC (SQL Server)                                                                  | [ > ]    |
 |                                     | Mosaic (SQL Server)                                                                     | [   ]    |
-|                                     | Eclipse (Postgres)                                                                      | [   ]    |
-| **Create Documentation (Framework & Plan)** | Request client guidance on documentation preferences/standards                        | [ * ]    |
+|                                     | Eclipse (Postgres)                                                                      | [ * ]    |
+| **Create Documentation (Framework & Plan)** | Request client guidance on documentation preferences/standards                        | [ ~ ]    |
 |                                     | Create initial documentation framework *(is there an existing req standard/pref?)*      | [ - ]    |
 |                                     | Define/write up development plan stage 1                                               | [ > ]    |
-|                                     | Define/write up development plan stage 2                                               | [   ]    |
+|                                     | Define/write up development plan stage 2                                               | [ - ]    |
 | **Review and Complete SSD Backlog Tickets** | Backlog board review                                                                  | [ - ]    |
-|                                     | Work to close required backlog tickets *(known blockers)*                               | [   ]    |
-| **Write JSON Data Extract (SQL Query)** | Partial JSON extract query with Header + Top-level child details only *(process testing)* | [ - ]    |
-|                                     | Full JSON extract query with Header + Top-level child details + all sub-level elements  | [   ]    |
+|                                     | Work to close required backlog tickets *(known blockers affecting api data flow process(es) or data)*                               | [   ]    |
+| **Write JSON Data Extract (SQL Query)** | Partial JSON extract query with Header + Top-level child details only *(process testing)* | [ * ]    |
+|                                     | Full JSON extract query with Header + Top-level child details + all sub-level elements  | [ * ]    |
 | **Automate Data Extraction**        | Investigation towards suitable process/script for data extract + API workflow          | [ - ]    |
-|                                     | Develop API workflow *shell* script(s) incl. DB access, JSON query extraction          | [   ]    |
-|                                     | Test API workflow locally within host LA *(extract only)*                              | [   ]    |
-| **Create Documentation (Playbook)** | Write up final LA playbook details                                                     | [   ]    |
+|                                     | Develop API workflow *shell* script(s) incl. DB access, JSON query extraction          | [ - ]    |
+|                                     | Test API workflow locally within host LA *(extract only)*                              | [ - ]    |
+| **Create Documentation (Playbook)** | Write up final LA playbook details                                                     | [ - ]    |
 |                                     | Update documentation based on pilot LA 1 + stakeholder(s) feedback                     | [   ]    |
-| **Test API Integration with a Pilot LA** | Create/generate/Anonymise dummy data for initial API send *(SSD structure + repeatable)* | [   ]    |
-|                                     | Test with complete (non-delta) payload of null/dummy data                              | [   ]    |
-|                                     | Test each response code(s), & logging within payload table                              | [   ]    |
+| **Simulate API Integration local within ESCC** | Create/generate/Anonymise dummy data for initial API send *(SSD structure + repeatable)* | [ * ]    |
+|                                     | Test with complete (non-delta) payload of null/dummy data                              | [ * ]    |
+|                                     | Test each response code(s), & logging within payload table                              | [ ~ ]    |
+| **Test API Integration with a Pilot LA** | Test with complete (non-delta) payload of null/dummy data                              | [ ~ ]    |
+|                                     | Test each response code(s), & logging within payload table                              | [ ~ ]    |
+| **Refinements/Granular end-goal fixes** | Process to handle (mid-)record 'purges'              | [   ]    |
+|                                     | Discuss/investigate longer term/wider api use and potential process changes (e.g. do we need combined payload staging table as mid-term historic record)                     | [   ]    |
 
-## Stage 2 Overview
+
+## Stage 1 [Pt1] - Data flow to API simulated Overview (DevRef:#2) 
+
+```mermaid
+
+flowchart TD
+
+    Title["**API Data Flow - Stg1 Pt1**"]
+
+    subgraph LA_Server_Instance
+        %% SystemC Reporting Instance DB (Containing all DB-related and API elements)
+        subgraph SystemC_DB ["SystemC Reporting Instance DB"]
+            style SystemC_DB fill:#d9ead3,stroke:#000,stroke-width:1px;  %% Light Green, same as CMS CSC Schema
+
+            subgraph CMS_CSC_Schema ["CMS CSC Schema"]
+            end
+            style CMS_CSC_Schema fill:#d9ead3,stroke:#000,stroke-width:1px;  %% Light Green
+
+            CMS_CSC_Schema -->|Extract SSD Data| SSD_Tables["SSD Tables"]
+
+            %% Child-Level JSON Extract Step
+            SSD_Tables -->|SQL JSON Extract| Child_JSON_Extract["Child-level JSON Extract Process"]
+            Child_JSON_Extract -->|Extract API JSON Data| Bulk_Populate["ssd_api_data_staging table submission_status=Pending curr_prev_hash_vals=checksums"]
+
+            subgraph Development_Phase_Only_DB
+            %% Anonymised Data in DB
+            SSD_Staging_Anon["ssd_api_data_staging_anon Replicated staging table **ANONYMISED**"]
+            end
+        end
+
+    API_Powershell_Live -->|Prepare Payload and Header| API_External["API Live Call"]
+    
+        subgraph Development_Phase_Only_API ["Development Phase only"]
+            API_Powershell_Dev -->|Prepare Payload and Header| API_Simulated["API Simulated Call"]
+        
+        end
+    end
+
+
+    %% External Receiving System (Outside LA Server)
+    subgraph External_Receiving_System ["External Receiving System"]
+        style External_Receiving_System fill:#f4cccc;  %% Light Red for external systems
+        API_External -->|API Send Request| API_Endpoint
+        API_Endpoint -->|API Response Codes| API_External
+    %% API Processing (Inside LA Server)
+    
+        SSD_Staging_Anon -->|Extract JSON to API array | API_Powershell_Live["API Powershell Live"]
+        SSD_Staging_Anon -->|Extract JSON to API array | API_Powershell_Dev["API Powershell Dev"]
+    end
+
+
+    %% Ensure the return flow is fully outside LA_Server_Instance
+
+    API_Simulated -->|Simulated Test Response| API_Powershell_Dev
+    API_External -->|API Response| API_Powershell_Live
+    API_Powershell_Dev -->|Update R-Cd & sub_status| SSD_Staging_Anon
+
+    API_Powershell_Live -->|Update R-Cd & sub_status| SSD_Staging_Anon
+
+
+
+
+    %% Local Anaconda Environment for Python Processing
+    subgraph Development_Phase_Only_Py ["Development Phase only"]
+        Python_Anon["Python Anonymisation within Local Anaconda Env."]
+    end
+
+    %% Anonymisation Flow (now separated)
+    Bulk_Populate -->|Process Data for Anonymisation| Python_Anon
+    Python_Anon -->|Store Anonymised Data| SSD_Staging_Anon
+
+    %% Apply Colors Using Class Definitions
+    classDef processNode fill:#cfe2f3;  %% Light Blue for processes
+    classDef apiNode fill:#f9cb9c;  %% Light Orange for API interaction
+    classDef hostedNode fill:#d9ead3;  %% Light Green for Hosted DB elements
+    classDef Testing fill:#ffe599,stroke:#000,stroke-width:1px;  %% Light Yellow for Python Processing
+    classDef externalNode fill:#f4cccc,stroke:#000,stroke-width:1px;  %% Light Red for External Receiving System
+
+    %% Assign Classes
+    class SystemC_DB hostedNode;
+    class CMS_CSC_Schema hostedNode;
+    class SSD_Tables,Child_JSON_Extract,Bulk_Populate,SSD_Staging_Anon processNode;
+    class API_Powershell,API_External,API_Endpoint apiNode;
+    class External_Receiving_System externalNode;
+    class Development_Phase_Only_Py Testing;
+    class Development_Phase_Only_API Testing;
+    class Development_Phase_Only_DB Testing;
+    class Python_Anon pythonEnv;
+
+    %% Legend
+    subgraph Legend ["Legend"]
+        process_key["Process Steps"]
+        style process_key fill:#cfe2f3;
+        api_key["API Interaction"]
+        style api_key fill:#f9cb9c;
+        hosted_key["Hosted within CMS DB instance|Server"]
+        style hosted_key fill:#d9ead3;
+        python_key["During Development Phase"]
+        style python_key fill:#ffe599;
+        external_key["External Receiving System"]
+        style external_key fill:#f4cccc;
+    end
+
+```
+
+### Example ssd api data staging table 
+The Phase|Stage 1 payload data is agreed as the full refresh of all payload data. Using a staging table, example shown, enables all staged 'Pending' records to be extracted by the API process. (Note: Hashed/Anonymised test data table shown here). 
+![Anon JSON records](assets/images/ssd_api_data_staging_anon_row-statuses.png)
+As per the above diagram, during development, we're aiming to replicate the live staging table using anonymised data. It's from this replicated oject that all Phase 1 & 2 tests will be run. At the point where live data from an agreed pilot/project LA can be sent, the shown api data flows will switch over to using the live staging table. During Phase|Stage 2 development (From May 2025->), the staging and API process will be further developed such that a row|record status provides the flag of which records form each delta-payload, e.g. 'New', 'Deleted', 'Updated' included with 'Unchanged' records being ignored. 
+
+
+## Stage 1 [Pt2] - Switch to data hitting API endpoint Overview (DevRef:#2) 
+
+```mermaid
+flowchart TD
+
+    Title["**API Data Flow - Stg1 Pt2**"]
+
+    subgraph LA_Server_Instance
+        %% SystemC Reporting Instance DB (Containing all DB-related and API elements)
+        subgraph SystemC_DB ["SystemC Reporting Instance DB"]
+            style SystemC_DB fill:#d9ead3,stroke:#000,stroke-width:1px;  %% Light Green, same as CMS CSC Schema
+
+            subgraph CMS_CSC_Schema ["CMS CSC Schema"]
+            end
+            style CMS_CSC_Schema fill:#d9ead3,stroke:#000,stroke-width:1px;  %% Light Green
+
+            CMS_CSC_Schema -->|Extract SSD Data| SSD_Tables["SSD Tables"]
+
+            %% Child-Level JSON Extract Step
+            SSD_Tables -->|SQL JSON Extract| Child_JSON_Extract["Child-level JSON Extract Process"]
+            Child_JSON_Extract -->|Extract API JSON Data| Bulk_Populate["ssd_api_data_staging table submission_status=Pending curr_prev_hash_vals=checksums"]
+
+        end
+
+    API_Powershell_Live -->|Prepare Payload and Header| API_External["API Live Call"]
+    
+
+    end
+
+
+    %% External Receiving System (Outside LA Server)
+    subgraph External_Receiving_System ["External Receiving System"]
+        style External_Receiving_System fill:#f4cccc;  %% Light Red for external systems
+        API_External -->|API Send Request| API_Endpoint
+        API_Endpoint -->|API Response Codes| API_External
+    %% API Processing (Inside LA Server)
+    
+        Bulk_Populate -->|Extract JSON to API array | API_Powershell_Live["API Powershell Live"]
+    end
+
+
+    %% Ensure the return flow is fully outside LA_Server_Instance
+
+    API_External -->|API Response| API_Powershell_Live
+    API_Powershell_Live -->|Update R-Cd & sub_status| Bulk_Populate
+
+
+
+    %% Apply Colors Using Class Definitions
+    classDef processNode fill:#cfe2f3;  %% Light Blue for processes
+    classDef apiNode fill:#f9cb9c;  %% Light Orange for API interaction
+    classDef hostedNode fill:#d9ead3;  %% Light Green for Hosted DB elements
+    classDef Testing fill:#ffe599,stroke:#000,stroke-width:1px;  %% Light Yellow for Python Processing
+    classDef externalNode fill:#f4cccc,stroke:#000,stroke-width:1px;  %% Light Red for External Receiving System
+
+    %% Assign Classes
+    class SystemC_DB hostedNode;
+    class CMS_CSC_Schema hostedNode;
+    class SSD_Tables,Child_JSON_Extract,Bulk_Populate processNode;
+    class API_Powershell,API_External,API_Endpoint apiNode;
+    class External_Receiving_System externalNode;
+    class Python_Anon pythonEnv;
+
+    %% Legend
+    subgraph Legend ["Legend"]
+        process_key["Process Steps"]
+        style process_key fill:#cfe2f3;
+        api_key["API Interaction"]
+        style api_key fill:#f9cb9c;
+        hosted_key["Hosted within CMS DB instance|Server"]
+        style hosted_key fill:#d9ead3;
+        external_key["External Receiving System"]
+        style external_key fill:#f4cccc;
+    end
+
+```
+
+
+## Stage 2 Conceptual Overview
 
 ```mermaid
 flowchart TD
@@ -190,93 +383,12 @@ flowchart TD
 ```
 
 
-## Stage 1 Suggested Solution 2 Overview
-
-```mermaid
-
-flowchart TD
-
-    Title["**CSC API Data Flow - Stage 1 Solution 2 **"]
-
-subgraph LA_Server_Instance
-    %% SystemC Reporting Instance DB (Containing all DB-related and API elements)
-    subgraph SystemC_DB ["SystemC Reporting Instance DB"]
-        style SystemC_DB fill:#d9ead3,stroke:#000,stroke-width:1px;  %% Light Green, same as CMS CSC Schema
-
-        subgraph CMS_CSC_Schema ["CMS CSC Schema"]
-        end
-        style CMS_CSC_Schema fill:#d9ead3,stroke:#000,stroke-width:1px;  %% Light Green
-
-        CMS_CSC_Schema -->|Extract SSD Data| SSD_Tables["SSD Tables"]
-
-        %% Child-Level JSON Extract Step
-        SSD_Tables -->|SQL JSON Extract| Child_JSON_Extract["Child-level JSON Extract Process"]
-        Child_JSON_Extract -->|Extract API JSON Data| Bulk_Populate["ssd_api_data_staging table submission_status=Pending curr_prev_hash_vals=checksums"]
-
-        subgraph Development_Phase_Only_DB
-        %% Anonymised Data in DB
-        SSD_Staging_Anon["Replicated but ANON ssd_api_data_staging_anon"]
-        end
-    end
-
-        %% API Processing
-        SSD_Staging_Anon -->|Extract JSON Rows and combine to API array| API_Powershell["API - Powershell"]
-        API_Powershell -->|Send Payload and Header| API_Endpoint["API Endpoint"]
-        API_Endpoint -->|Return Response Codes| API_Powershell
-        API_Powershell -->|Update Response Codes and set submission_status| SSD_Staging_Anon
-end
-
-
-    %% Local Anaconda Environment for Python Processing
-    subgraph Development_Phase_Only_Py ["Development Phase only"]
-        Python_Anon["Python Anonymisation within Local Anaconda Env."]
-    end
-
-    %% Anonymisation Flow (now separated)
-    Bulk_Populate -->|Process Data for Anonymisation| Python_Anon
-    Python_Anon -->|Store Anonymised Data| SSD_Staging_Anon
-
-    %% Apply Colors Using Class Definitions
-    classDef processNode fill:#cfe2f3,stroke:#000,stroke-width:1px;  %% Light Blue for processes
-    classDef apiNode fill:#f9cb9c,stroke:#000,stroke-width:1px;  %% Light Orange for API interaction
-    classDef hostedNode fill:#d9ead3,stroke:#000,stroke-width:1px;  %% Light Green for Hosted DB elements
-    classDef containerNode stroke:#000,stroke-dasharray: 5,5;  %% Dashed border for SystemC Reporting DB
-    classDef Testing fill:#ffe599,stroke:#000,stroke-width:1px;  %% Light Yellow for Python Processing
-
-    %% Assign Classes
-    class SystemC_DB hostedNode;
-    class CMS_CSC_Schema hostedNode;
-    class SSD_Tables,Child_JSON_Extract,Bulk_Populate,SSD_Staging_Anon processNode;
-    class API_Powershell,API_Endpoint apiNode;
-    class Development_Phase_Only_Py Testing;
-    class Development_Phase_Only_DB Testing;
-    class Python_Anon pythonEnv;
-
-    %% Legend
-    subgraph Legend ["Legend"]
-        process_key["Process Steps"]
-        style process_key fill:#cfe2f3,stroke:#000,stroke-width:1px;
-        api_key["API Interaction"]
-        style api_key fill:#f9cb9c,stroke:#000,stroke-width:1px;
-        hosted_key["Hosted within CMS DB instance|Server"]
-        style hosted_key fill:#d9ead3,stroke:#000,stroke-width:1px;
-        python_key["During Development Phase"]
-        style python_key fill:#ffe599,stroke:#000,stroke-width:1px;
-    end
-```
-
-### Example ssd api data staging table 
-The Phase|Stage 1 payload data is agreed as the full refresh of all payload data. Using a staging table, example shown, enables all staged 'Pending' records to be extracted by the API process. (Note: Hashed/Anonymised test data table shown here). 
-![Anon JSON records](assets/images/ssd_api_data_staging_anon_row-statuses.png)
-As per the above diagram, during development, we're aiming to replicate the live staging table using anonymised data. It's from this replicated oject that all Phase 1 & 2 tests will be run. At the point where live data from an agreed pilot/project LA can be sent, the shown api data flows will switch over to using the live staging table. During Phase|Stage 2 development (From May 2025->), the staging and API process will be further developed such that a row|record status provides the flag of which records form each delta-payload, e.g. 'New', 'Deleted', 'Updated' included with 'Unchanged' records being ignored. 
-
-
 ## Stage 2 Task Breakdown (tbc - still flushing this out)
 
 
 | Task Area                                 | Task                                                                        | Status |
 |-------------------------------------------|-----------------------------------------------------------------------------|--------|
-| **Enable SSD Row-Level Change Tracking**  | Develop mechanism(s) to enable SSD/record change tracking                  | [   ]    |
+| **Enable SSD Row-Level Change Tracking**  | Develop mechanism(s) to enable SSD/record change tracking                  | [ - ]    |
 |                                           | Re-develop API process to integrate change tracking/record-level deltas    | [   ]    |
 | **Provide Configuration Playbook and Guidance for LAs** | SystemC                                                                | [   ]    |
 |                                           | Mosaic                                                                     | [   ]    |
