@@ -137,6 +137,26 @@ flowchart TD
 
 flowchart TD
 
+    %% Legend
+    subgraph Legend ["Legend"]
+        process_key["Process Steps"]
+        style process_key fill:#cfe2f3;
+        api_key["API Interaction"]
+        style api_key fill:#f9cb9c;
+        hosted_key["Hosted CMS DB Server"]
+        style hosted_key fill:#d9ead3;
+        python_key["During Development Phase"]
+        style python_key fill:#ffe599;
+        external_key["External Receiving System"]
+        style external_key fill:#f4cccc;
+    end
+
+```
+
+```mermaid
+
+flowchart TD
+
     Title["**API Data Flow - Stg1 Pt1**"]
 
     subgraph LA_Server_Instance
@@ -218,32 +238,21 @@ flowchart TD
     class Development_Phase_Only_API Testing;
     class Development_Phase_Only_DB Testing;
     class Python_Anon pythonEnv;
-
-    %% Legend
-    subgraph Legend ["Legend"]
-        process_key["Process Steps"]
-        style process_key fill:#cfe2f3;
-        api_key["API Interaction"]
-        style api_key fill:#f9cb9c;
-        hosted_key["Hosted within CMS DB instance|Server"]
-        style hosted_key fill:#d9ead3;
-        python_key["During Development Phase"]
-        style python_key fill:#ffe599;
-        external_key["External Receiving System"]
-        style external_key fill:#f4cccc;
-    end
-
+    
 ```
 
-### Example ssd api data staging table 
+### Ref: ssd_api_data_staging table shown
 The Phase|Stage 1 payload data is agreed as the full refresh of all payload data. Using a staging table, example shown, enables all staged 'Pending' records to be extracted by the API process. (Note: Hashed/Anonymised test data table shown here). 
 ![Anon JSON records](assets/images/ssd_api_data_staging_anon_row-statuses.png)
-As per the above diagram, during development, we're aiming to replicate the live staging table using anonymised data. It's from this replicated oject that all Phase 1 & 2 tests will be run. At the point where live data from an agreed pilot/project LA can be sent, the shown api data flows will switch over to using the live staging table. During Phase|Stage 2 development (From May 2025->), the staging and API process will be further developed such that a row|record status provides the flag of which records form each delta-payload, e.g. 'New', 'Deleted', 'Updated' included with 'Unchanged' records being ignored. 
+As per the above diagram, during development, we're aiming to replicate the live staging table using anonymised data. It's from this replicated oject that all Phase 1 tests will be run. At the point where live data from an agreed pilot/project LA can be sent, the shown api data flows will switch over to using the live staging table. During Phase|Stage 2 development (From May 2025->), the staging and API process will be further developed such that a row|record status provides the flag of which records form each delta-payload, e.g. 'New', 'Deleted', 'Updated' included with 'Unchanged' records being ignored. 
 
 
 ## Stage 1 [Pt2] - Switch to data hitting API endpoint Overview (DevRef:#2) 
 
+Essentially as above Pt1, but (full payload) data flow now hitting defined endpoint, It's recommended that initially this be continued using only the anonymised data, and thus retain the 'development' process areas defined above(orange). But the aim being when appropriate, with stakeholder agreement to move the data interactions onto live data development and anonymisation processes dropped. This however won't be possible until a pilot LA is on-boarded to enable this unless current host LA is already an agreed partner in the pilot group. 
+  
 ```mermaid
+
 flowchart TD
 
     Title["**API Data Flow - Stg1 Pt2**"]
@@ -288,7 +297,6 @@ flowchart TD
     API_Powershell_Live -->|Update R-Cd & sub_status| Bulk_Populate
 
 
-
     %% Apply Colors Using Class Definitions
     classDef processNode fill:#cfe2f3;  %% Light Blue for processes
     classDef apiNode fill:#f9cb9c;  %% Light Orange for API interaction
@@ -304,22 +312,12 @@ flowchart TD
     class External_Receiving_System externalNode;
     class Python_Anon pythonEnv;
 
-    %% Legend
-    subgraph Legend ["Legend"]
-        process_key["Process Steps"]
-        style process_key fill:#cfe2f3;
-        api_key["API Interaction"]
-        style api_key fill:#f9cb9c;
-        hosted_key["Hosted within CMS DB instance|Server"]
-        style hosted_key fill:#d9ead3;
-        external_key["External Receiving System"]
-        style external_key fill:#f4cccc;
-    end
-
 ```
 
 
 ## Stage 2 Conceptual Overview
+
+Once stage 1 pt2 is achieved, development work to refine the full data payloads into record-level update deltas is started. 
 
 ```mermaid
 flowchart TD
@@ -388,11 +386,11 @@ flowchart TD
 
 | Task Area                                 | Task                                                                        | Status |
 |-------------------------------------------|-----------------------------------------------------------------------------|--------|
-| **Enable SSD Row-Level Change Tracking**  | Develop mechanism(s) to enable SSD/record change tracking                  | [ - ]    |
+| **Enable SSD Row-Level Change Tracking**  | Develop mechanism(s) to enable record-level/deltas change tracking                  | [ - ]    |
 |                                           | Re-develop API process to integrate change tracking/record-level deltas    | [   ]    |
-| **Provide Configuration Playbook and Guidance for LAs** | SystemC                                                                | [   ]    |
-|                                           | Mosaic                                                                     | [   ]    |
-|                                           | Eclipse                                                                    | [   ]    |
+| **Provide Configuration Playbook and Guidance for LAs** | SystemC                                                                | [ - ]    |
+|                                           | Mosaic                                                                     | [ ~ ]    |
+|                                           | Eclipse                                                                    | [ ~ ]    |
 | **Expand Pilot**                          | Expand pilot to further LAs with D2I support                               | [   ]    |
 
 
