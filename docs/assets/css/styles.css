@@ -57,8 +57,6 @@ ul.task-list {
     line-height: 1.4 !important;
 }
 
-
-
 /* development tables */
 table {
     width: 100%;
@@ -74,15 +72,6 @@ th {
     background-color: #f4f4f4;
 }
 
-td:contains("[x]") {
-    color: green;
-    font-weight: bold;
-}
-
-td:contains("[ ]") {
-    color: red;
-    font-style: italic;
-}
 
 /* collapsable key */ 
 details summary {
@@ -95,4 +84,37 @@ details summary:hover {
 /* key end */
 
 
+/* Dev task list break down progress markers */ 
+[data-status="completed"] { color: green; font-weight: bold; }
+[data-status="in-progress"] { color: orange; font-weight: bold; }
+[data-status="testing"] { color: blue; font-weight: bold; }
+[data-status="ready-review"] { color: purple; font-weight: bold; }
+[data-status="blocked"] { color: red; font-weight: bold; }
+[data-status="not-started"] { color: gray; font-style: italic; }
+
+
+
 /* end development tables */
+
+
+/* Fix for PDF Export - Ensure Print Compatibility */
+@media print {
+    /* Only apply colors & styles relevant for PDFs */
+    [data-status="completed"] { color: green; font-weight: bold; }
+    [data-status="in-progress"] { color: orange; font-weight: bold; }
+    [data-status="testing"] { color: blue; font-weight: bold; }
+    [data-status="ready-review"] { color: purple; font-weight: bold; }
+    [data-status="blocked"] { color: red; font-weight: bold; }
+    [data-status="not-started"] { color: gray; font-style: italic; }
+
+    /* Remove animations and unsupported properties */
+    * {
+        animation: none !important;
+        transition: none !important;
+        scroll-behavior: auto !important;
+    }
+
+    /* Fix task list boxes for print */
+    input[type="checkbox"] { visibility: hidden; }
+}
+}

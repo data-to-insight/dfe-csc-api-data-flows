@@ -93,26 +93,26 @@ WHERE addr_table_id IN (
 
 -- FIX the testing environment after subsequent changes on SSD have been brought through as part of testing. 
 UPDATE ssd_api_data_staging
-            SET submission_status = 'Sent', -- Status: Pending, Sent, Error
+            SET submission_status = 'sent', -- Status: Pending, Sent, Error
                 api_response = 'Simulated API Call'
-            WHERE row_state = 'Unchanged'; -- new, updated, deleted, unchanged
+            WHERE row_state = 'unchanged'; -- new, updated, deleted, unchanged
 
 
 
 UPDATE ssd_api_data_staging_anon
-            SET submission_status = 'Sent', -- Status: Pending, Sent, Error
+            SET submission_status = 'sent', -- Status: Pending, Sent, Error
                 api_response = 'Simulated API Call'
-            WHERE row_state = 'Unchanged'; -- new, updated, deleted, unchanged
+            WHERE row_state = 'unchanged'; -- new, updated, deleted, unchanged
 
 
 
 -- Update 30% of Rows to become DEleted status
 UPDATE [HDM_Local].[ssd_development].[ssd_api_data_staging_anon]
-SET submission_status = 'Pending', api_response = NULL, row_state = 'Deleted'
+SET submission_status = 'pending', api_response = NULL, row_state = 'deleted'
 WHERE row_state IN (
     SELECT TOP (30) PERCENT row_state
     FROM [HDM_Local].[ssd_development].[ssd_api_data_staging_anon]
-    WHERE row_state = 'Unchanged'
+    WHERE row_state = 'unchanged'
 );
 -- -- OR DELETE at source:
 -- WITH PersonsToDelete AS (
@@ -151,4 +151,4 @@ WHERE id IN (
 
 
 select * from ssd_api_data_staging_anon;
-select * from ssd_api_data_staging_anon where submission_status != 'Sent' and row_state != 'Deleted';
+select * from ssd_api_data_staging_anon where submission_status != 'sent' and row_state != 'deleted';

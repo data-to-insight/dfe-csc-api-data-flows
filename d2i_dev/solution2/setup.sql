@@ -199,3 +199,28 @@ select * from ssd_api_data_staging;
 
 
 
+
+
+
+
+-- Copy data from newly set up _anon staging to backup table. 
+
+use hdm_local;
+
+-- SELECT * INTO ssd_api_data_staging_anon_backup 
+-- FROM ssd_api_data_staging_anon
+-- WHERE 1=0;
+
+-- INSERT INTO ssd_api_data_staging_anon_backup
+-- SELECT * FROM ssd_api_data_staging_anon;
+
+-- select * from ssd_api_data_staging_anon;
+
+
+-- and back if/when needed
+TRUNCATE TABLE ssd_api_data_staging_anon;
+INSERT INTO ssd_api_data_staging_anon
+SELECT * FROM ssd_api_data_staging_anon_backup
+TABLESAMPLE SYSTEM (50);  -- Approx. 50% 
+
+select * from ssd_api_data_staging_anon;

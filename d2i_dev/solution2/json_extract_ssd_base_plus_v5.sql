@@ -2,19 +2,20 @@
 IF OBJECT_ID('ssd_api_data_staging', 'U') IS NOT NULL DROP TABLE ssd_api_data_staging;
 
 -- includes initialisation values on submission_status/row_state
-CREATE TABLE ssd_api_data_staging (
-    id INT IDENTITY(1,1)            PRIMARY KEY,           
-    person_id                       NVARCHAR(48) NULL,                      -- Link value (_person_id or equivalent)
-    json_payload                    NVARCHAR(MAX) NOT NULL,                 -- JSON data payload
-    previous_json_payload           NVARCHAR(MAX) NULL;                     -- Enable sub-attribute purge tracking
-    current_hash                    BINARY(32) NULL,                        -- Current hash of JSON payload
-    previous_hash                   BINARY(32) NULL,                        -- Previous hash of JSON payload
-    submission_status               NVARCHAR(50) DEFAULT 'Pending',         -- Status: Pending, Sent, Error
-    submission_timestamp            DATETIME,                               -- Timestamp on API submission
-    api_response                    NVARCHAR(MAX) NULL,                     -- API response or error messages
-    row_state                       NVARCHAR(10) DEFAULT 'New',             -- Record state: New, Updated, Deleted, Unchanged
-    last_updated                    DATETIME DEFAULT GETDATE()              -- Last update timestamp
+CREATE TABLE ssd_api_data_staging_anon (
+    id                      INT IDENTITY(1,1) PRIMARY KEY,           
+    person_id               NVARCHAR(48) NULL,              -- Link value (_person_id or equivalent)
+    previous_json_payload   NVARCHAR(MAX) NULL,             -- Enable sub-attribute purge tracking
+    json_payload            NVARCHAR(MAX) NOT NULL,         -- JSON data payload
+    previous_hash           BINARY(32) NULL,                -- Previous hash of JSON payload
+    current_hash            BINARY(32) NULL,                -- Current hash of JSON payload
+    row_state               NVARCHAR(10) DEFAULT 'new',     -- Record state: New, Updated, Deleted, Unchanged
+    last_updated            DATETIME DEFAULT GETDATE(),     -- Last update timestamp
+    submission_status       NVARCHAR(50) DEFAULT 'pending', -- Status: Pending, Sent, Error
+    api_response            NVARCHAR(MAX) NULL,             -- API response or error messages
+    submission_timestamp    DATETIME                        -- Timestamp on API submission
 );
+
 
 -- Optimisations...
 CREATE NONCLUSTERED INDEX ssd_idx_person_hash ON ssd_api_data_staging (person_id, current_hash, row_state); -- Lookups for change tracking

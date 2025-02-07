@@ -315,16 +315,17 @@ try:
     cursor.execute("DROP TABLE IF EXISTS ssd_api_data_staging_anon")
     cursor.execute("""
         CREATE TABLE ssd_api_data_staging_anon (
-            id INT PRIMARY KEY,
-            person_id NVARCHAR(48) NULL,
-            json_payload NVARCHAR(MAX) NOT NULL,
-            current_hash BINARY(32) NULL,
-            previous_hash BINARY(32) NULL,
-            submission_status NVARCHAR(50) DEFAULT 'Pending',
-            submission_timestamp DATETIME DEFAULT GETDATE(),
-            api_response NVARCHAR(MAX) NULL,
-            row_state NVARCHAR(10) DEFAULT 'new',
-            last_updated DATETIME DEFAULT GETDATE()
+    id                      INT PRIMARY KEY,           
+    person_id               NVARCHAR(48) NULL,              -- Link value (_person_id or equivalent)
+    previous_json_payload   NVARCHAR(MAX) NULL,             -- Enable sub-attribute purge tracking
+    json_payload            NVARCHAR(MAX) NULL,             -- JSON data payload
+    previous_hash           BINARY(32) NULL,                -- Previous hash of JSON payload
+    current_hash            BINARY(32) NULL,                -- Current hash of JSON payload
+    row_state               NVARCHAR(10) NULL,              -- Record state: New, Updated, Deleted, Unchanged
+    last_updated            DATETIME NULL,                  -- Last update timestamp
+    submission_status       NVARCHAR(50) NULL,              -- Status: pending, sent, error
+    api_response            NVARCHAR(MAX) NULL,             -- API response or error messages
+    submission_timestamp    DATETIME                        -- Timestamp on API submission
         )
     """)
     table_creation_time = time.time() - table_creation_start_time
@@ -341,8 +342,22 @@ try:
     column_placeholders = ", ".join(["?"] * len(column_names))
     insert_query = f"INSERT INTO ssd_api_data_staging_anon ({', '.join(column_names)}) VALUES ({column_placeholders})"
     cursor.executemany(insert_query, processed_data)
+
     insert_time = time.time() - insert_start_time
     print(f"inserted all processed records into ssd_api_data_staging_anon in {insert_time:.2f} seconds.")
+
+    # in case not coming accross with existing payload history
+    # Post-insert update fill NULL values in previous_json_payload with json_payload
+    update_start_time = time.time()
+    cursor.execute("""
+        UPDATE ssd_api_data_staging_anon
+        SET previous_json_payload = json_payload
+        WHERE previous_json_payload IS NULL
+    """)
+    
+    update_time = time.time() - update_start_time
+    print(f"Updated previous_json_payload where NULL in {update_time:.2f} seconds.")
+
 except pyodbc.Error as e:
     print(f"error inserting data: {e}")
     raise
@@ -365,8 +380,6 @@ total_time_minutes = total_time / 60
 
 print(f"script completed in {total_time:.2f} seconds ({total_time_minutes:.2f} minutes).")
 
-
-# In[ ]:
 
 
 

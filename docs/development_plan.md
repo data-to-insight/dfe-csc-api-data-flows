@@ -2,8 +2,7 @@
 
 ## D2I Development Plan Overview
 
-
-## Stage 1 & 2 Key Objectives
+## Key Objectives (S1&S2)
 1. Extract specified data sub-set as JSON via query 
 2. Provide capability for automated JSON query extract via script
 3. Enhance automated JSON query extract(now payload) to enable send to defined API endpoint
@@ -14,7 +13,7 @@
 8. *Design towards potential additional fields inclusion/future changes*
 
 
-## Stage 1 Conceptual Overview
+## Conceptual Overview (S1)
 ```mermaid
 flowchart TD
     %% Local Authority systems
@@ -83,55 +82,47 @@ flowchart TD
 
 
 
-## Stage 1 Task Breakdown
-
+## Project Breakdown (S1)
 <details>
 <summary><strong>Development Task Status Key</strong></summary>
 
-[   ] Not started |
-[ - ] In progress | 
-[ * ] Testing | 
-[ x ] Completed | 
-
-[ > ] Ready for Review | 
-[ ~ ] Blocked | 
-[ D ] Deferred  
+✅ Completed | 🔄 In Progress | 🚀 Ready for Review | 🛠 Testing  
+🔲 Not Started | ⏳ Blocked | 🗄 Deferred  
 
 </details>
 
-
 | Task Area                           | Task                                                                                     | Status |
 |-------------------------------------|-----------------------------------------------------------------------------------------|--------|
-| **Review Initial Specification**    | Review specification for project scope                                                  | [ > ]    |
-|                                     | Ensure any project required permissions/software is available                           | [ * ]    |
-|                                     | Complete API to SSD fields mapping                                                     | [ * ]    |
-| **SSD Changes**                     | Add API specified fields into SSD and data spec (?) *(pushed to public SSD front-end?)* | [ - ]    |
-|                                     | SystemC (SQL Server)                                                                  | [ > ]    |
-|                                     | Mosaic (SQL Server)                                                                     | [   ]    |
-|                                     | Eclipse (Postgres)                                                                      | [ * ]    |
-| **Create Documentation (Framework & Plan)** | Request client guidance on documentation preferences/standards                        | [ ~ ]    |
-|                                     | Create initial documentation framework *(is there an existing req standard/pref?)*      | [ - ]    |
-|                                     | Define/write up development plan stage 1                                               | [ > ]    |
-|                                     | Define/write up development plan stage 2                                               | [ - ]    |
-| **Review and Complete SSD Backlog Tickets** | Backlog board review                                                                  | [ - ]    |
-|                                     | Work to close required backlog tickets *(known blockers affecting api data flow process(es) or data)*                               | [   ]    |
-| **Write JSON Data Extract (SQL Query)** | Partial JSON extract query with Header + Top-level child details only *(process testing)* | [ * ]    |
-|                                     | Full JSON extract query with Header + Top-level child details + all sub-level elements  | [ * ]    |
-| **Automate Data Extraction**        | Investigation towards suitable process/script for data extract + API workflow          | [ - ]    |
-|                                     | Develop API workflow *shell* script(s) incl. DB access, JSON query extraction          | [ - ]    |
-|                                     | Test API workflow locally within host LA *(extract only)*                              | [ - ]    |
-| **Create Documentation (Playbook)** | Write up final LA playbook details                                                     | [ - ]    |
-|                                     | Update documentation based on pilot LA 1 + stakeholder(s) feedback                     | [   ]    |
-| **Simulate API Integration local within ESCC** | Create/generate/Anonymise dummy data for initial API send *(SSD structure + repeatable)* | [ * ]    |
-|                                     | Test with complete (non-delta) payload of null/dummy data                              | [ * ]    |
-|                                     | Test each response code(s), & logging within payload table                              | [ ~ ]    |
-| **Test API Integration with a Pilot LA** | Test with complete (non-delta) payload of null/dummy data                              | [ ~ ]    |
-|                                     | Test each response code(s), & logging within payload table                              | [ ~ ]    |
-| **Refinements/Granular end-goal fixes** | Process to handle (mid-)record 'purges'              | [   ]    |
-|                                     | Discuss/investigate longer term/wider api use and potential process changes (e.g. do we need combined payload staging table as mid-term historic record)                     | [   ]    |
+| **Review Initial Specification**    | Review specification for project scope                                                  | <span data-status="ready-review">🚀 Ready for Review</span> |
+|                                     | Ensure any project required permissions/software is available                           | <span data-status="testing">🛠 Testing</span> |
+|                                     | Complete API to SSD fields mapping                                                     | <span data-status="testing">🛠 Testing</span> |
+| **SSD Changes**                     | Add API specified fields into SSD and data spec *(pushed to public SSD front-end?)*    | <span data-status="in-progress">🔄 In Progress</span> |
+|                                     | SystemC (SQL Server)                                                                    | <span data-status="ready-review">🚀 Ready for Review</span> |
+|                                     | Mosaic (SQL Server)                                                                     | <span data-status="not-started">🔲 Not Started</span> |
+|                                     | Eclipse (Postgres)                                                                      | <span data-status="testing">🛠 Testing</span> |
+| **Create Documentation (Framework & Plan)** | Request client guidance on documentation preferences/standards                        | <span data-status="blocked">⏳ Blocked</span> |
+|                                     | Create initial documentation framework *(is there an existing req standard/pref?)*      | <span data-status="in-progress">🔄 In Progress</span> |
+|                                     | Define/write up development plan stage 1                                               | <span data-status="ready-review">🚀 Ready for Review</span> |
+|                                     | Define/write up development plan stage 2                                               | <span data-status="in-progress">🔄 In Progress</span> |
+| **Review and Complete SSD Backlog Tickets** | Backlog board review                                                                  | <span data-status="in-progress">🔄 In Progress</span> |
+|                                     | Work to close required backlog tickets *(known blockers affecting API data flow processes or data)* | <span data-status="not-started">🔲 Not Started</span> |
+| **Write JSON Data Extract (SQL Query)** | Partial JSON extract query with Header + Top-level child details only *(process testing)* | <span data-status="testing">🛠 Testing</span> |
+|                                     | Full JSON extract query with Header + Top-level child details + all sub-level elements  | <span data-status="testing">🛠 Testing</span> |
+| **Automate Data Extraction**        | Investigation towards suitable process/script for data extract + API workflow          | <span data-status="in-progress">🔄 In Progress</span> |
+|                                     | Develop API workflow *shell* script(s) incl. DB access, JSON query extraction          | <span data-status="in-progress">🔄 In Progress</span> |
+|                                     | Test API workflow locally within host LA *(extract only)*                              | <span data-status="in-progress">🔄 In Progress</span> |
+| **Create Documentation (Playbook)** | Write up final LA playbook details                                                     | <span data-status="in-progress">🔄 In Progress</span> |
+|                                     | Update documentation based on pilot LA 1 + stakeholder(s) feedback                     | <span data-status="not-started">🔲 Not Started</span> |
+| **Simulate API Integration local within ESCC** | Create/generate/Anonymise dummy data for initial API send *(SSD structure + repeatable)* | <span data-status="testing">🛠 Testing</span> |
+|                                     | Test with complete (non-delta) payload of null/dummy data                              | <span data-status="testing">🛠 Testing</span> |
+|                                     | Test each response code(s), & logging within payload table                              | <span data-status="blocked">⏳ Blocked</span> |
+| **Test API Integration with a Pilot LA** | Test with complete (non-delta) payload of null/dummy data                              | <span data-status="blocked">⏳ Blocked</span> |
+|                                     | Test each response code(s), & logging within payload table                              | <span data-status="blocked">⏳ Blocked</span> |
+| **Refinements/Granular end-goal fixes** | Process to handle (mid-)record 'purges'              | <span data-status="not-started">🔲 Not Started</span> |
+|                                     | Discuss/investigate longer term/wider API use and potential process changes *(e.g. do we need combined payload staging table as mid-term historic record)* | <span data-status="not-started">🔲 Not Started</span> |
 
 
-## Stage 1 [Pt1] - Data flow to API simulated Overview (DevRef:#2) 
+## Simulated API Overview (S1 #1)
 
 ```mermaid
 
@@ -180,10 +171,10 @@ flowchart TD
             end
         end
 
-    API_Powershell_Live -->|Prepare Payload and Header| API_External["API Live Call"]
+    API_Powershell_Live -->|Anon API Array Payload+Header| API_External["API Live Call"]
     
         subgraph Development_Phase_Only_API ["Development Phase only"]
-            API_Powershell_Dev -->|Prepare Payload and Header| API_Simulated["API Simulated Call"]
+            API_Powershell_Dev -->|Anon API Array Payload| API_Simulated["API Simulated Call"]
         
         end
     end
@@ -196,25 +187,25 @@ flowchart TD
         API_Endpoint -->|API Response Codes| API_External
     %% API Processing (Inside LA Server)
     
-        SSD_Staging_Anon -->|Extract JSON to API array | API_Powershell_Live["API Powershell Live"]
-        SSD_Staging_Anon -->|Extract JSON to API array | API_Powershell_Dev["API Powershell Dev"]
+        SSD_Staging_Anon -->|Extract Anon JSON | API_Powershell_Live["API Powershell Live"]
+        SSD_Staging_Anon -->|Extract Anon JSON | API_Powershell_Dev["API Powershell Dev"]
     end
 
 
     %% Ensure the return flow is fully outside LA_Server_Instance
 
     API_Simulated -->|Simulated Test Response| API_Powershell_Dev
-    API_External -->|API Response| API_Powershell_Live
+    API_External -->|Handle API Response| API_Powershell_Live
     API_Powershell_Dev -->|Update R-Cd & sub_status| SSD_Staging_Anon
 
-    API_Powershell_Live -->|Update R-Cd & sub_status| SSD_Staging_Anon
+    API_Powershell_Live -->|Update R-Code & status| SSD_Staging_Anon
 
 
 
 
     %% Local Anaconda Environment for Python Processing
     subgraph Development_Phase_Only_Py ["Development Phase only"]
-        Python_Anon["Python Anonymisation within Local Anaconda Env."]
+        Python_Anon["Python Anonymisation in Local Anaconda Env."]
     end
 
     %% Anonymisation Flow (now separated)
@@ -241,21 +232,21 @@ flowchart TD
     
 ```
 
-### Ref: ssd_api_data_staging table shown
-The Phase|Stage 1 payload data is agreed as the full refresh of all payload data. Using a staging table, example shown, enables all staged 'Pending' records to be extracted by the API process. (Note: Hashed/Anonymised test data table shown here). 
+### Ref: ssd_api_data_staging
+The Stage 1(S1) payload data is agreed as the full refresh of all payload data. A staging table, added to the core SSD implementation is the suggested method towards achieving this and onward stages, an example shown here. This enables all staged 'Pending' records to be extracted by the API process. (Note: Hashed/Anonymised test data table shown here). 
 ![Anon JSON records](assets/images/ssd_api_data_staging_anon_row-statuses.png)
 As per the above diagram, during development, we're aiming to replicate the live staging table using anonymised data. It's from this replicated oject that all Phase 1 tests will be run. At the point where live data from an agreed pilot/project LA can be sent, the shown api data flows will switch over to using the live staging table. During Phase|Stage 2 development (From May 2025->), the staging and API process will be further developed such that a row|record status provides the flag of which records form each delta-payload, e.g. 'New', 'Deleted', 'Updated' included with 'Unchanged' records being ignored. 
 
 
-## Stage 1 [Pt2] - Switch to data hitting API endpoint Overview (DevRef:#2) 
+## Switch to data hitting API endpoint Overview (S1 #2) 
 
-Essentially as above Pt1, but (full payload) data flow now hitting defined endpoint, It's recommended that initially this be continued using only the anonymised data, and thus retain the 'development' process areas defined above(orange). But the aim being when appropriate, with stakeholder agreement to move the data interactions onto live data development and anonymisation processes dropped. This however won't be possible until a pilot LA is on-boarded to enable this unless current host LA is already an agreed partner in the pilot group. 
+Essentially as #1 above, but switch to (full payload) data hitting defined endpoint. It's recommended that initially this be continued using only the anonymised data, and thus retain the 'development' process areas defined above(orange). The aim that when agreed, to shift the data flow onto live data, dropping the anonymisation processes labelled in the diagram as in development. 
   
 ```mermaid
 
 flowchart TD
 
-    Title["**API Data Flow - Stg1 Pt2**"]
+    Title["**API Data Flow - S1 #2**"]
 
     subgraph LA_Server_Instance
         %% SystemC Reporting Instance DB (Containing all DB-related and API elements)
@@ -315,9 +306,9 @@ flowchart TD
 ```
 
 
-## Stage 2 Conceptual Overview
+## Conceptual Overview (S2)
 
-Once stage 1 pt2 is achieved, development work to refine the full data payloads into record-level update deltas is started. 
+On completion of Stage 1 #2, development work shifts to refine the full data payloads into record-level update deltas. This to be combined with both the ongoing support of, and wider take-on where agreed pilot LAs into the testing/development of the API data flow process. 
 
 ```mermaid
 flowchart TD
@@ -381,17 +372,17 @@ flowchart TD
 ```
 
 
-## Stage 2 Task Breakdown (tbc - still flushing this out)
+## Project Breakdown (S2) (tbc)
 
 
 | Task Area                                 | Task                                                                        | Status |
 |-------------------------------------------|-----------------------------------------------------------------------------|--------|
-| **Enable SSD Row-Level Change Tracking**  | Develop mechanism(s) to enable record-level/deltas change tracking                  | [ - ]    |
-|                                           | Re-develop API process to integrate change tracking/record-level deltas    | [   ]    |
-| **Provide Configuration Playbook and Guidance for LAs** | SystemC                                                                | [ - ]    |
-|                                           | Mosaic                                                                     | [ ~ ]    |
-|                                           | Eclipse                                                                    | [ ~ ]    |
-| **Expand Pilot**                          | Expand pilot to further LAs with D2I support                               | [   ]    |
+| **Enable SSD Row-Level Change Tracking**  | Develop mechanism(s) to enable record-level/deltas change tracking         | <span data-status="in-progress">🔄 In Progress</span> |
+|                                           | Re-develop API process to integrate change tracking/record-level deltas    | <span data-status="not-started">🔲 Not Started</span> |
+| **Provide Configuration Playbook and Guidance for LAs** | SystemC                                                                | <span data-status="in-progress">🔄 In Progress</span> |
+|                                           | Mosaic                                                                     | <span data-status="blocked">⏳ Blocked</span> |
+|                                           | Eclipse                                                                    | <span data-status="blocked">⏳ Blocked</span> |
+| **Expand Pilot**                          | Expand pilot to further LAs with D2I support                               | <span data-status="not-started">🔲 Not Started</span> |
 
 
 

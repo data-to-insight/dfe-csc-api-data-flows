@@ -1,12 +1,12 @@
 # JSON Payload Structure
-[draft: 160125]
 
-Using specification v0.7
-The following represent the hierarchical JSON structure expected for data payload. 
-Added visual representation variations for wider team(s) reference. 
+For your reference only. The following represents the JSON structure expected for payload data. 
+Visual representation variations shown here in case useful for wider team(s). 
 
 
 ## JSON Overview:
+
+Dev ref: Structure based on specification v0.7
 
 ![JSON Structure](assets/images/json_payload_structure_diagram_v0.7.png)
 

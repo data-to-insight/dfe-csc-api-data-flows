@@ -1,5 +1,4 @@
 # Stakeholders
-[draft: 160125]
 
 ## Key Stakeholders
 ### Data to Insight (D2I)

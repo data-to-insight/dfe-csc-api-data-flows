@@ -80,7 +80,7 @@ try {
 
 # # no payload data retrieved?
 if ($data -eq $null -or $data.Count -eq 0) {
-    Write-Host "No payload record with 'Pending' status found. Check SSD and/or $api_data_staging_table has been refreshed."
+    Write-Host "No payload record with 'pending' status found. Check SSD and/or $api_data_staging_table has been refreshed."
     return
 }
 

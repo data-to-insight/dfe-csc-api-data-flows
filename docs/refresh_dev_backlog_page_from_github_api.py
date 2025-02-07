@@ -37,7 +37,7 @@ response = requests.post(URL, headers=HEADERS, json={"query": QUERY})
 data = response.json()
 
 # Filter CSC_API_Data_Flows project (from all d2i projects)
-PROJECT_NAME = "csc_api_data_flows" # note: named based search so name musty match 1:1 
+PROJECT_NAME = "csc_api_data_flows" # note: name|string based search so name must match 1:1 
 
 if "data" in data:
     projects = data["data"]["organization"]["projectsV2"]["nodes"]
@@ -53,8 +53,8 @@ if "data" in data:
         # open markdown git_dev_backlog file to write
         with open("docs/git_dev_backlog.md", "w") as f:
             f.write(f"# {title} Github Dev Backlog\n\n")
-            f.write(f"## Simplified Tasks Overview\n")
-            f.write(f"### Note: list combines multiple streams Backlog/Epic/InProg/Completed\n")
+            f.write(f"## Tasks Overview\n")
+            f.write(f"### Backlog/Epic/InProg/Completed\n")
             f.write(f"[View Board]({url})\n\n")
 
             if issues:
@@ -67,6 +67,7 @@ if "data" in data:
             else:
                 f.write("_No issues found._\n")
 
+        # Below output is console update(s) only, does not appear on resultant .md page
         print("Generated git_dev_backlog.md - ready to deploy/serve to front-end now")
     else:
         print(f"Project '{PROJECT_NAME}' not found.")
