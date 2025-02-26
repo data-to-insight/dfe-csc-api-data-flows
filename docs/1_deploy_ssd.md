@@ -19,7 +19,7 @@ Feedback welcomed regarding any aspect of the SSD, or it's continuous change pro
 
 **Deploy the SSD**:
 
- - SSD deployment script(s) will be supplied for your CMS type from [SSD distribution repo] (https://github.com/data-to-insight/ssd-data-model/tree/main/deployment_extracts). Depending on CMS type, the SSD deployment may/may not require any localised configuration.
+ - SSD deployment script(s) will be supplied for your CMS type from [SSD distribution repo] (https://github.com/data-to-insight/ssd-data-model/tree/main/deployment_extracts). Depending on CMS type, the SSD deployment may/may not require any localised configuration. 
  - Script deployment is done via SQL client, with connection to your CMS DB reporting instance e.g. SQL Server Management Studio|Azure Data Studio.
  - Log any fail points during the SSD setup and feedback asap to D2I for support and next steps.
  - See below for the deployment steps for your particular CMS type. 
@@ -37,10 +37,10 @@ Feedback welcomed regarding any aspect of the SSD, or it's continuous change pro
 
 ## SSD Config: SystemC (SQL Server)
 
-- Download SystemC SSD: [SSD deployment_extracts/systemc/live](https://github.com/data-to-insight/ssd-data-model/tree/main/deployment_extracts/systemc/live)
-- Copy|paste|execute from your SQL client, the single SSD extract script.
+- Download SystemC SSD: [SSD deployment_extracts/systemc/live](https://github.com//workspaces/ssd-data-model/deployment_extracts_la_release/)
+- Copy|paste|execute from your SQL client, your LA named|supplied single SSD extract script.
 - Dependent on your data estate|reporting infastructure, script typically takes n->15minutes to complete. A summary overview will output. 
-- Review console output for possible individual fail/error points and pass back to D2I. 
+- Review console output for possible individual fail/error points and pass back to D2I to enable changes in your LA's SSD config file.
 - Your SSD is now deployed with data current to the run-point. 
 - Inclusion of this script into overnights and|or manual daily re-run will refresh data. Table refreshes are otherwise static. 
 
@@ -73,12 +73,12 @@ once, and is as simple as adding a number or list of values.
 - Your SSD is now deployed with data current to the run-point. 
 - Inclusion of this script into overnights and|or manual daily re-run will refresh data. Table refreshes are otherwise static. 
 
-## SSD Config Azeus (tbc)
+## SSD Config Azeus (Oracle - development in progress)
 
 - Download Azeus SSD: [SSD deployment_extracts/azeus/live](https://github.com/data-to-insight/ssd-data-model/tree/main/deployment_extracts/azeus/live)
-- Not available in this cycle
+- Timeline for delivery of this development stream is not yet confirmed. Potentially not available until mid/later in project timeline.
 
-## SSD Config CareDirector|Other (tbc)
+## SSD Config Advanced|CareDirector|Other (tbc)
 
 - Download CareDirector SSD: [SSD deployment_extracts/caredirector/live](https://github.com/data-to-insight/ssd-data-model/tree/main/deployment_extracts/caredirector/live)
 - Not available in this cycle

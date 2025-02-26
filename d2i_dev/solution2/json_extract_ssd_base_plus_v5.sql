@@ -6,7 +6,8 @@ CREATE TABLE ssd_api_data_staging_anon (
     id                      INT IDENTITY(1,1) PRIMARY KEY,           
     person_id               NVARCHAR(48) NULL,              -- Link value (_person_id or equivalent)
     previous_json_payload   NVARCHAR(MAX) NULL,             -- Enable sub-attribute purge tracking
-    json_payload            NVARCHAR(MAX) NOT NULL,         -- JSON data payload
+    json_payload            NVARCHAR(MAX) NOT NULL,         -- JSON data
+    partial_json_payload    NVARCHAR(MAX) NOT NULL,         -- Reductive JSON data payload
     previous_hash           BINARY(32) NULL,                -- Previous hash of JSON payload
     current_hash            BINARY(32) NULL,                -- Current hash of JSON payload
     row_state               NVARCHAR(10) DEFAULT 'new',     -- Record state: New, Updated, Deleted, Unchanged
@@ -175,17 +176,6 @@ SELECT
 FROM ssd_person p;
 
 
-
--- select * from ssd_api_data_staging;
--- where json_payload like '%child_protection_plans%'
--- AND json_payload like '%section_47_assessments%'
--- WHERE json_payload like '%child_in_need_plans%'
--- AND json_payload like '%cla_episodes%';
--- WHERE json_payload like '%education_health_care_plans%';
-
-
-
-
 -- change tracking hashing seperated from main query (reduce in-query overheads)
 
 -- change tracking hashing
@@ -199,3 +189,13 @@ SET
 UPDATE ssd_api_data_staging_anon  -- note this is the ANON table
 SET submission_status = 'Pending'
 WHERE submission_status <> 'Pending' OR submission_status IS NULL;
+
+
+
+-- select * from ssd_api_data_staging;
+-- where json_payload like '%child_protection_plans%'
+-- AND json_payload like '%section_47_assessments%'
+-- WHERE json_payload like '%child_in_need_plans%'
+-- AND json_payload like '%cla_episodes%';
+-- WHERE json_payload like '%education_health_care_plans%';
+

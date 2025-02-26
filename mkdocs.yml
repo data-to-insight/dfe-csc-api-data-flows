@@ -14,12 +14,15 @@ theme:
     - navigation.top          # shift TOC into left sidebar
     - navigation.sections     # highlight current section during scroll
     - tasklist                # checklist boxes in dev planning
+    - content.tables.sort     # Table sorting
+
     # - navigation.tabs       # swap to tabs in ribbon (depreciated)
     # - content.pdf             #  Enable the PDF button    
   toc:
     depth: 3  # (alter if h-depth deepens beyond h3. Current : H1, H2, H3)
 
 nav:
+# comment out here if wanting export pdf of subset of sections (or reduced front-end published)
   - Overview: index.md
   - 0 System Requirements: system_requirements.md
   - 1 Deploy SSD: 1_deploy_ssd.md
@@ -35,23 +38,25 @@ nav:
 
 plugins:
   - search
-  - mermaid2
+  - mermaid2 # removed as adding table sorting via pymdownx.superfences
   - with-pdf:
       output_path: "pdf/csc_ssd_api_documentation.pdf"
       cover: true
       cover_title: "CSC SSD API Documentation"
-      cover_subtitle: "Deployment Guide [ver:0.0.2 - spec:0.7] [DRAFT]"
+      cover_subtitle: "Deployment Guide [ver:0.0.3 - spec:0.7] [DRAFT]"
       copyright: " "
       # pages: ""
       # exclude_docs: ""
       # draft_docs:""
       # not_in_nav:""
 
+
 extra_css: 
   - assets/css/styles.css
 extra_javascript:
   - assets/js/scripts.js
-  - assets/js/colorCells.js # dev plan cell status colouration
+  - assets/js/colourCells.js # dev plan cell status colouration
+  - assets/js/tables.js # sorting on dev plan table(s)
 extra_templates:
   - overrides/pdf/default.html.j2
 extra:

@@ -81,45 +81,46 @@ flowchart TD
 ```
 
 
-
 ## Project Breakdown (S1)
 <details>
 <summary><strong>Development Task Status Key</strong></summary>
 
-✅ Completed | 🔄 In Progress | 🚀 Ready for Review | 🛠 Testing  
-🔲 Not Started | ⏳ Blocked | 🗄 Deferred  
+🔲 Backlog | 🔄 In Progress | 🛠 Testing | 🚀 In Review |  ✅ Completed 
+⏳ Blocked | 🗄 Deferred
 
 </details>
 
 | Task Area                           | Task                                                                                     | Status |
 |-------------------------------------|-----------------------------------------------------------------------------------------|--------|
-| **Review Initial Specification**    | Review specification for project scope                                                  | <span data-status="ready-review">🚀 Ready for Review</span> |
-|                                     | Ensure any project required permissions/software is available                           | <span data-status="testing">🛠 Testing</span> |
-|                                     | Complete API to SSD fields mapping                                                     | <span data-status="testing">🛠 Testing</span> |
-| **SSD Changes**                     | Add API specified fields into SSD and data spec *(pushed to public SSD front-end?)*    | <span data-status="in-progress">🔄 In Progress</span> |
-|                                     | SystemC (SQL Server)                                                                    | <span data-status="ready-review">🚀 Ready for Review</span> |
-|                                     | Mosaic (SQL Server)                                                                     | <span data-status="not-started">🔲 Not Started</span> |
-|                                     | Eclipse (Postgres)                                                                      | <span data-status="testing">🛠 Testing</span> |
-| **Create Documentation (Framework & Plan)** | Request client guidance on documentation preferences/standards                        | <span data-status="blocked">⏳ Blocked</span> |
-|                                     | Create initial documentation framework *(is there an existing req standard/pref?)*      | <span data-status="in-progress">🔄 In Progress</span> |
-|                                     | Define/write up development plan stage 1                                               | <span data-status="ready-review">🚀 Ready for Review</span> |
-|                                     | Define/write up development plan stage 2                                               | <span data-status="in-progress">🔄 In Progress</span> |
-| **Review and Complete SSD Backlog Tickets** | Backlog board review                                                                  | <span data-status="in-progress">🔄 In Progress</span> |
-|                                     | Work to close required backlog tickets *(known blockers affecting API data flow processes or data)* | <span data-status="not-started">🔲 Not Started</span> |
-| **Write JSON Data Extract (SQL Query)** | Partial JSON extract query with Header + Top-level child details only *(process testing)* | <span data-status="testing">🛠 Testing</span> |
-|                                     | Full JSON extract query with Header + Top-level child details + all sub-level elements  | <span data-status="testing">🛠 Testing</span> |
-| **Automate Data Extraction**        | Investigation towards suitable process/script for data extract + API workflow          | <span data-status="in-progress">🔄 In Progress</span> |
-|                                     | Develop API workflow *shell* script(s) incl. DB access, JSON query extraction          | <span data-status="in-progress">🔄 In Progress</span> |
-|                                     | Test API workflow locally within host LA *(extract only)*                              | <span data-status="in-progress">🔄 In Progress</span> |
-| **Create Documentation (Playbook)** | Write up final LA playbook details                                                     | <span data-status="in-progress">🔄 In Progress</span> |
-|                                     | Update documentation based on pilot LA 1 + stakeholder(s) feedback                     | <span data-status="not-started">🔲 Not Started</span> |
-| **Simulate API Integration local within ESCC** | Create/generate/Anonymise dummy data for initial API send *(SSD structure + repeatable)* | <span data-status="testing">🛠 Testing</span> |
-|                                     | Test with complete (non-delta) payload of null/dummy data                              | <span data-status="testing">🛠 Testing</span> |
-|                                     | Test each response code(s), & logging within payload table                              | <span data-status="blocked">⏳ Blocked</span> |
-| **Test API Integration with a Pilot LA** | Test with complete (non-delta) payload of null/dummy data                              | <span data-status="blocked">⏳ Blocked</span> |
-|                                     | Test each response code(s), & logging within payload table                              | <span data-status="blocked">⏳ Blocked</span> |
-| **Refinements/Granular end-goal fixes** | Process to handle (mid-)record 'purges'              | <span data-status="not-started">🔲 Not Started</span> |
-|                                     | Discuss/investigate longer term/wider API use and potential process changes *(e.g. do we need combined payload staging table as mid-term historic record)* | <span data-status="not-started">🔲 Not Started</span> |
+| **Review Initial Specification**    | Review specification for project scope                                                  | 🚀 |
+|                                      | Ensure any project required permissions/software is available                           | 🛠 |
+|                                      | Complete API to SSD fields mapping                                                     | 🛠 |
+| **SSD Changes**                     | Add API specified fields into SSD and data spec *(pushed to public SSD front-end?)*    | 🔄 |
+|                                      | SystemC (SQL Server)                                                                    | 🚀 |
+|                                      | Mosaic (SQL Server)                                                                     | 🔲 |
+|                                      | Eclipse (Postgres+)                                                                      | 🚀 |
+|                                      | Azeus (Oracle) (March development to prioritise API object requirements)         | 🔄 |
+| **Create Documentation (Framework & Plan)** | Request guidance on documentation preferences/standards                        | ⏳ |
+|                                      | Create initial documentation framework *(is there an existing req standard/pref?)*      | 🔄 |
+|                                      | Define/write up development plan stage 1                                               | 🚀 |
+|                                      | Define/write up development plan stage 2                                               | 🔄 |
+| **Review and Complete SSD Backlog Tickets** | Backlog board review                                                                  | 🔄 |
+|                                      | Work to close required backlog tickets *(known blockers affecting API data flow processes or data)* | 🔲 |
+| **Write JSON Data Extract (SQL Query)** | Partial JSON extract query with Header + Top-level child details only *(process testing)* | 🛠 |
+|                                      | Full JSON extract query with Header + Top-level child details + all sub-level elements  | 🛠 |
+| **Automate Data Extraction**        | Investigation towards suitable process/script for data extract + API workflow          | 🔄 |
+|                                      | Develop API workflow *shell* script(s) incl. DB access, JSON query extraction          | 🔄 |
+|                                      | Test API workflow locally within host LA *(extract only)*                              | 🔄 |
+| **Create Documentation (Playbook)** | Write up final LA playbook details                                                     | 🔄 |
+|                                      | Update documentation based on pilot LA 1 + stakeholder(s) feedback                     | 🔲 |
+| **Simulate API Integration local within ESCC** | Create/generate/Anonymise dummy data for initial API send *(SSD structure + repeatable)* | 🛠 |
+|                                      | Test with complete (non-delta) payload of null/dummy data                              | 🛠 |
+|                                      | Test each response code(s), & logging within payload table                              | ⏳ |
+| **Test API Integration with a Pilot LA** | Test with complete (non-delta) payload of null/dummy data                              | ⏳ |
+|                                      | Test each response code(s), & logging within payload table                              | ⏳ |
+| **Refinements/Granular end-goal fixes** | Process to handle (mid-)record 'purges'                                                | 🔲 |
+|                                      | Discuss/investigate longer-term/wider API use and potential process changes *(e.g. do we need combined payload staging table as mid-term historic record)* | 🔲 |
+
 
 
 ## Simulated API Overview (S1 #1)
@@ -374,15 +375,22 @@ flowchart TD
 
 ## Project Breakdown (S2) (tbc)
 
+<details>
+<summary><strong>Development Task Status Key</strong></summary>
+
+🔲 Backlog | 🔄 In Progress | 🛠 Testing | 🚀 In Review |  ✅ Completed 
+⏳ Blocked | 🗄 Deferred
+
+</details>
 
 | Task Area                                 | Task                                                                        | Status |
 |-------------------------------------------|-----------------------------------------------------------------------------|--------|
-| **Enable SSD Row-Level Change Tracking**  | Develop mechanism(s) to enable record-level/deltas change tracking         | <span data-status="in-progress">🔄 In Progress</span> |
-|                                           | Re-develop API process to integrate change tracking/record-level deltas    | <span data-status="not-started">🔲 Not Started</span> |
-| **Provide Configuration Playbook and Guidance for LAs** | SystemC                                                                | <span data-status="in-progress">🔄 In Progress</span> |
-|                                           | Mosaic                                                                     | <span data-status="blocked">⏳ Blocked</span> |
-|                                           | Eclipse                                                                    | <span data-status="blocked">⏳ Blocked</span> |
-| **Expand Pilot**                          | Expand pilot to further LAs with D2I support                               | <span data-status="not-started">🔲 Not Started</span> |
+| **Enable SSD Row-Level Change Tracking**  | Develop mechanism(s) to enable record-level/deltas change tracking         | 🔄  |
+|                                           | Re-develop API process to integrate change tracking/record-level deltas    |🔲 |
+| **Provide Configuration Playbook and Guidance for LAs** | SystemC                                                      | 🔄  |
+|                                           | Mosaic                                                                     | ⏳  |
+|                                           | Eclipse                                                                    | ⏳ |
+| **Expand Pilot**                          | Expand pilot to further LAs with D2I support                               |🔲 |
 
 
 

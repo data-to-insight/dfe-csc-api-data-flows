@@ -62,6 +62,7 @@ table {
     width: 100%;
     border-collapse: collapse;
     margin: 20px 0;
+    font-size: 12px;
 }
 th, td {
     text-align: left;
@@ -91,6 +92,7 @@ details summary:hover {
 [data-status="ready-review"] { color: purple; font-weight: bold; }
 [data-status="blocked"] { color: red; font-weight: bold; }
 [data-status="not-started"] { color: gray; font-style: italic; }
+
 
 
 
