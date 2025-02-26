@@ -22,14 +22,15 @@ A list summary that LA colleagues can share with their IT teams to enable projec
 
 Pilot LAs are expected to be using:
 
- - **SystemC** | **Mosaic** | **Eclipse** | TBC - **Other**.
+ - **SystemC** | **Mosaic** | **Eclipse** | **Azeus**-In Development/TBC | **Other**-TBC
 
 **Database**:
 
-- **SystemOne**: SQL Server 2017 or later with compatibility settings at **120+**.
-- **Mosaic**: SQL Server 2017 or later with compatibility settings at **120+**.
-- **Mosaic**: Oracle (**TBC - depreciated**).
-- **Eclipse**: **PostgreSQL** (TBC).
+- **SystemOne** : SQL Server 2017 or later with compatibility settings at **120+**.
+- **Mosaic**    : SQL Server 2017 or later with compatibility settings at **120+**.
+- **Mosaic**    : Oracle (**TBC - depreciated**).
+- **Eclipse**   : PostgreSQL
+- **Azeus**     : Oracle (**TBC - in development**).
 
 **Database Additions**:
 
