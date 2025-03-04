@@ -1,11 +1,11 @@
 # Setup Guide | Config Shell Script 
 
 ## Prerequisites
-Ensure that the [initial local api testing](test_api.md) has already been completed. 
+Ensure that the [SSD is already deployed ](deploy_ssd.md) has already been checked|completed. 
 
 ## **Overview**
 
-This guide explains how to configure and set up the supplied (Power)Shell script for automated data submission within/from your Local Authority environment to a/the pre-agreed API endpoint. Descriptions and language used in this section unavoidably require some technical knowledge. It's anticipated that the API script will require inclusion into an LA's overnights/cron job list. We do not currently have sufficient information to provide realistic estimation of runtime overheads, but have streamlined the process(es) where possible to minimise these.
+This guide explains how to configure and set up the supplied (Power)Shell script for automated data submission within/from your Local Authority environment to a/the pre-agreed API endpoint. Descriptions and language used in this section unavoidably require some technical knowledge. It's anticipated that after initial local testing, the API script will require inclusion into an LA's overnights/cron job list. Towards this we have streamlined process(es) where possible to minimise both process(ing) overheads and run times.
 
 ## Shell Script Notes
 
