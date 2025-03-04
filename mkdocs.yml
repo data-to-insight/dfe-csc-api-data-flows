@@ -26,14 +26,14 @@ nav:
   - Overview: index.md
   - System Requirements: system_requirements.md
   - Deploy SSD: deploy_ssd.md
-  # - API Config: api_config.md
-  # - API Test: test_api.md
-  # - API Deploy: deploy_api.md
-  # - JSON Structure: payload_structure.md
-  # - Troubleshoot & FAQ: troubleshooting_faq.md
-  # # - Stakeholders: stakeholders.md
-  # - Dev Plan: development_plan.md
-  # - Dev Backlog: git_dev_backlog.md
+  - API Config: api_config.md
+  - API Test: test_api.md
+  - API Deploy: deploy_api.md
+  - JSON Structure: payload_structure.md
+  - Troubleshoot & FAQ: troubleshooting_faq.md
+  # - Stakeholders: stakeholders.md
+  - Dev Plan: development_plan.md
+  - Dev Backlog: git_dev_backlog.md
 
 
 plugins:
