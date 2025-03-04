@@ -1,19 +1,19 @@
-# Playbook and Setup Guide | Config Shell Script 
+# Setup Guide | Config Shell Script 
 
 ## Prerequisites
-Ensure that the [initial local api testing](2_test_api.md) has already been completed. 
+Ensure that the [initial local api testing](test_api.md) has already been completed. 
 
-## Configuration Steps
+## **Overview**
 
-# **Overview**
+This guide explains how to configure and set up the supplied (Power)Shell script for automated data submission within/from your Local Authority environment to a/the pre-agreed API endpoint. Descriptions and language used in this section unavoidably require some technical knowledge. It's anticipated that the API script will require inclusion into an LA's overnights/cron job list. We do not currently have sufficient information to provide realistic estimation of runtime overheads, but have streamlined the process(es) where possible to minimise these.
 
-This guide explains how to configure and set up the supplied (Power)Shell script for automated data submission within/from your Local Authority environment to a/the pre-agreed API endpoint. 
-
-## PowerShell Script Docstring Notes
+## Shell Script Notes
 
 ### **Description**
 
-The (Power)Shell script automates the process of extracting JSON structured Child Social Care records (payload) from an SSD defined table (data collection or staging table), sending the extracted payload to an API before updating appropriate submission status flags within the data collection or response table.
+The (Power)Shell script automates the process of extracting JSON structured Child Social Care records (payload) from an SSD defined table (data collection or staging table), sending the extracted payload to an API before updating appropriate submission status flags within the data collection or response table. 
+
+_Note: The use of MS Powershell within LA's is commonplace. Thus we have assumed compatibility until such point that the wider pilot/early adopter group are able to contribute to the project understanding regarding localised restrictions or requirements._
 
 ### **Key Features**
 
@@ -23,14 +23,18 @@ The (Power)Shell script automates the process of extracting JSON structured Chil
 
 ### **Parameters**
 
-- **`$testingMode`**: Bool flag to toggle btwn LA testing and data being sent externally. **`true`=NO data leaves the LA.** 
-- **`$server`**: SQL Server instance name
-- **`$database`**: Database name (where the SSD is deployed)
+**DB/CMS Configuration details required for API**:
 
-Params configured and requiring no local changes:
+ The API script, is stored and run from within your LA, and will need to be configured with some Local DB connection parameters :
+
+- **`$testingMode`**: Bool flag to toggle btwn LA testing and data being sent externally. **`true`=NO data leaves the LA.** 
+- **`$server`**: CMS Reporting (SQL)Server name, e.g. ESLLREPORTS00X
+- **`$database`**: Database instance where the SSD is deployed, e.g. for SystemC the default is : HDM_Local
+
+Some paramaters are pre-configured and requiring no local changes, here for reference:
 
 - **`$ssd-api_data_staging`**: Add-on non-core SSD table containing JSON payloads and payload status information
-  *(or `ssd-api_data_staging_anon` if in dev/testing)*
+  *(or `ssd-api_data_staging_anon` during development and local testing)*
 - **`$url`**: API endpoint path
 - **`$token`**: Authentication token for the API
 
@@ -41,14 +45,13 @@ Params configured and requiring no local changes:
 
 --- 
 
-
-# **API Minimum Requirements**
+## **API Minimum Requirements**
 
 ### **System Requirements:**
 
- - PowerShell: Version 5.1+ (check with $PSVersionTable.PSVersion) or alternative script language access.
- - SQL Server: Ensure the database instance is accessible and deployed SSD includes the additional ssd_api_data_staging table.
- - Network: Ensure the SQL Server instance is reachable (e.g., via ping, will be visible if you run test API script and it fails).
+ - PowerShell: Version 5.1+ (check using $PSVersionTable.PSVersion) or alternative script language access.
+ - SQL Server: The CMS database is accessible and deployed SSD schema includes the additional ssd_api_data_staging table.
+
 
 ### **Software Dependencies:**
 
@@ -62,7 +65,7 @@ DB:
 ---
 
 
-# **Script Configuration**
+## **Script Configuration**
 Open the script in a text editor or Powershell and update the following variables to match your environment:
 
 ### **Connection details**
@@ -79,7 +82,7 @@ Open the script in a text editor or Powershell and update the following variable
 --- 
 
 
-# **Execution**
+## **Execution**
 
 ### Testing Mode:
 

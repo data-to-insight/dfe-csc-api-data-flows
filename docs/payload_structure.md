@@ -10,7 +10,7 @@ Dev ref: Structure based on specification v0.7
 
 ![JSON Structure](assets/images/json_payload_structure_diagram_v0.7.png)
 
-## JSON Structure:
+<!-- ## JSON Structure:
 
 ```json
 {
@@ -140,4 +140,4 @@ Dev ref: Structure based on specification v0.7
     }
 }
 
-```
+``` -->
