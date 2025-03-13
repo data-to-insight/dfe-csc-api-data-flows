@@ -139,9 +139,9 @@ FROM ssd_person p;
 
 
 
--- -- only once at initialisation
--- UPDATE ssd_api_data_staging
--- SET previous_hash = current_hash;
+-- only once at initialisation
+UPDATE ssd_api_data_staging
+SET previous_hash = current_hash;
 
 
 -- only once at initialisation
@@ -209,14 +209,17 @@ select * from ssd_api_data_staging;
 
 use hdm_local;
 
--- SELECT * INTO ssd_api_data_staging_anon_backup 
--- FROM ssd_api_data_staging_anon
--- WHERE 1=0;
+IF OBJECT_ID('ssd_api_data_staging_anon_backup', 'U') IS NOT NULL DROP TABLE ssd_api_data_staging_anon_backup;
 
--- INSERT INTO ssd_api_data_staging_anon_backup
--- SELECT * FROM ssd_api_data_staging_anon;
+SELECT * INTO ssd_api_data_staging_anon_backup 
+FROM ssd_api_data_staging_anon
+WHERE 1=0;
 
--- select * from ssd_api_data_staging_anon;
+
+INSERT INTO ssd_api_data_staging_anon_backup
+SELECT * FROM ssd_api_data_staging_anon;
+
+select * from ssd_api_data_staging_anon;
 
 
 -- and back if/when needed
@@ -224,5 +227,23 @@ TRUNCATE TABLE ssd_api_data_staging_anon;
 INSERT INTO ssd_api_data_staging_anon
 SELECT * FROM ssd_api_data_staging_anon_backup
 TABLESAMPLE SYSTEM (50);  -- Approx. 50% 
+
+select * from ssd_api_data_staging_anon;
+
+
+
+---- from 1303 testing 
+
+use HDM_Local;
+
+--UPDATE ssd_api_data_staging SET previous_json_payload = json_payload;
+--UPDATE ssd_api_data_staging_anon SET previous_json_payload = json_payload;
+
+--IF OBJECT_ID('ssd_api_data_staging_anon_backup', 'U') IS NOT NULL DROP TABLE ssd_api_data_staging_anon_backup;
+
+--SELECT * INTO ssd_api_data_staging_anon_backup 
+--FROM ssd_api_data_staging_anon
+--WHERE 1=0;
+
 
 select * from ssd_api_data_staging_anon;

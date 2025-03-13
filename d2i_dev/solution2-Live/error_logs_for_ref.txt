@@ -1,0 +1,20 @@
+
+-- 100325 
+-- first initial hit, 
+Debug: Example JSON Payload: 
+@{la_child_id=39f6d4d95349109bc7568494f6bdba683422; first_name=SSH_PH; surname=SSD_PH; unique_pupil_number_unknown_reason=UN10; date_of_birth=2014-03-13; sex=U; ethnicity
+=MWBA; postcode=HD0 1BG; social_workers=System.Object[]}
+Partial JSON logged before API call.
+🔵 Using Full JSON Payload for API request.
+Retrying in 5 seconds...
+Retrying in 10 seconds...
+❌ Maximum retries reached. Logging error.
+❌ Error occurred: The remote server returned an error: (403) Forbidden. (type: WebException)
+
+
+
+
+❌ Error retrieving OAuth token: The remote server returned an error: (403) Forbidden.
+❌ Failed to retrieve OAuth token. Exiting script.
+
+PS C:\Users\RobertHa> 

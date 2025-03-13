@@ -1,22 +1,24 @@
 
+Use HDM_Local; -- SystemC/LLogic specific
+
 IF OBJECT_ID('ssd_api_data_staging', 'U') IS NOT NULL DROP TABLE ssd_api_data_staging;
 
 -- includes initialisation values on submission_status/row_state
-CREATE TABLE ssd_api_data_staging_anon (
-    id                      INT IDENTITY(1,1) PRIMARY KEY,           
-    person_id               NVARCHAR(48) NULL,              -- Link value (_person_id or equivalent)
-    previous_json_payload   NVARCHAR(MAX) NULL,             -- Enable sub-attribute purge tracking
-    json_payload            NVARCHAR(MAX) NOT NULL,         -- JSON data
-    partial_json_payload    NVARCHAR(MAX) NOT NULL,         -- Reductive JSON data payload
-    previous_hash           BINARY(32) NULL,                -- Previous hash of JSON payload
-    current_hash            BINARY(32) NULL,                -- Current hash of JSON payload
-    row_state               NVARCHAR(10) DEFAULT 'new',     -- Record state: New, Updated, Deleted, Unchanged
-    last_updated            DATETIME DEFAULT GETDATE(),     -- Last update timestamp
-    submission_status       NVARCHAR(50) DEFAULT 'pending', -- Status: Pending, Sent, Error
-    api_response            NVARCHAR(MAX) NULL,             -- API response or error messages
-    submission_timestamp    DATETIME                        -- Timestamp on API submission
+CREATE TABLE ssd_api_data_staging (
+    id                      INT             IDENTITY(1,1) PRIMARY KEY,           
+    person_id               NVARCHAR(48)    NULL,               -- Link value (_person_id or equivalent)
+    previous_json_payload   NVARCHAR(MAX)   NULL,               -- Enable sub-attribute purge tracking
+    json_payload            NVARCHAR(MAX)   NULL,               -- JSON data
+    partial_json_payload    NVARCHAR(MAX)   NULL,               -- Reductive JSON data payload
+    previous_hash           BINARY(32)      NULL,               -- Previous hash of JSON payload
+    current_hash            BINARY(32)      NULL,               -- Current hash of JSON payload
+    row_state               NVARCHAR(10)    DEFAULT 'new',      -- Record state: New, Updated, Deleted, Unchanged 
+    last_updated            DATETIME        DEFAULT GETDATE(),  -- Last update timestamp
+    submission_status       NVARCHAR(50)    DEFAULT 'pending',  -- Status: Pending, Sent, Error
+    api_response            NVARCHAR(MAX)   NULL,               -- API response or error messages
+    submission_timestamp    DATETIME                            -- Timestamp on API submission
 );
-
+Go
 
 -- Optimisations...
 CREATE NONCLUSTERED INDEX ssd_idx_person_hash ON ssd_api_data_staging (person_id, current_hash, row_state); -- Lookups for change tracking
@@ -137,7 +139,7 @@ SELECT
                             clae.clae_cla_placement_id AS [child_looked_after_placement_id],  
                             CONVERT(VARCHAR(10), clae.clae_cla_episode_start_date, 23) AS [start_date],  
                             LEFT(clae.clae_cla_episode_start_reason, 3) AS [start_reason],  
-                            clae.clae_cla_episode_ceased_date AS [ceased],  
+                            clae.clae_cla_episode_ceased AS [ceased],  -- needs SSD spec - updating to clae_cla_episode_ceased_date
                             LEFT(clae.clae_cla_episode_ceased_reason, 3) AS [end_reason],  
 
                             -- **Hardcoded purge flag**
@@ -184,11 +186,13 @@ SET
     current_hash = HASHBYTES('SHA2_256', CAST(json_payload AS NVARCHAR(MAX))), -- reset/re-evaluate every data refresh
     previous_hash = COALESCE(previous_hash, HASHBYTES('SHA2_256', CAST(json_payload AS NVARCHAR(MAX)))) -- only set if NULL using single pass
                                                                                                         -- Incl. blanket populate during SET-UP (initialisation)
+    , previous_json_payload = json_payload
 
--- Reset status(es) during TESTING
-UPDATE ssd_api_data_staging_anon  -- note this is the ANON table
-SET submission_status = 'Pending'
-WHERE submission_status <> 'Pending' OR submission_status IS NULL;
+
+-- -- Reset status(es) during TESTING
+-- UPDATE ssd_api_data_staging_anon  -- note this is the ANON table
+-- SET submission_status = 'Pending'
+-- WHERE submission_status <> 'Pending' OR submission_status IS NULL;
 
 
 
