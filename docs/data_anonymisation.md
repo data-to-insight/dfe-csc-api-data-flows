@@ -33,7 +33,7 @@ Personal attributes such as names, ethnicities, and postcodes are completely rep
 
 - Names are substituted with generic placeholders or synthetic names.
 - Dates of birth are randomly shifted within a pre-defined plausible range.
-- Ethnicities, gender, and other demographic details are assigned at random while maintaining statistical distributions.
+- Ethnicities, gender, and other demographic details are assigned pseudo-randomly from DfE options list if available e.g. disabilities: ["NONE", "MOB", "HAND", "PC", "INC", "COMM", "LD", "HEAR", "VIS", "BEH", "CON", "AUT", "DDA"]. We do however, not maintain statistical distributions within the data set. 
 
 #### 3. Controlled Temporal Randomisation
 
@@ -50,20 +50,21 @@ For structured records like care episodes, worker details, and assessments:
 
 #### 5. Validation & Integrity Checks
 
-To ensure data integrity post-anonymisation:
+During D2I pre-deployment testing, we add an additional safety/failsafe check, to ensure anonymisation:
 
 - Each anonymised record is compared against the original to confirm full transformation.
-- Any unchanged values are flagged and corrected before finalisation.
-- Randomised values are checked against predefined constraints to maintain logical validity.
+- Any unchanged values are flagged for additional manual visual checks.  
+
 
 ### Mathematical Improbability of Re-Identification
 
-Given our approach, the probability of successfully reconstructing original records is effectively zero:
+Given our approach, the probability of either successfully reconstructing original records, or any form of direct association with live individual data records is effectively zero:
 
-- **SHA-256 hashing** ensures a brute-force attack would require computational resources beyond feasibility.
+- **SHA-256 hashing** ensures a brute-force attempt would require computational resources beyond feasibility.
 - **Pseudorandom attribute substitution** removes any direct correlation to the original data.
 - **Randomised dates and categorical values** eliminate predictability, making linkage attacks impractical.
 - **Cross-record inconsistencies** prevent meaningful insights from being derived even if partial data is visible.
+- **Daily re-anonymisation** daily re-anonymisation of records ensures an additional level of randomisation between tests.
 
 
 Through a multi-layered anonymisation strategy, we guarantee that re-identification of individuals is infeasible, ensuring compliance with data privacy regulations and best practices. The highest standards of data security are upheld throughout our processes.
