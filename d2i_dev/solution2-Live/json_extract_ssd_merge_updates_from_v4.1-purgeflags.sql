@@ -47,8 +47,8 @@ WITH ComputedData AS (
         p.pers_person_id AS person_id,
         (
             SELECT 
-                -- Attribute Group: Children
-                p.pers_person_id AS [la_child_id],  
+                -- CAST(p.pers_person_id AS INT) AS [la_child_id], -- DfE spec expects str36 / can't use INT on anon hashing
+				p.pers_person_id AS [la_child_id], -- DfE spec expects str36
                 p.pers_common_child_id AS [mis_child_id],  
                 'SSD_PH' AS [first_name],  
                 'SSD_PH' AS [surname],  
@@ -76,15 +76,14 @@ WITH ComputedData AS (
                 END AS [sex],  
                 p.pers_ethnicity AS [ethnicity],  
                 (
-                    SELECT 
-                        CASE 
-                            WHEN COUNT(d.disa_disability_code) = 0 THEN '[]'
-                            ELSE '[' + STRING_AGG(d.disa_disability_code, ',') + ']' 
-                        END
-                    FROM ssd_disability d
-                    WHERE d.disa_person_id = p.pers_person_id
-                    GROUP BY d.disa_person_id
-                ) AS [disabilities],  
+                    SELECT JSON_QUERY(
+                        -- extract just values and force an array with JSON-compatible comma-separated string inside []
+                        (SELECT '[' + STRING_AGG('"' + d.disa_disability_code + '"', ',') + ']' 
+                        FROM ssd_disability d
+                        WHERE d.disa_person_id = p.pers_person_id)
+                    )
+                ) AS [disabilities],
+
                 (
                     SELECT TOP 1 a.addr_address_postcode
                     FROM ssd_address a

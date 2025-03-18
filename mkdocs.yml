@@ -30,6 +30,7 @@ nav:
   - API Test: test_api.md
   - API Deploy: deploy_api.md
   - JSON Structure: payload_structure.md
+  - Test Data Anonymisation: data_anonymisation.md
   - Troubleshoot & FAQ: troubleshooting_faq.md
   # - Stakeholders: stakeholders.md
   - Dev Plan: development_plan.md
