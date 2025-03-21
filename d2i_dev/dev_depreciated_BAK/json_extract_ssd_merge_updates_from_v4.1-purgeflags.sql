@@ -154,7 +154,7 @@ WITH ComputedData AS (
                             WHERE i.invo_person_id = p.pers_person_id
                             ORDER BY i.invo_involvement_start_date DESC
                             FOR JSON PATH
-                        ) AS [care_worker_details]
+                        ) AS [social_worker_details]
 
                     FROM ssd_cin_episodes cine
                     WHERE cine.cine_person_id = p.pers_person_id
