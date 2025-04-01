@@ -4,9 +4,6 @@
 # 2.2 - added no future dates fix to func. moved social_worker processing into episodes in line with spec revision. 
 
 
-
-
-
 # Extracts the contents of HDM_Local.ssd_api_data_staging (should already include hashed change tracking column data etc). 
 # It takes each json record from ssd_api_data_staging.json_payload and applies an anonymisation process to it, before duplicating 
 # the entire table structure and (anon)data into HDM_Local.ssd_development.ssd_api_data_staging**_anon** 

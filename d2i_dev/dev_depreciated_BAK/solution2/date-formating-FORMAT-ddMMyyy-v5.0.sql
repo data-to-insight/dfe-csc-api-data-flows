@@ -49,25 +49,7 @@ WITH ComputedData AS (
     (
         SELECT  
             p.pers_person_id AS [la_child_id],
-            ISNULL(p.pers_common_child_id, 'SSD_PH') AS [mis_child_id],  
-
-            -- JSON_QUERY(
-            --     (
-            --         SELECT 
-            --             'SSD_PH' AS [first_name],  
-            --             'SSD_PH' AS [surname],  
-            --             (
-            --                 SELECT TOP 1 link_identifier_value
-            --                 FROM ssd_linked_identifiers
-            --                 WHERE link_person_id = p.pers_person_id 
-            --                 AND link_identifier_type = 'Unique Pupil Number'
-            --                 ORDER BY link_valid_from_date DESC
-            --             ) AS [unique_pupil_number], 
-            --             CAST(0 AS bit) AS [purge]
-            --         FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
-            --     )
-            -- ) AS [child_details], 
-
+            p.pers_common_child_id AS [mis_child_id],  
 
             -- Child Details
             JSON_QUERY(
@@ -119,36 +101,19 @@ WITH ComputedData AS (
                             CASE WHEN immi.immi_immigration_status_end_date IS NULL THEN 1 ELSE 0 END,
                             immi.immi_immigration_status_start_date DESC
                     ) AS [uasc_flag],  
-                    (
-                        SELECT TOP 1 CONVERT(VARCHAR(10), immi.immi_immigration_status_end_date, 23)
-                        FROM ssd_immigration_status immi
-                        WHERE immi.immi_person_id = p.pers_person_id
-                        ORDER BY 
-                            CASE WHEN immi.immi_immigration_status_end_date IS NULL THEN 1 ELSE 0 END,
-                            immi.immi_immigration_status_start_date DESC
-                    ) AS [uasc_end_date],  
+					(
+						SELECT TOP 1 FORMAT(immi.immi_immigration_status_end_date, 'dd/MM/yyyy')
+						FROM ssd_immigration_status immi
+						WHERE immi.immi_person_id = p.pers_person_id
+						ORDER BY 
+							CASE WHEN immi.immi_immigration_status_end_date IS NULL THEN 1 ELSE 0 END,
+							immi.immi_immigration_status_start_date DESC
+					) AS [uasc_end_date],
+
                     CAST(0 AS bit) AS [purge]
                 FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
 				)
             ) AS [child_details],  
-
-			-- -- Health and Wellbeing
-			-- JSON_QUERY(
-			-- 	(
-			-- 		SELECT 
-			-- 			(
-			-- 				SELECT 
-			-- 					CONVERT(VARCHAR(10), csdq.csdq_sdq_completed_date, 23) AS [date], 
-			-- 					csdq.csdq_sdq_score AS [score]  
-			-- 				FROM ssd_sdq_scores csdq
-			-- 				WHERE csdq.csdq_person_id = p.pers_person_id
-			-- 				ORDER BY csdq.csdq_sdq_completed_date DESC 
-			-- 				FOR JSON PATH
-			-- 			) AS [sdq_assessments],  
-			-- 			CAST(0 AS bit) AS [purge]  
-			-- 		FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
-			-- 	)
-			-- ) AS [health_and_wellbeing],
 
 			-- Health and Wellbeing
 			JSON_QUERY(
@@ -156,15 +121,11 @@ WITH ComputedData AS (
 					SELECT 
 						(
 							SELECT 
-								CONVERT(VARCHAR(10), csdq.csdq_sdq_completed_date, 23) AS [date], 
+								FORMAT(csdq.csdq_sdq_completed_date, 'dd/MM/yyyy') AS [date],
+
 								csdq.csdq_sdq_score AS [score]  
 							FROM ssd_sdq_scores csdq
-							WHERE 
-								csdq.csdq_person_id = p.pers_person_id
-								-- having to filter as some placeholder date values coming through
-								AND csdq.csdq_sdq_score IS NOT NULL
-								AND csdq.csdq_sdq_completed_date IS NOT NULL
-								AND csdq.csdq_sdq_completed_date > '1900-01-01'
+							WHERE csdq.csdq_person_id = p.pers_person_id
 							ORDER BY csdq.csdq_sdq_completed_date DESC 
 							FOR JSON PATH
 						) AS [sdq_assessments],  
@@ -174,47 +135,54 @@ WITH ComputedData AS (
 			) AS [health_and_wellbeing],
 
 
-			-- -- Education Health Care Plans
-			-- JSON_QUERY(
-			-- 	(
-			-- 		SELECT 
-			-- 			ehcn.ehcn_named_plan_id AS [education_health_care_plan_id],
-			-- 			CONVERT(VARCHAR(10), ehcr.ehcr_ehcp_req_date, 23) AS [request_received_date],
-			-- 			CONVERT(VARCHAR(10), ehcr.ehcr_ehcp_req_outcome_date, 23) AS [request_outcome_date],
-			-- 			CONVERT(VARCHAR(10), ehca.ehca_ehcp_assessment_outcome_date, 23) AS [assessment_outcome_date],
-			-- 			CONVERT(VARCHAR(10), ehcn.ehcn_named_plan_start_date, 23) AS [plan_start_date],
-			-- 			CAST(0 AS bit) AS [purge]
-			-- 		FROM ssd_ehcp_named_plan ehcn
-			-- 		INNER JOIN ssd_ehcp_assessment ehca
-			-- 			ON ehcn.ehcn_ehcp_asmt_id = ehca.ehca_ehcp_assessment_id
-			-- 		INNER JOIN ssd_ehcp_requests ehcr
-			-- 			ON ehca.ehca_ehcp_request_id = ehcr.ehcr_ehcp_request_id
-			-- 		WHERE ehcr.ehcr_send_table_id IN (
-			-- 			SELECT send_table_id
-			-- 			FROM ssd_send
-			-- 			WHERE send_person_id = p.pers_person_id
-			-- 		)
-			-- 		FOR JSON PATH
-			-- 	)
-			-- ) AS [education_health_care_plans],
+			-- Education Health Care Plans
+			JSON_QUERY(
+				(
+					SELECT 
+						ehcn.ehcn_named_plan_id AS [education_health_care_plan_id],
+						FORMAT(ehcr.ehcr_ehcp_req_date, 'dd/MM/yyyy') AS [request_received_date],
+						FORMAT(ehcr.ehcr_ehcp_req_outcome_date, 'dd/MM/yyyy') AS [request_outcome_date],
+						FORMAT(ehca.ehca_ehcp_assessment_outcome_date, 'dd/MM/yyyy') AS [assessment_outcome_date],
+						FORMAT(ehcn.ehcn_named_plan_start_date, 'dd/MM/yyyy') AS [plan_start_date],
+
+						CAST(0 AS bit) AS [purge]
+					FROM ssd_ehcp_named_plan ehcn
+					INNER JOIN ssd_ehcp_assessment ehca
+						ON ehcn.ehcn_ehcp_asmt_id = ehca.ehca_ehcp_assessment_id
+					INNER JOIN ssd_ehcp_requests ehcr
+						ON ehca.ehca_ehcp_request_id = ehcr.ehcr_ehcp_request_id
+					WHERE ehcr.ehcr_send_table_id IN (
+						SELECT send_table_id
+						FROM ssd_send
+						WHERE send_person_id = p.pers_person_id
+					)
+					FOR JSON PATH
+				)
+			) AS [education_health_care_plans],
 
 
             JSON_QUERY(
                 (
                     SELECT  
                         cine.cine_referral_id AS [social_care_episode_id],  
-                        CONVERT(VARCHAR(10), cine.cine_referral_date, 23) AS [referral_date],  
-                        cine.cine_referral_source_code AS [referral_source],  
-                        cine.cine_referral_nfa AS [referral_no_further_action_flag],  
+						FORMAT(cine.cine_referral_date, 'dd/MM/yyyy') AS [referral_date],  
+						cine.cine_referral_source_code AS [referral_source],  
+						cine.cine_referral_nfa AS [referral_no_further_action_flag],  
+						FORMAT(cine.cine_close_date, 'dd/MM/yyyy') AS [closure_date],
+
+                        cine.cine_close_reason AS [closure_reason],  
+                        CAST(0 AS bit) AS [purge],
+
 
 						(
 							SELECT *
 							FROM (
 								SELECT 
 									pr.prof_staff_id AS [worker_id],  
-									CONVERT(VARCHAR(10), i.invo_involvement_start_date, 23) AS [start_date],  
-									CONVERT(VARCHAR(10), i.invo_involvement_end_date, 23) AS [end_date]
-									
+									FORMAT(i.invo_involvement_start_date, 'dd/MM/yyyy') AS [start_date],  
+									FORMAT(i.invo_involvement_end_date, 'dd/MM/yyyy') AS [end_date],
+
+									CAST(0 AS bit) AS [purge]
 								FROM ssd_involvements i
 								INNER JOIN ssd_professionals pr 
 									ON i.invo_professional_id = pr.prof_professional_id
@@ -222,15 +190,30 @@ WITH ComputedData AS (
 							) AS sorted_sw -- wrapped derived table to order within JSON
 							ORDER BY sorted_sw.start_date DESC
 							FOR JSON PATH
-						) AS [care_worker_details],
+						) AS [social_worker_details],
+
+
+						-- Nested Child in Need Plans
+						(
+							SELECT 
+								cinp.cinp_cin_plan_id AS [child_in_need_plan_id],
+								FORMAT(cinp.cinp_cin_plan_start_date, 'dd/MM/yyyy') AS [start_date],
+								FORMAT(cinp.cinp_cin_plan_end_date, 'dd/MM/yyyy') AS [end_date],
+
+								CAST(0 AS bit) AS [purge]
+							FROM ssd_cin_plans cinp
+							WHERE cinp.cinp_referral_id = cine.cine_referral_id
+							FOR JSON PATH
+						) AS [child_in_need_plans],
 
 
 						-- Nested Child and Family Assessments
 						(
 							SELECT 
 								ca.cina_assessment_id AS [child_and_family_assessment_id],
-								CONVERT(VARCHAR(10), ca.cina_assessment_start_date, 23) AS [start_date],
-								CONVERT(VARCHAR(10), ca.cina_assessment_auth_date, 23) AS [authorisation_date],
+								FORMAT(ca.cina_assessment_start_date, 'dd/MM/yyyy') AS [start_date],
+								FORMAT(ca.cina_assessment_auth_date, 'dd/MM/yyyy') AS [authorisation_date],
+
 								JSON_QUERY(		
 									CASE 
 										WHEN af.cinf_assessment_factors_json IS NULL OR af.cinf_assessment_factors_json = '' 
@@ -247,29 +230,15 @@ WITH ComputedData AS (
 						) AS [child_and_family_assessments],
 
 
-
-						-- Nested Child in Need Plans
-						(
-							SELECT 
-								cinp.cinp_cin_plan_id AS [child_in_need_plan_id],
-								CONVERT(VARCHAR(10), cinp.cinp_cin_plan_start_date, 23) AS [start_date],
-								CONVERT(VARCHAR(10), cinp.cinp_cin_plan_end_date, 23) AS [end_date],
-								CAST(0 AS bit) AS [purge]
-							FROM ssd_cin_plans cinp
-							WHERE cinp.cinp_referral_id = cine.cine_referral_id
-							FOR JSON PATH
-						) AS [child_in_need_plans],
-
-
-						
 						-- Nested s47 assessments
                         (
                             SELECT 
                                 s47e.s47e_s47_enquiry_id AS [section_47_assessment_id],
-                                CONVERT(VARCHAR(10), s47e.s47e_s47_start_date, 23) AS [start_date],
-                                JSON_VALUE(s47e.s47e_s47_outcome_json, '$.CP_CONFERENCE_FLAG') AS [icpc_required_flag], -- pull from json field
-                                CONVERT(VARCHAR(10), icpc.icpc_icpc_date, 23) AS [icpc_date],
-                                CONVERT(VARCHAR(10), s47e.s47e_s47_end_date, 23) AS [end_date],
+								FORMAT(s47e.s47e_s47_start_date, 'dd/MM/yyyy') AS [start_date],
+								JSON_VALUE(s47e.s47e_s47_outcome_json, '$.CP_CONFERENCE_FLAG') AS [icpc_required_flag],
+								FORMAT(icpc.icpc_icpc_date, 'dd/MM/yyyy') AS [icpc_date],
+								FORMAT(s47e.s47e_s47_end_date, 'dd/MM/yyyy') AS [end_date],
+
                                 CAST(0 AS bit) AS [purge]
                             FROM ssd_s47_enquiry s47e
                             LEFT JOIN ssd_initial_cp_conference icpc
@@ -283,8 +252,9 @@ WITH ComputedData AS (
 						(
 							SELECT 
 								cppl.cppl_cp_plan_id AS [child_protection_plan_id],
-								CONVERT(VARCHAR(10), cppl.cppl_cp_plan_start_date, 23) AS [start_date],
-								CONVERT(VARCHAR(10), cppl.cppl_cp_plan_end_date, 23) AS [end_date],
+								FORMAT(cppl.cppl_cp_plan_start_date, 'dd/MM/yyyy') AS [start_date],
+								FORMAT(cppl.cppl_cp_plan_end_date, 'dd/MM/yyyy') AS [end_date],
+
 								CAST(0 AS bit) AS [purge]
 							FROM ssd_cp_plans cppl
 							WHERE cppl.cppl_referral_id = cine.cine_referral_id
@@ -296,22 +266,23 @@ WITH ComputedData AS (
 						(
 							SELECT 
 								clae.clae_cla_placement_id AS [child_looked_after_placement_id],
-								CONVERT(VARCHAR(10), clae.clae_cla_episode_start_date, 23) AS [start_date],
+								FORMAT(clae.clae_cla_episode_start_date, 'dd/MM/yyyy') AS [start_date],
 								LEFT(clae.clae_cla_episode_start_reason, 3) AS [start_reason],
-								CONVERT(VARCHAR(10), clae.clae_cla_episode_ceased, 23) AS [end_date],
+								FORMAT(clae.clae_cla_episode_ceased, 'dd/MM/yyyy') AS [end_date],
+
 								LEFT(clae.clae_cla_episode_ceased_reason, 3) AS [end_reason],
 								CAST(0 AS bit) AS [purge],
+        
 
 								-- Nested CLA Placement Details
 								(
 									SELECT
 										clap.clap_cla_placement_id AS [placement_id],
-										CONVERT(VARCHAR(10), clap.clap_cla_placement_start_date, 23) AS [start_date],
-										'SSD_PH' AS [start_reason], -- debug
+										FORMAT(clap.clap_cla_placement_start_date, 'dd/MM/yyyy') AS [start_date],
+										clap.clap_cla_placement_postcode AS [placement_postcode],
 										clap.clap_cla_placement_type AS [placement_type],
-										clap.clap_cla_placement_postcode AS [postcode],
-										CONVERT(VARCHAR(10), clap.clap_cla_placement_end_date, 23) AS [end_date],
-										'SSD_PH' AS [end_reason], -- debug
+										FORMAT(clap.clap_cla_placement_end_date, 'dd/MM/yyyy') AS [end_date],
+
 										clap.clap_cla_placement_change_reason AS [change_reason]
 									FROM ssd_cla_placement clap
 									WHERE clap.clap_cla_id = clae.clae_cla_id
@@ -324,32 +295,13 @@ WITH ComputedData AS (
 						) AS [child_looked_after_placements],
 
 
-                            -- -- Nested Child Looked After Placements
-                            -- (
-                            --     SELECT
-                            --         clae.clae_cla_placement_id AS [child_looked_after_placement_id],
-                            --         CONVERT(VARCHAR(10), clae.clae_cla_episode_start_date, 23) AS [start_date],
-                            --         clae.clae_cla_episode_start_reason AS [start_reason],
-                            --         clap.clap_cla_placement_type AS [placement_type],
-                            --         clap.clap_cla_placement_postcode AS [postcode],
-                            --         CONVERT(VARCHAR(10), clae.clae_cla_episode_ceased_date, 23) AS [end_date],
-                            --         clae.clae_cla_episode_ceased_reason AS [end_reason],
-                            --         clap.clap_cla_placement_change_reason AS [change_reason]
-                            --     FROM ssd_development.ssd_cla_episodes clae
-                            --     INNER JOIN ssd_development.ssd_cla_placement clap
-                            --         ON clae.clae_cla_placement_id = clap.clap_cla_placement_id
-                            --     WHERE clae.clae_person_id = cine.cine_person_id
-                            --     FOR JSON PATH
-                            -- ) AS [child_looked_after_placements],
-
-
-
 						-- Nested Adoptions
 						(
 							SELECT 
-								CONVERT(VARCHAR(10), perm.perm_adm_decision_date, 23) AS [initial_decision_date],
-								CONVERT(VARCHAR(10), perm.perm_matched_date, 23) AS [matched_date],
-								CONVERT(VARCHAR(10), perm.perm_placed_for_adoption_date, 23) AS [placed_date],
+								FORMAT(perm.perm_adm_decision_date, 'dd/MM/yyyy') AS [initial_decision_date],
+								FORMAT(perm.perm_matched_date, 'dd/MM/yyyy') AS [matched_date],
+								FORMAT(perm.perm_placed_for_adoption_date, 'dd/MM/yyyy') AS [placed_date],
+
 								CAST(0 AS bit) AS [purge]
 							FROM ssd_permanence perm
 							WHERE perm.perm_person_id = p.pers_person_id
@@ -359,14 +311,14 @@ WITH ComputedData AS (
 								WHERE clae.clae_person_id = p.pers_person_id
 							)
 							FOR JSON PATH
-						) AS [adoption],
+						) AS [adoptions],
 
 
 						-- Nested Care Leavers
 						JSON_QUERY(
 							(
 								SELECT 
-									CONVERT(VARCHAR(10), clea.clea_care_leaver_latest_contact, 23) AS [contact_date],
+									FORMAT(clea.clea_care_leaver_latest_contact, 'dd/MM/yyyy') AS [contact_date],
 									LEFT(clea.clea_care_leaver_activity, 2) AS [activity],
 									LEFT(clea.clea_care_leaver_accommodation, 1) AS [accommodation],
 									CAST(0 AS bit) AS [purge]
@@ -375,11 +327,8 @@ WITH ComputedData AS (
 								ORDER BY clea.clea_care_leaver_latest_contact DESC
 								FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
 							)
-						) AS [care_leavers],
+						) AS [care_leavers]
 
-                        CONVERT(VARCHAR(10), cine.cine_close_date, 23) AS [closure_date],  
-                        cine.cine_close_reason AS [closure_reason],  
-                        CAST(0 AS bit) AS [purge],
 
                     FROM ssd_cin_episodes cine
                     WHERE cine.cine_person_id = p.pers_person_id
