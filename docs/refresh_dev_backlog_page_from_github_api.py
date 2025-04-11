@@ -51,8 +51,8 @@ if "data" in data:
         issues = project["items"]["nodes"]
 
         # open markdown git_dev_backlog file to write
-        with open("docs/git_dev_backlog.md", "w") as f:
-            f.write(f"# {title} Github Dev Backlog\n\n")
+        with open("docs/feature_backlog.md", "w") as f:
+            f.write(f"# {title} Github Development Backlog\n\n")
             f.write(f"## Tasks Overview\n")
             f.write(f"### Backlog/Epic/InProg/Completed\n")
             f.write(f"[View Board]({url})\n\n")
@@ -68,7 +68,7 @@ if "data" in data:
                 f.write("_No issues found._\n")
 
         # Below output is console update(s) only, does not appear on resultant .md page
-        print("Generated git_dev_backlog.md - ready to deploy/serve to front-end now")
+        print("Generated feature_backlog.md - ready to deploy/serve to front-end now")
     else:
         print(f"Project '{PROJECT_NAME}' not found.")
 else:

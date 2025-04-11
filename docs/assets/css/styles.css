@@ -29,16 +29,6 @@ html {
 }
 
 
-/* Highlight the nav section "Local Authority Guidance" in orange */
-.md-nav__title {
-    color: inherit; /* fallback for others */
-  }
-  
-  .md-nav__title:has(> span:contains("Local Authority Guidance")) {
-    color: orange;
-  }
-
-  
   
 /* End Doc menu + sub menu items */
 
