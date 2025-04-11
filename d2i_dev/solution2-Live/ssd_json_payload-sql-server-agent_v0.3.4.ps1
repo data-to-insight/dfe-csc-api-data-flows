@@ -57,7 +57,7 @@ $testOutputFilePath = "C:\Users\RobertHa\Documents\api_payload_test.json"
 
 
 # Connection
-$server = "ESLLREPORTS04V"
+$server = "ESLLREPORTS04V" 
 $database = "HDM_Local"
 $api_data_staging_table = "ssd_api_data_staging_anon"  # Note LIVE: ssd_api_data_staging | TESTING : ssd_api_data_staging_anon
 
@@ -132,7 +132,7 @@ function Execute-NonQuerySql {
         $conn.Open()
         $cmd = $conn.CreateCommand()
         $cmd.CommandText = $query
-        $cmd.ExecuteNonQuery()
+        [void]$cmd.ExecuteNonQuery() # [void] supress returns int (num rows affected) or use $rowsAffected = $cmd.ExecuteNonQuery()
         $conn.Close()
     } catch {
         Write-Host "❌ SQL execution failed: $($_.Exception.Message)" -ForegroundColor Red
@@ -188,6 +188,7 @@ function Update-ApiResponseForBatch {
         $personId = $record.person_id
         $responseLine = $responseItems[$i]
 
+        # expected success response format == 2025-04-02_09:04:19.87_62268a7d-e34f-4de0-8eef-f4c407965147.json
         if ($responseLine -match '^(\d{4}-\d{2}-\d{2})_(\d{2}:\d{2}:\d{2}\.\d{2})_(.+?)\.json$') {
 
             $datePart = $matches[1]
@@ -202,12 +203,12 @@ function Update-ApiResponseForBatch {
                 $payloadTimestamp = $null
             }
 
-            $escapedApiResponse = "Data received_$uuid" -replace "'", "''"
+            $escapedApiResponse = "$uuid" -replace "'", "''" # populate submission_status with response uuid
 
             $updateQuery = @"
 UPDATE $tableName
 SET submission_status = 'sent',
-    api_response = '$escapedApiResponse',
+    api_response = '$escapedApiResponse', 
     submission_timestamp = '$payloadTimestamp',
     previous_hash = current_hash,
     previous_json_payload = json_payload, 
@@ -310,9 +311,6 @@ function Send-ApiBatch {
 
 
 
-
-
-
 $JsonArray = Get-PendingRecordsFromDb -connectionString $connectionString -query $query
 
 if ($JsonArray.Count -eq 0) {
@@ -321,8 +319,8 @@ if ($JsonArray.Count -eq 0) {
 }
 
 $totalRecords = $JsonArray.Count
-$batchSize = 100
-$totalBatches = [math]::Ceiling($totalRecords / $batchSize) # batches needed to process all pending records
+$batchSize = 100 # api defined max batch count
+$totalBatches = [math]::Ceiling($totalRecords / $batchSize) # split pending batch sizes
 
 for ($batchIndex = 0; $batchIndex -lt $totalBatches; $batchIndex++) {
     $startIndex = $batchIndex * $batchSize

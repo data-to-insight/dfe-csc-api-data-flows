@@ -13,7 +13,7 @@ CREATE TABLE ssd_api_data_staging (
     partial_json_payload    NVARCHAR(MAX) NULL,         	-- Reductive JSON data payload (phase 2)
     previous_hash           BINARY(32) NULL,                -- Previous hash of JSON payload
     current_hash            BINARY(32) NULL,                -- Current hash of JSON payload
-    row_state               NVARCHAR(10) DEFAULT 'new',     -- Record state: New(initial default), Updated, Deleted, Unchanged(default)
+    row_state               NVARCHAR(10) DEFAULT 'new',     -- Record state: New(initial default), Updated, Deleted, Unchanged(default+post api send)
     last_updated            DATETIME DEFAULT GETDATE(),     -- Last update timestamp
     submission_status       NVARCHAR(50) DEFAULT 'pending', -- Status: Pending, Sent, Error
     api_response            NVARCHAR(MAX) NULL,             -- API response or error messages
@@ -421,8 +421,8 @@ ON target.person_id = source.person_id  -- Match records based on person_id
 WHEN MATCHED THEN
     UPDATE SET 
         target.json_payload = source.json_payload,  -- Update JSON payload
-        target.current_hash = source.new_hash,      -- Update hash to detect future changes
-        target.last_updated = GETDATE(),           -- Refresh last updated timestamp
+        target.current_hash = source.new_hash,      -- Refresh/update current hash
+        target.last_updated = GETDATE(),           	-- Refresh last updated timestamp
         target.row_state = 
             CASE 
                 WHEN target.current_hash <> source.new_hash THEN 'Updated' -- Mark as "Updated" if hash differs

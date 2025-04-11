@@ -1,11 +1,11 @@
-# Setup Guide | Config Shell Script 
+# Setup Guide - Config Shell Script
 
 ## Prerequisites
-Ensure that the [SSD is already deployed ](deploy_ssd.md) has already been checked|completed. 
+Ensure that the [SSD is already deployed](deploy_ssd.md) has already been checked or completed.
 
-## **Overview**
+### **Overview**
 
-This guide explains how to configure and set up the supplied (Power)Shell script for automated data submission within/from your Local Authority environment to a/the pre-agreed API endpoint. Descriptions and language used in this section unavoidably require some technical knowledge. It's anticipated that after initial local testing, the API script will require inclusion into an LA's overnights/cron job list. Towards this we have streamlined process(es) where possible to minimise both process(ing) overheads and run times.
+This guide explains how to configure and set up the supplied (Power)Shell script for automated data submission within/from your Local Authority environment to a/the pre-agreed API endpoint. For the most part, this is for reference as D2I will support such set up processes within each LA. Descriptions and language used in this section unavoidably require some technical knowledge. It’s anticipated that after initial local testing, the API script will require inclusion into an LA’s overnights/cron job list. Towards this we have streamlined process(es) where possible to minimise both process(ing) overheads and run times.
 
 ## Shell Script Notes
 
@@ -25,7 +25,7 @@ _Note: The use of MS Powershell within LA's is commonplace. Thus we have assumed
 
 **DB/CMS Configuration details required for API**:
 
- The API script, is stored and run from within your LA, and will need to be configured with some Local DB connection parameters :
+ The API script, is stored and run from within your LA, and will need to be configured with some Local DB connection parameters. The following is only relevant/sensical to those currently looking at the API script  :
 
 - **`$testingMode`**: Bool flag to toggle btwn LA testing and data being sent externally. **`true`=NO data leaves the LA.** 
 - **`$server`**: CMS Reporting (SQL)Server name, e.g. ESLLREPORTS00X
@@ -40,10 +40,11 @@ Some paramaters are pre-configured and requiring no local changes, here for refe
 
 ### **Prerequisites**
 
-- PowerShell 5.1+ with ability to install `SqlServer` module.
-- SQL Server with access to the specified database.
+-	PowerShell 5.1+ (or alternative shell/scripting language access)
+-	Permissions to run: PowerShell, Python, or Bash script locally would reduce early testing overheads, but scripts must be able to run later as part of the server tasks/overnights for automating the daily data extraction & API
+-	Access to the specified CMS database on SQL Server or another DB
 
---- 
+
 
 ## **API Minimum Requirements**
 
@@ -62,7 +63,7 @@ SqlServer PowerShell Module:
 DB: 
  - Ensure the ssd_api_data_staging table has been created and populated as required.
 
----
+
 
 
 ## **Script Configuration**
@@ -79,7 +80,7 @@ Open the script in a text editor or Powershell and update the following variable
 ### **Testing flag**
  - `$testingMode` = `$true`                # $true == **NO data leaves the LA.** | Set to $false for production-Live. See **Execution** for more detail. 
 
---- 
+
 
 
 ## **Execution**
@@ -97,8 +98,8 @@ Open the script in a text editor or Powershell and update the following variable
  
 ### Verify Updates:
 
- - Check the ssd_api_data_staging table to ensure submission_status and api_response are updated correctly.
+ - Check the ssd_api_data_staging table to ensure submission_status and api_response fields are being updated correctly after a successful(or otherwise) data transmission. 
 
----
+
 
 

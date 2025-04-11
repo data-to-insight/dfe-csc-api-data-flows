@@ -288,7 +288,51 @@ if __name__ == '__main__':
 
 
 
+
 ##### Reset data block
+
+## reset flag values afer a run of internal/external api testing
+
+import pyodbc
+
+def reset_table_fields():
+    server = "ESLLREPORTS04V"
+    database = "HDM_Local"
+    trusted_connection = "yes"
+    driver = '{ODBC Driver 17 for SQL Server}' # or {SQL Server}
+
+    conn_str = f"DRIVER={driver};SERVER={server};DATABASE={database};Trusted_Connection={trusted_connection}"
+    
+    try:
+        conn = pyodbc.connect(conn_str)
+        print("Database connection successful.")
+    except Exception as e:
+        print("Error connecting to database:", e)
+        return
+
+    cursor = conn.cursor()
+    
+    # Update statement to reset specified fields.
+    update_sql = """
+    UPDATE ssd_api_data_staging_anon
+    SET row_state = 'new',
+        submission_status = 'pending',
+        last_updated = GETDATE(),
+        api_response = NULL
+    """
+    cursor.execute(update_sql)
+    conn.commit()
+    print("Table fields reset successfully.")
+    
+    conn.close()
+
+if __name__ == "__main__":
+    reset_table_fields()
+
+### end reset data block
+
+
+
 
 ## reset flag values afer a run of internal/external api testing
 

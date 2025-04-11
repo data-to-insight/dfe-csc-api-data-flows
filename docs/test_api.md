@@ -1,4 +1,4 @@
-# Setup Guide | Deploy API - Test
+# Setup Guide - Deploy API - Test
 
 
 ## Prerequisites

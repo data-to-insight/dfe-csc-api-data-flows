@@ -1,5 +1,4 @@
-# Setup Guide | Deploy SSD
-<!-- [![Download Deploy SSD](https://img.shields.io/badge/Download-PDF-red)](pdf/1_deploy_ssd.pdf) -->
+# Setup Guide - Deploy SSD
 
 ## Prerequisites
 Ensure that the [minimum system requirements](system_requirements.md) are already met.
@@ -9,7 +8,7 @@ Ensure that the [minimum system requirements](system_requirements.md) are alread
 
 A more complete overview of the SSD schema is available [SSD documentation](https://data-to-insight.github.io/ssd-data-model).
 The SSD is deployed using 1+ SQL scripts, which create and populate a new schema of approx 45 tables within your existing CMS database. The script(s) require no elevated privilledges, is non-destructive and can be run against the database by anyone with SELECT/CREATE permissions.   
-This new schema can act as a standardised middleware between your CMS and other services and common reporting. 
+This new schema acts as a standardised middleware between your CMS and other services and common reporting. 
 
 ---
 
@@ -24,7 +23,7 @@ This new schema can act as a standardised middleware between your CMS and other 
 
 **Deploy $ssd_api_data_staging table**:
 
-   In order to enable the API data flow, we've added an additional non-core table to the SSD specification. These, and all needed changes to the SSD will be packaged within the initial set up scripts and there is nothing additional that requires action. The table enables change tracking and the storing of the API submission/status reponses. All related set up and configuration will be supplied to populate this table with the pending JSON payloads.
+   In order to enable the API data flow, we've added an additional non-core table to the SSD specification. This, and all needed changes to the SSD will be packaged within the initial set up scripts and there is nothing additional that requires action. The table enables change tracking and the storing of the API submission/status reponses. All related set up and configuration will be supplied by D2I to populate this table with the pending JSON payloads.
 
 
 ## SSD : SystemC (SQL Server)
@@ -78,6 +77,6 @@ once, and is as simple as adding a number or list of values.
 ---
 ## JSON Structure
 
-In the live API deployment, child-level data extracted from the SSD will be included in the JSON payload in line with the data specification. If local authorities have access to a locally running Python environment (E.g. Anaconda or a Python IDE), D2I can additionally supply the processing to enable non-live testing with fully anonymised data to reduce uneccessary use of live data.   
+In the _live_ API deployment, child-level data extracted from the SSD will be included in the JSON payload in line with the DfE|agreed data specification. If local authorities have access to a locally running Python/Jupyter environment (E.g. via a Python IDE or Anaconda), D2I can additionally supply the scripted tool(s) to enable non-live testing with either fake data or fully scrambled & anonymised data to reduce uneccessary use of live data. This can enable a local authority to step through phased connection testing without any use of live data.    
 <!-- See full [json payload structure specification](payload_structure.md) -->
 

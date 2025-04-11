@@ -1,4 +1,4 @@
-# Playbook | Troubleshooting & FAQ
+# Playbook - Troubleshooting & FAQ
 
 
 ### **How do I check my PowerShell version?**

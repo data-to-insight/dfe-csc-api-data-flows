@@ -21,20 +21,31 @@ theme:
   toc:
     depth: 3  # (alter if h-depth deepens beyond h3. Current : H1, H2, H3)
 
-nav:
-# comment out here if wanting export pdf of subset of sections (or reduced front-end published)
-  - Overview: index.md
-  - System Requirements: system_requirements.md
-  - Deploy SSD: deploy_ssd.md
-  - API Config: api_config.md
-  - API Test: test_api.md
-  - API Deploy: deploy_api.md
-  - JSON Structure: payload_structure.md
-  - Test Data Anonymisation: data_anonymisation.md
-  - Troubleshoot & FAQ: troubleshooting_faq.md
+
+# comment out here if 
+# - wanting export pdf of subset of these sections
+# - reduced front-end published
+nav: 
+  - Project Overview: index.md
+
+  - 🟧 Local Authority Guidance:
+      - System & Access Requirements: system_requirements.md
+      - Deploying the SSD Schema: deploy_ssd_schema.md
+
+  - 🟧 Technical Setup:
+      - Configuring the API Script: configure_api_script.md
+      - API Testing: test_api.md
+      - API Deployment: deploy_api.md
+      - JSON Payload Structure: json_payload_structure.md
+      - Data Security: data_security.md
+      - Troubleshooting & FAQ: troubleshooting_faq.md
+
   # - Stakeholders: stakeholders.md
-  - Dev Plan: development_plan.md
-  - Dev Backlog: git_dev_backlog.md
+
+  - 🟧 Development:
+      - Implementation Roadmap: implementation_roadmap.md
+      - Feature Backlog: feature_backlog.md
+
 
 
 plugins:
@@ -44,7 +55,7 @@ plugins:
       output_path: "pdf/csc_ssd_api_documentation.pdf"
       cover: true
       cover_title: "CSC SSD API Documentation"
-      cover_subtitle: "Data to Insight | Deployment Guide [ver:0.3.3 - spec:0.7] [DRAFT]"
+      cover_subtitle: "Data to Insight | Deployment Reference Guide [ver:0.3.4 - spec:0.8] [DRAFT]"
       copyright: " "
       # pages: ""
       # exclude_docs: ""

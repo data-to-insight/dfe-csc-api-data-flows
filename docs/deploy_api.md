@@ -1,7 +1,7 @@
-# Setup Guide | Deploy API - Live
+# Setup Guide - Deploy API - Live
 
 ## Prerequisites
-Ensure that the [api config](api_config.md) has already been checked|completed. <br>
+Ensure that the [api config](api_config.md) has already been checked or completed. <br>
 
 ## **Deploy API External** (in progress):
 
