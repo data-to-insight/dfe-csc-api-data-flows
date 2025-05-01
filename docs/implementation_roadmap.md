@@ -12,6 +12,71 @@
 7. Ensure minimal manual intervention with configurable automation
 8. *Design towards potential additional fields inclusion/future changes*
 
+## Current development process flow (S1 & 2)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant DevSim as Python Script (Simulate Changes)
+    participant SQL as CMS Db Server: ssd_api_data_staging(_anon)
+    participant Ingest as SQL Update SSD Staging Table
+    participant PSScript as PowerShell Script (Delta Submission)
+    participant API as External API
+
+    %% Development | Testing
+    DevSim->>SQL: Modify json_payload, current_hash
+    DevSim->>SQL: Set row_state = 'updated', status = 'pending'
+
+    Note over DevSim,SQL: Development | Testing
+
+    %% Deployment | Live Start
+    Ingest->>SQL: Build JSON structure (computed per child)
+    Ingest->>SQL: MERGE into SSD staging table
+    alt Matched and changed
+        SQL->>SQL: Update json_payload, current_hash
+        SQL->>SQL: Set row_state = 'updated'
+    else Unchanged
+        SQL->>SQL: Set row_state = 'unchanged'
+    else New
+        SQL->>SQL: INSERT with row_state = 'new'
+    else Deleted
+        SQL->>SQL: Set row_state = 'deleted'
+    end
+
+    Note over Ingest,SQL: Deployment | Live Daily Ingestion
+
+    %% PowerShell Script Starts
+    PSScript->>SQL: SELECT pending/error records
+    alt usePartialPayload = true
+        PSScript->>SQL: Generate-AllPartialPayloads()
+        SQL-->>PSScript: partial_json_payload
+    else use full json_payload
+        SQL-->>PSScript: json_payload
+    end
+
+    loop Max 100 records per batch
+        PSScript->>API: POST JSON batch
+        alt HTTP 200 OK
+            API-->>PSScript: DfE uuid response + timestamps
+            PSScript->>SQL: Set submission_status = 'sent'
+            PSScript->>SQL: Store DfE uuid response + timestamp
+            PSScript->>SQL: Copy json_payload → previous_json_payload
+            PSScript->>SQL: Copy current_hash → previous_hash
+        else Retryable Errors (401, 403, 429)
+            API-->>PSScript: Retryable error
+            PSScript->>API: Retry with exponential backoff
+            alt Max retries reached
+                PSScript->>SQL: Log as failed
+            end
+        else Fatal Errors (400, 204, 413)
+            API-->>PSScript: Non-retryable error
+            PSScript->>SQL: Log as failed
+        end
+    end
+
+    Note over PSScript,API: Deployment | Daily Submission (Batched, Conditional Retry)
+
+```
 
 ## Conceptual Overview (S1)
 ```mermaid
