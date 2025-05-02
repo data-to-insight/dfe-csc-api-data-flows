@@ -15,6 +15,7 @@
 ## Current development process flow (S1 & 2)
 
 ```mermaid
+
 sequenceDiagram
     autonumber
     participant DevSim as Python Script (Simulate Changes)
@@ -25,28 +26,31 @@ sequenceDiagram
 
     %% Development | Testing
     DevSim->>SQL: Modify json_payload, current_hash
-    DevSim->>SQL: Set row_state = 'updated', status = 'pending'
+    DevSim->>SQL: Set row_state = 'updated'
+    DevSim->>SQL: Set submission_status = 'pending'
 
     Note over DevSim,SQL: Development | Testing
 
     %% Deployment | Live Start
-    Ingest->>SQL: Build JSON structure (computed per child)
+    Ingest->>SQL: Build JSON structure (per child record)
     Ingest->>SQL: MERGE into SSD staging table
     alt Matched and changed
         SQL->>SQL: Update json_payload, current_hash
         SQL->>SQL: Set row_state = 'updated'
-    else Unchanged
+    else Matched and unchanged
         SQL->>SQL: Set row_state = 'unchanged'
-    else New
-        SQL->>SQL: INSERT with row_state = 'new'
-    else Deleted
+    else New record (not matched)
+        SQL->>SQL: Insert new row
+        SQL->>SQL: Set row_state = 'new'
+        SQL->>SQL: Set submission_status = 'pending'
+    else Missing in source
         SQL->>SQL: Set row_state = 'deleted'
     end
 
     Note over Ingest,SQL: Deployment | Live Daily Ingestion
 
     %% PowerShell Script Starts
-    PSScript->>SQL: SELECT pending/error records
+    PSScript->>SQL: SELECT records WHERE submission_status IN ('pending', 'error')
     alt usePartialPayload = true
         PSScript->>SQL: Generate-AllPartialPayloads()
         SQL-->>PSScript: partial_json_payload
@@ -57,26 +61,38 @@ sequenceDiagram
     loop Max 100 records per batch
         PSScript->>API: POST JSON batch
         alt HTTP 200 OK
-            API-->>PSScript: DfE uuid response + timestamps
+            API-->>PSScript: DfE uuid response + timestamp
             PSScript->>SQL: Set submission_status = 'sent'
-            PSScript->>SQL: Store DfE uuid response + timestamp
+            PSScript->>SQL: Set api_response = DfE uuid
             PSScript->>SQL: Copy json_payload → previous_json_payload
             PSScript->>SQL: Copy current_hash → previous_hash
+            PSScript->>SQL: Set row_state = 'unchanged'
         else Retryable Errors (401, 403, 429)
             API-->>PSScript: Retryable error
-            PSScript->>API: Retry with exponential backoff
+            PSScript->>API: Retry with backoff
             alt Max retries reached
-                PSScript->>SQL: Log as failed
+                PSScript->>SQL: Set submission_status = 'error'
+                PSScript->>SQL: Set api_response = error message
             end
         else Fatal Errors (400, 204, 413)
             API-->>PSScript: Non-retryable error
-            PSScript->>SQL: Log as failed
+            PSScript->>SQL: Set submission_status = 'error'
+            PSScript->>SQL: Set api_response = error message
         end
     end
 
-    Note over PSScript,API: Deployment | Daily Submission (Batched, Conditional Retry)
+    Note over PSScript,API: Deployment | Daily Submission (Batched, Status-driven)
 
 ```
+| ✅ Event                              | `submission_status` | `row_state`   |
+|--------------------------------------|----------------------|---------------|
+| Initial load (new record)            | `pending`            | `new`         |
+| JSON modified (Python or SQL hash)   | `pending`            | `updated`     |
+| API success                          | `sent`               | `unchanged`   |
+| API failure (retry exhausted)        | `error`              | *(unchanged)* |
+| Deleted in source                    | *(unchanged)*        | `deleted`     |
+
+---
 
 ## Conceptual Overview (S1)
 ```mermaid
@@ -158,11 +174,11 @@ flowchart TD
 | Task Area                           | Task                                                                                     | Status |
 |-------------------------------------|-----------------------------------------------------------------------------------------|--------|
 | **Review Initial Specification**    | Review specification for project scope                                                  | 🚀 |
-|                                      | Ensure any project required permissions/software is available                           | 🛠 |
-|                                      | Complete API to SSD fields mapping                                                     | 🛠 |
-| **SSD Changes**                     | Add API specified fields into SSD and data spec *(pushed to public SSD front-end?)*    | 🔄 |
+|                                      | Ensure any project required permissions/software is available                           | ✅ |
+|                                      | Complete API to SSD fields mapping                                                     | ✅ |
+| **SSD Changes**                     | Add API specified fields into SSD and data spec *(pushed to public SSD front-end?)*    | ✅ |
 |                                      | SystemC (SQL Server)                                                                    | 🚀 |
-|                                      | Mosaic (SQL Server)                                                                     | 🔲 |
+|                                      | Mosaic (SQL Server)                                                                     | 🔄 |
 |                                      | Eclipse (Postgres+)                                                                      | 🚀 |
 |                                      | Azeus (Oracle) (March development to prioritise API object requirements)         | 🔄 |
 | **Create Documentation (Framework & Plan)** | Request guidance on documentation preferences/standards                        | ⏳ |
@@ -171,19 +187,19 @@ flowchart TD
 |                                      | Define/write up development plan stage 2                                               | 🔄 |
 | **Review and Complete SSD Backlog Tickets** | Backlog board review                                                                  | 🔄 |
 |                                      | Work to close required backlog tickets *(known blockers affecting API data flow processes or data)* | 🔲 |
-| **Write JSON Data Extract (SQL Query)** | Partial JSON extract query with Header + Top-level child details only *(process testing)* | 🛠 |
-|                                      | Full JSON extract query with Header + Top-level child details + all sub-level elements  | 🛠 |
+| **Write JSON Data Extract (SQL Query)** | Partial JSON extract query with Header + Top-level child details only *(process testing)* | ✅ |
+|                                      | Full JSON extract query with Header + Top-level child details + all sub-level elements  | ✅ |
 | **Automate Data Extraction**        | Investigation towards suitable process/script for data extract + API workflow          | 🔄 |
-|                                      | Develop API workflow *shell* script(s) incl. DB access, JSON query extraction          | 🔄 |
-|                                      | Test API workflow locally within host LA *(extract only)*                              | 🔄 |
+|                                      | Develop API workflow *shell* script(s) incl. DB access, JSON query extraction          | 🚀 |
+|                                      | Test API workflow locally within host LA *(extract only)*                              | 🚀 |
 | **Create Documentation (Playbook)** | Write up final LA playbook details                                                     | 🔄 |
 |                                      | Update documentation based on pilot LA 1 + stakeholder(s) feedback                     | 🔲 |
-| **Simulate API Integration local within ESCC** | Create/generate/Anonymise dummy data for initial API send *(SSD structure + repeatable)* | 🛠 |
-|                                      | Test with complete (non-delta) payload of null/dummy data                              | 🛠 |
-|                                      | Test each response code(s), & logging within payload table                              | ⏳ |
+| **Simulate API Integration local within ESCC** | Create/generate/Anonymise dummy data for initial API send *(SSD structure + repeatable)* | ✅ |
+|                                      | Test with complete (non-delta) payload of null/dummy data                              | ✅ |
+|                                      | Test each response code(s), & logging within payload table                              | 🔄 |
 | **Test API Integration with a Pilot LA** | Test with complete (non-delta) payload of null/dummy data                              | ⏳ |
 |                                      | Test each response code(s), & logging within payload table                              | ⏳ |
-| **Refinements/Granular end-goal fixes** | Process to handle (mid-)record 'purges'                                                | 🔲 |
+| **Refinements/Granular end-goal fixes** | Process to handle (mid-)record 'purges'                                                | 🔄 |
 |                                      | Discuss/investigate longer-term/wider API use and potential process changes *(e.g. do we need combined payload staging table as mid-term historic record)* | 🔲 |
 
 
