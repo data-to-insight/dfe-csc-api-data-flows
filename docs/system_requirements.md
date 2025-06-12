@@ -14,7 +14,7 @@ A list summary that LA colleagues can share with their IT support teams to enabl
 
 - **SSD Deployment**: Analyst access to CMS DB (SELECT/CREATE table+index. *Ideally also* ALTER|DROP table+index)
 - **DB Compatibility**: Compatibility setting at **120+** to enable more efficient JSON manipulation options for the SDD and structured data extract required for the API payload. Potential work-arounds exist for compatibility <= 120, but will be less optimised. 
-- **Automation**: PowerShell 5.1+ (or Bash) scripts locally with ability to import `SqlServer` module (or alternative) - Script language will be the same that will require running from the server to enable to full API automation later. 
+- **Automation**: PowerShell 5.1+ (or Python) scripts locally with ability to import `SqlServer` module (or alternative) - Script language will be the same that will require running from the server to enable to full API automation later. At this stage we are anticipating that Phase 1 deployment can be done using only Powershell, but that Phase 2 will require a combined or alternative approach involving Python or an executable file of that Python supplied to your LA for server deployment. 
 
 ---
 
@@ -39,16 +39,24 @@ Pilot LAs are expected to be using:
 
 Additional supplied SSD add-on(s), including:
 
-  - CAPI submisison and reponse tracking table to store pending JSON payloads and API response codes (essentially just an additional table added to the SSD deployment, whereby all required SQL is supplied by D2I).
+  - API submisison and reponse tracking table to store pending JSON payloads and API response codes (essentially just an additional table added to the SSD deployment, whereby all required SQL is supplied by D2I).
 
 **Automation**:
 
-- **PowerShell 5.1+**  (or potentially an alternative shell/scripting)
-- **Permissions to run**: **PowerShell**, **Python**, or **Bash** script locally would reduce early testing overheads, but scripts must be able to run later as part of the **server tasks/overnights** for automating the daily data extraction & API data submissions.
+Phase 2 of the project development stream is undergoing testing at the moment. Efforts to-date towards this phase suggests a high liklihood of the requirements shifting from Powershell to a Python based implemention that can be deployed to LAs either as a raw Python script and/or an executable. 
+
+**Phase 1**
+- **PowerShell 5.1+** or alternatively **Python 3.0+**
+- **Permissions to run**: **PowerShell**, or **Python** script locally would reduce early testing overheads, but scripts must be able to run later as part of the **server tasks/overnights** for automating the daily data extraction & API data submissions. 
+
+**Phase 1 and 2**
+- **Python 3.0+**
+- **Permissions to run**: **Python**, script locally would reduce early testing overheads, but either .py or .exe(of the supplied .py) scripts must be able to run later as part of the **server tasks/overnights** for automating the daily data extraction & API data submissions.
 
 --- 
 
 ### Support
+
 D2I will be available to support local authorities directly on some/all of the above where access allows, and to assist with needed set-up config or localised changes to the available scripts.  
 
 
