@@ -1,0 +1,19 @@
+dfe_csc_api_data_flows/
+├── api_package/
+│   ├── __init__.py
+│   ├── config.py
+│   ├── logging.py
+│   ├── decorators.py
+│   ├── payloads.py
+│   ├── db.py
+│   ├── api.py
+│   ├── main.py
+│   └── update.py               
+├── tests/
+│   ├── __init__.py
+│   ├── test_payloads.py
+│   ├── test_db.py
+│   └── conftest.py
+├── requirements.txt
+├── README.md
+└── pytest.ini                  

@@ -15,7 +15,7 @@ sccm_alignment:
     - name: LocalAuthority
       label: Local Authority
       description: An administrative body responsible for children’s services
-      type: ORGANIZATION
+      type: ORGANISATION
       properties:
         - la_code
 
@@ -62,7 +62,7 @@ sccm_alignment:
     - name: DepartmentForEducation
       label: Department for Education (DfE)
       description: The UK government department responsible for education and children's services
-      type: ORGANIZATION
+      type: ORGANISATION
 
     - name: DfEPrivateDashboard
       label: DfE Private Dashboard
