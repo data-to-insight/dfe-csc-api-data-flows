@@ -46,10 +46,12 @@ Additional supplied SSD add-on(s), including:
 Phase 2 of the project development stream is undergoing testing at the moment. Efforts to-date towards this phase suggests a high liklihood of the requirements shifting from Powershell to a Python based implemention that can be deployed to LAs either as a raw Python script and/or an executable. 
 
 **Phase 1**
+
 - **PowerShell 5.1+** or alternatively **Python 3.0+**
 - **Permissions to run**: **PowerShell**, or **Python** script locally would reduce early testing overheads, but scripts must be able to run later as part of the **server tasks/overnights** for automating the daily data extraction & API data submissions. 
 
 **Phase 1 and 2**
+
 - **Python 3.0+**
 - **Permissions to run**: **Python**, script locally would reduce early testing overheads, but either .py or .exe(of the supplied .py) scripts must be able to run later as part of the **server tasks/overnights** for automating the daily data extraction & API data submissions.
 
