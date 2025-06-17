@@ -1,0 +1,47 @@
+dfe_csc_api_data_flows/
+├── .github
+│   └── workflows
+│       └── gh-pages.yml
+├── .gitignore
+├── .pytest_cache
+│   ├── .gitignore
+│   ├── CACHEDIR.TAG
+│   ├── README.md
+│   └── v
+│       └── cache
+│           ├── lastfailed
+│           ├── nodeids
+│           └── stepwise
+├── LICENSE
+├── README.md
+├── admin
+│   ├── some files
+├── d2i_dev
+│   ├── some files
+├── dfe_api_pipeline
+│   ├── README.md
+│   ├── api.py
+│   ├── auth.py
+│   ├── build.sh
+│   ├── build.yml
+│   ├── config.py
+│   ├── csc_data_flows_api.ipynb
+│   ├── db.py
+│   ├── env.txt
+│   ├── main.py
+│   ├── payload.py
+│   ├── pyproject.toml
+│   ├── requirements.txt
+│   └── utils.py
+├── docs
+│   ├── some files (mk docs)
+├── mkdocs.yml
+├── pyproject.toml
+├── pytest.ini
+├── release.sh
+├── requirements.txt
+├── sccm.yml
+├── sccm_graph_static.svg
+├── setup.sh
+└── site
+    ├── some files (mk docs published)

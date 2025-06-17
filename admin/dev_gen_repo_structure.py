@@ -41,6 +41,6 @@ def write_repo_structure(output_file="d2i_dev/dev_repo_structure.txt", include_d
 # spec include dir or exclude folders
 write_repo_structure(
     output_file="dev_repo_structure.txt",
-    include_dir="/workspaces/csc_api_data_collection",  # from this point
+    include_dir="/workspaces/dfe_csc_api_data_flows",  # from this point
     exclude_dirs=[".git", ".env", "venv", "__pycache__", "d2i_dev_depreciated_BAK"]  # ignore
 )

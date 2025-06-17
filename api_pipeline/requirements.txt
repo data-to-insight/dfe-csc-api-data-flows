@@ -1,0 +1,4 @@
+pyodbc
+requests
+memory-profiler
+python-dotenv

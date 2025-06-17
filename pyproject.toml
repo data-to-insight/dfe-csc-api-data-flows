@@ -1,0 +1,5 @@
+[project]
+name = "dfe-csc-api-pipeline"
+
+[tool.setuptools.packages.find]
+where = ["api_pipeline"]
