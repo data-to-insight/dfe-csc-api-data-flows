@@ -1,7 +1,9 @@
 import json
-from config import TABLE_NAME, USE_PARTIAL_PAYLOAD
-from payload import generate_partial_payload, generate_deletion_payload
-from utils import benchmark_section
+
+from .config import TABLE_NAME, USE_PARTIAL_PAYLOAD
+from .payload import generate_partial_payload, generate_deletion_payload
+from .utils import benchmark_section
+
 
 # ---- DATA ----
 # PEP 484 signature:

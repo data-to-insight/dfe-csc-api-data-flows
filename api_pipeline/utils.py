@@ -2,7 +2,9 @@ import time
 import tracemalloc
 from memory_profiler import memory_usage
 import pyodbc
-from config import DEBUG, USE_PARTIAL_PAYLOAD
+
+from .config import DEBUG, USE_PARTIAL_PAYLOAD
+
 
 
 def log_debug(msg):

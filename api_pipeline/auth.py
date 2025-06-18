@@ -1,6 +1,9 @@
 import requests
-from config import CLIENT_ID, CLIENT_SECRET, SCOPE, TOKEN_ENDPOINT
-from utils import log_debug
+
+
+from .config import CLIENT_ID, CLIENT_SECRET, SCOPE, TOKEN_ENDPOINT
+from .utils import log_debug
+
 
 
 def get_oauth_token():

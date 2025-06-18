@@ -1,18 +1,24 @@
+[tool.setuptools]
+packages = ["api_pipeline"]
+include_package_data = true
+
 [project]
-name = "csc-api-pipeline"
+name = "csc_api_pipeline"
 version = "0.1.0"
-description = "Children’s Social Care API payload submission tool"
+description = "DfE API payload tool for CSC"
+license = {text = "MIT"}
+requires-python = ">=3.10"
 readme = "README.md"
-requires-python = ">=3.8"
+
 dependencies = [
-    "pyodbc",
-    "requests",
-    "memory-profiler",
-    "python-dotenv"
+  "requests",
+  "pyodbc",
+  "python-dotenv"
 ]
 
 [project.scripts]
-csc-pipeline = "main:main"
+csc-api = "api_pipeline.main:main"
 
-[tool.setuptools]
-packages = ["api_pipeline"]
+[tool.setuptools.package-data]
+# include .env.example in wheel/sdist
+"api_pipeline" = ["*.env.example"]

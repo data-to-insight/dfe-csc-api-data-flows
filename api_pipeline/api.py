@@ -2,11 +2,12 @@ import json
 import re
 import time
 from datetime import datetime
-from config import BATCH_SIZE, API_ENDPOINT_LA
-from db import update_api_success, update_api_failure
-from utils import benchmark_section
 import requests
-from utils import log_debug
+
+from .config import BATCH_SIZE, API_ENDPOINT_LA
+from .db import update_api_success, update_api_failure
+from .utils import benchmark_section, log_debug
+
 
 # ---- API ----
 # PEP 484 signature:

@@ -1,6 +1,10 @@
 import json
-from config import REQUIRED_FIELDS, ALLOWED_PURGE_BLOCKS
-from utils import benchmark_section
+
+
+from .config import REQUIRED_FIELDS, ALLOWED_PURGE_BLOCKS
+from .utils import benchmark_section
+
+
 
 
 # [DIAG] Add diagnostics
