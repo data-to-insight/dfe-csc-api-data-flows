@@ -26,10 +26,6 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Clean previous build
-        run: |
-          rmdir /s /q dist build || echo "No previous build folders"
-          del /q /f *.spec || echo "No .spec file"
     
       - name: Build EXE with PyInstaller
         run: |
