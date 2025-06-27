@@ -1,0 +1,46 @@
+name: Build and Upload EXE
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'       # Trigger on version tags like v1.0.0
+  release:
+    types: [published] # Trigger when a GitHub Release is published
+
+jobs:
+  build:
+    name: Build EXE and Upload to Release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Clean previous build
+        run: |
+          rmdir /s /q dist build || echo "No previous build folders"
+          del /q /f *.spec || echo "No .spec file"
+    
+      - name: Build EXE with PyInstaller
+        run: |
+          pyinstaller api_pipeline/entry_point.py --onefile --name csc_api_pipeline
+
+      - name: Upload EXE and Docs to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/csc_api_pipeline.exe
+            README.md
+            .env.example
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

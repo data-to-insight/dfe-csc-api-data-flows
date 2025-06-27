@@ -1,0 +1,9 @@
+site/
+dist/
+build/
+*.egg-info/
+*.spec
+__pycache__/
+*.py[cod]
+
+

@@ -1,0 +1,56 @@
+name: Build and deploy MkDocs site
+
+on:
+  push:
+    branches: [main]  # on push
+
+permissions:
+  contents: read      # for checkout
+  pages: write        # publishing to GitHub Pages
+  id-token: write     # for GitHub Pages auth
+
+jobs:
+  build-deploy:  # build MkDocs site and upload result
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4  # repo code into runner
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.12     # ver for build
+
+      - name: Install dependencies
+        run: |
+          pip install mkdocs mkdocs-material mkdocs-mermaid2-plugin mkdocs-with-pdf
+
+      - name: Build site
+        run: mkdocs build --strict
+        # build /site
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/
+          # upload /site as artifact to Git
+
+  deploy:  # use Git-native mechanism
+    needs: build-deploy
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+      # declare env for Pages, enable deploy track
+
+    permissions:
+      pages: write
+      id-token: write
+      # grant scoped access for secure Pages deploy
+
+    steps:
+      - name: Deploy to Git Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        # perform Git-hosted deploy, no direct git push used

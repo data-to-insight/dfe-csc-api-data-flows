@@ -1,0 +1,48 @@
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Build output
+build/
+dist/
+*.egg-info/
+*.spec
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+
+# Environment files
+.env
+*.env
+env.txt
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Pytest
+.pytest_cache/
+.cache/
+.coverage
+
+# IDE/editor
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# MkDocs output
+site/
+
+# Executables or zip releases
+*.exe
+*.zip
+*.tar.gz
