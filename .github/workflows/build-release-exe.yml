@@ -3,9 +3,9 @@ name: Build and Upload EXE
 on:
   push:
     tags:
-      - 'v*.*.*'       # Trigger on version tags like v1.0.0
+      - 'v*.*.*'
   release:
-    types: [published] # Trigger when a GitHub Release is published
+    types: [published]
 
 jobs:
   build:
@@ -26,7 +26,12 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-    
+      - name: Clean previous build (CMD)
+        shell: cmd
+        run: |
+          rmdir /s /q dist build || echo No previous build folders
+          del /q /f *.spec || echo No .spec file
+
       - name: Build EXE with PyInstaller
         run: |
           pyinstaller api_pipeline/entry_point.py --onefile --name csc_api_pipeline
