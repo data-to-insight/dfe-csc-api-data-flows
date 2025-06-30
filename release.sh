@@ -51,7 +51,9 @@ git commit -m "Bump version to $VERSION"
 
 # Build package
 echo "Build Python package..."
-python -m build
+# python -m build
+python -m build api_pipeline --outdir dist
+
 echo "Package built at dist/"
 
 # Build Windows .exe if Windows
