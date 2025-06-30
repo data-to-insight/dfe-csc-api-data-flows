@@ -1,25 +1,25 @@
 # CSC API Pipeline
 
-A Python-based tool for submitting structured social care JSON payloads to the DfE Children’s Social Care (CSC) API. Designed to run locally, as a Windows `.exe` or via scheduled job (as part of LA overnight batches in either of those formats)
+A Python-based tool for submitting structured social care JSON payloads to the DfE Children’s Social Care (CSC) API. Designed to run locally, as a Windows `.exe` or via scheduled job (as part of LA overnight batches).
 
 ---
 
-## 🚀 Features
+## Features
 
 - Extracts data from a SQL Server staging table
 - Generates full or partial JSON payloads based on change detection
 - Authenticates via OAuth2 client credentials flow
 - Submits payloads to an API endpoint with retry and backoff logic
 - Logs responses and updates submission state in SQL
-- Offers `.exe` packaging for offline deployment
+- Offers `.exe` packaging for offline deployment via PyInstaller
 - Includes CLI tools for test and verification modes
-- Publishes technical documentation using MkDocs with Mermaid and PDF export
+- Publishes technical documentation using MkDocs with Mermaid and PDF export (via GitHub Actions)
 
 ---
 
-## 📦 Installation
+## Installation
 
-Clone the repo and install using Python 3.11 or later:
+Clone the repo and install locally:
 
 ```bash
 pip install .
@@ -33,32 +33,32 @@ python -m api_pipeline run
 
 ---
 
-## ⚙️ Environment Configuration
+## Environment Configuration
 
-Create a `.env` file based on the included template:
+Copy or rename `.env.example` and fill in missing values using your DfE supplied values:
 
-```env
-DB_CONNECTION_STRING=DRIVER={ODBC Driver 17 for SQL Server};SERVER=server;DATABASE=db;UID=user;PWD=password
-TOKEN_ENDPOINT=https://your-auth-server.com/token
-API_ENDPOINT=https://your-api.com/data
-CLIENT_ID=your_client_id
-CLIENT_SECRET=your_client_secret
-SCOPE=api.read api.write
-SUPPLIER_KEY=your_supplier_key
+```ini
+DB_CONNECTION_STRING=...
+TOKEN_ENDPOINT=...
+API_ENDPOINT=...
+CLIENT_ID=...
+CLIENT_SECRET=...
+SCOPE=...
+SUPPLIER_KEY=...
 DEBUG=true
 ```
 
 ---
 
-## 🖥️ Running the Pipeline
+## Running the Pipeline
 
-### As a Python module:
+### As a Python module
 
 ```bash
 python -m api_pipeline run
 ```
 
-### As a packaged `.exe`:
+### As an executable(packaged `.exe`:)
 
 ```bash
 csc_api_pipeline.exe
@@ -66,7 +66,7 @@ csc_api_pipeline.exe
 
 ---
 
-## 🧪 CLI Test Commands
+## CLI Commands
 
 Run local diagnostics:
 
@@ -76,16 +76,15 @@ python -m api_pipeline test-db
 python -m api_pipeline test-schema
 ```
 
-Or from the executable:
+From the executable:
 
 ```bash
 csc_api_pipeline.exe test-endpoint
 csc_api_pipeline.exe test-db
 ```
 
----
 
-## ❓ CLI Help
+## CLI Help
 
 ```bash
 csc_api_pipeline.exe --help
@@ -106,82 +105,75 @@ Commands:
   test-schema     Validate required table structure/schema
 ```
 
----
-
-## 📖 Documentation
-
-Documentation is maintained in the `docs/` folder and built using MkDocs.
-
-### View locally:
-
-```bash
-mkdocs serve
-```
-
-### Build static site:
-
-```bash
-mkdocs build
-```
-
-### Export as PDF:
-
-```bash
-mkdocs-with-pdf build
-```
-
-Documentation supports Mermaid diagrams and code highlighting. Output is auto-deployed using GitHub Pages via Actions.
 
 ---
 
-## 🌐 GitHub Pages Deployment
+## Documentation
 
-Uses native GitHub Actions Pages deployment.
+Documentation is maintained under `docs/` and built via MkDocs.
 
-Workflow location:
+- **Local preview:** `mkdocs serve`
+- **Static build:** `mkdocs build`
+- **PDF export:** `mkdocs-with-pdf build`
 
-```text
-.github/workflows/gh-pages.yml
-```
+Site auto-deploys via Git Pages on push to `main`.
 
-Triggers on push to `main`, builds site using MkDocs, and uploads as GitHub Pages artifact. Pages are published under `Settings → Pages`.
+Workflows:
+- `.github/workflows/build-api-pipeline-pkg.yml` – builds and upload PyPI package
+- `.github/workflows/build-release-exe.yml` – build Windows executable
+- `.github/workflows/gh-pages.yml` – build and deploy MkDocs site
 
-No manual push to `gh-pages` required.
+Note: your `pyproject.toml` and `MANIFEST.in` live at the project root (for PEP621 + package-data inclusion).  
+If you ever move to subfolder layout, ensure subfolder has its own `pyproject.toml`.
 
 ---
 
-## 🔁 Release Process
+## Git Actions Workflows
 
-Run the release helper:
+1. **build-api-pipeline-pkg.yml** – Create source and wheel distributions; upload as artifact.  
+2. **build-release-exe.yml** – On tag push or release, build Windows executable; upload to Git Release.  
+3. **gh-pages.yml** – On push/PR/cron, runs scrape, build MkDocs site, and publishes via Git Pages.
+
+---
+
+## Project Structure
+
+| File / Folder           | Purpose                               |
+|-------------------------|----------------------------------------|
+| `api_pipeline/`         | Core pipeline code                     |
+| `api_pipeline/entry_point.py` | Standalone launcher             |
+| `api_pipeline/config.py` | Loads environment and config values    |
+| `api_pipeline/auth.py`   | Handles OAuth authentication           |
+| `api_pipeline/db.py`     | Manages SQL Server access              |
+| `api_pipeline/payload.py`| Builds JSON payloads                   |
+| `api_pipeline/tests.py`  | Diagnostics and CLI tools              |
+| `docs/`                 | MkDocs site content                    |
+| `.github/workflows/`    | CI and deployment definitions          |
+| `pyproject.toml`        | Packaging metadata and build-system    |
+| `MANIFEST.in`           | Include non-code files in sdist        |
+| `README.md`             | This file                              |
+| `LICENSE`               | Licensing information                  |
+
+---
+
+
+## Release Process
+
+Run release helper:
 
 ```bash
 ./release.sh
 ```
 
 - Builds `.whl` and `.tar.gz` for PyPI
-- Optionally builds `.exe` for Windows
+- Optionally builds `.exe` for Windows(this only via worklflow atm in Codespace)
 - Tags commit and pushes to GitHub
 - Creates `release.zip` bundle
 
 ---
 
-## 📁 Project Structure
 
-| File / Folder           | Purpose                               |
-|-------------------------|----------------------------------------|
-| `api_pipeline/`         | Core pipeline code                     |
-| `entry_point.py`        | Standalone launcher                    |
-| `config.py`             | Loads environment and config values    |
-| `auth.py`               | Handles OAuth authentication           |
-| `db.py`                 | Manages SQL Server access              |
-| `payload.py`            | Builds JSON payloads                   |
-| `tests.py`              | Diagnostics and CLI tools              |
-| `docs/`                 | MkDocs site content                    |
-| `.github/workflows/`    | CI and deploy automation               |
-
----
-
-## 📊 Architecture
+## Architecture
 
 ### Pipeline Overview
 
@@ -197,8 +189,6 @@ flowchart TD
     end
 ```
 
----
-
 ### Submission Flow (per record)
 
 ```mermaid
@@ -208,32 +198,27 @@ sequenceDiagram
     participant Auth as OAuth Server
     participant API as CSC API
 
-    DB->>App: Select records (where status = pending or error)
+    DB->>App: Select records (status=pending or error)
     App->>Auth: Request OAuth2 token
-    Auth-->>App: Access token
+    Auth-->>App: Return access token
     App->>API: POST JSON payload
     API-->>App: 200 OK / error
-    App->>DB: Update submission_status<br>e.g. 'sent', 'error'
-    Note right of App: On success, copy json_payload → previous_json_payload
+    App->>DB: Update submission_status & previous_json_payload
 ```
 
 ---
 
-### Status Reference Table
+## Release Process
 
-| Event                            | `submission_status` | `row_state` |
-|----------------------------------|----------------------|-------------|
-| Initial load (new record)        | pending              | new         |
-| JSON modified (hash mismatch)    | pending              | updated     |
-| API success                      | sent                 | unchanged   |
-| API failure (retry exhausted)    | error                | unchanged   |
-| Record deleted in source system | pending              | deleted     |
+Use `./release.sh` to bump version, build Python package (sdist + wheel), optionally build `.exe`, zip artifacts, tag, and push.  
+Trigger workflows by pushing a `vX.Y.Z` tag or publishing a Release in GitHub UI.
 
 ---
 
-## 📝 License
+## License
 
 MIT License. See `LICENSE` file.
+
 
 ---
 
@@ -264,22 +249,7 @@ gitleaks detect --no-git --source=. --report-path=current_only.json
 
 ---
 
-## 📋 Changelog
-
-### v0.9.3 (2025-06-27)
-- Switched to GitHub-native Pages deployment
-- Added Mermaid2 plugin and PDF output via MkDocs
-- Included test CLI commands and PyInstaller build notes
-
-### v0.9.2
-- Partial payload generation logic added
-- Enhanced retry and logging for failed API submissions
-
-### v0.9.1
-- Initial working prototype of full pipeline with JSON payload generation
-
----
 
 ## 📬 Support
 
-For technical issues, raise a GitHub Issue or contact the D2I tooling team.
+For technical issues, raise a GitHub Issue or contact the D2I API tool team.
