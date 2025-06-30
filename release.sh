@@ -52,7 +52,8 @@ git commit -m "Bump version to $VERSION"
 # Build package
 echo "Build Python package..."
 # python -m build
-python -m build api_pipeline --outdir dist
+# python -m build api_pipeline --outdir dist
+python -m build --sdist --wheel --outdir dist # Build from the repo root (with package-only discovery)
 
 echo "Package built at dist/"
 
@@ -68,6 +69,7 @@ if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" || "$OSTYPE" == "cygwin" ]]; t
 else
   echo "Not on Windows — skipping .exe build"
 fi
+
 
 # Bundle for upload
 echo "Creating release zip..."
