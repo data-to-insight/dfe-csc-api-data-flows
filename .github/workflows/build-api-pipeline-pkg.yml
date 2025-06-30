@@ -26,9 +26,10 @@ jobs:
 
       - name: Build API pipeline package
         run: |
-          # Build package located api_pipeline/, uses root TOML + MANIFEST.in
+          # Build package located api_pipeline/, uses root TOML(with packages.find filter) + MANIFEST.in
+          python -m build --sdist --wheel --outdir dist 
           # python -m build api_pipeline --outdir api_pipeline/dist
-          python -m build --sdist --wheel --outdir dist
+
 
       - name: Upload dist artifacts
         uses: actions/upload-artifact@v4
