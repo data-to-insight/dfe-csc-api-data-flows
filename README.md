@@ -33,7 +33,7 @@ python -m api_pipeline run
 
 ---
 
-## Environment Configuration
+## Environment Config
 
 Copy or rename `.env.example` and fill in missing values using your DfE supplied values:
 
@@ -50,7 +50,7 @@ DEBUG=true
 
 ---
 
-## Running the Pipeline
+## Run API Pipeline
 
 ### As a Python module
 
@@ -68,7 +68,7 @@ csc_api_pipeline.exe
 
 ## CLI Commands
 
-Run local diagnostics:
+Run local diagnostics (limited options at the moment):
 
 ```bash
 python -m api_pipeline test-endpoint
@@ -99,7 +99,7 @@ Usage:
   csc_api_pipeline.exe [command]
 
 Commands:
-  run             Run the full API submission process
+  run             Run full API submission process
   test-endpoint   Check API connectivity and token authentication
   test-db         Check database connection
   test-schema     Validate required table structure/schema
@@ -110,17 +110,17 @@ Commands:
 
 ## Documentation
 
-Documentation is maintained under `docs/` and built via MkDocs.
+Documentation is maintained under `docs/` and built via MkDocs
 
 - **Local preview:** `mkdocs serve`
 - **Static build:** `mkdocs build`
 - **PDF export:** `mkdocs-with-pdf build`
 
-Site auto-deploys via Git Pages on push to `main`.
+Site auto-deploys via Git Pages on push to `main` into : [data-to-insight.github.io/dfe_csc_api_data_flows](https://data-to-insight.github.io/dfe_csc_api_data_flows/)
 
 Workflows:
-- `.github/workflows/build-api-pipeline-pkg.yml` – builds and upload PyPI package
-- `.github/workflows/build-release-exe.yml` – build Windows executable
+- `.github/workflows/build-api-pipeline-pkg.yml` – build Py distribution artifacts (sdist & wheel) and uploads as Git Actions artifact
+- `.github/workflows/build-release-exe.yml` – build Windows exe
 - `.github/workflows/gh-pages.yml` – build and deploy MkDocs site
 
 Note: your `pyproject.toml` and `MANIFEST.in` live at the project root (for PEP621 + package-data inclusion).  

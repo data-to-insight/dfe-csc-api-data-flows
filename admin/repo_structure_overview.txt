@@ -14,19 +14,10 @@ dfe_csc_api_data_flows/
 │   ├── entry_point.py
 │   ├── main.py
 │   ├── payload.py
-│   ├── pyproject.toml
 │   ├── requirements.txt
 │   ├── test.py
 │   └── utils.py
-├── csc_api_pipeline.egg-info/
-│   ├── PKG-INFO
-│   ├── SOURCES.txt
-│   ├── dependency_links.txt
-│   ├── requires.txt
-│   └── top_level.txt
-├── dist/
-│   ├── csc_api_pipeline-0.1.3-py3-none-any.whl
-│   └── csc_api_pipeline-0.1.3.tar.gz
+├── api_pipeline_pshell/
 ├── docs/
 │   ├── overrides/
 │   │   └── pdf/
@@ -43,16 +34,10 @@ dfe_csc_api_data_flows/
 │   ├── implementation_roadmap.md
 │   ├── index.md
 │   ├── json_payload_structure.md
-│   ├── refresh_dev_backlog_page_from_github_api.py
 │   ├── stakeholders.md
 │   ├── system_requirements.md
 │   ├── test_api.md
 │   └── troubleshooting_faq.md
-├── release_bundle/
-│   ├── .env.example
-│   ├── README.md
-│   ├── csc_api_pipeline-0.1.3-py3-none-any.whl
-│   └── csc_api_pipeline-0.1.3.tar.gz
 ├── site/
 │   ├── configure_api_script/
 │   │   └── index.html
@@ -92,17 +77,18 @@ dfe_csc_api_data_flows/
 │   ├── refresh_dev_backlog_page_from_github_api.py
 │   ├── sitemap.xml
 │   └── sitemap.xml.gz
+├── .env
 ├── .gitignore
 ├── LICENSE
+├── MANIFEST.in
 ├── README.md
 ├── clean.sh
 ├── csc_api_pipeline.spec
-├── env.txt
+├── gitleaks.tar.gz
 ├── mkdocs.yml
 ├── pyproject.toml
 ├── pytest.ini
 ├── release.sh
-├── release.zip
 ├── requirements.txt
 ├── sccm.yml
 ├── sccm_graph_static.svg

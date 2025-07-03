@@ -75,6 +75,8 @@ fi
 echo "Creating release zip..."
 mkdir -p release_bundle
 cp dist/* release_bundle/
+# cp api_pipeline_pshell/phase_1_api_payload.ps1 release_bundle/
+
 cp README.md api_pipeline/.env.example release_bundle/ || true
 zip -r release.zip release_bundle/
 
