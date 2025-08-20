@@ -22,9 +22,7 @@ theme:
     depth: 3  # (alter if h-depth deepens beyond h3. Current : H1, H2, H3)
 
 
-# comment out here if 
-# - wanting export pdf of subset of these sections
-# - reduced front-end published
+# comment out if wanting export pdf subset of sections
 nav: 
   - Project Overview: index.md
 
@@ -48,11 +46,17 @@ nav:
       - Implementation Roadmap: implementation_roadmap.md
       - Feature Backlog: feature_backlog.md
 
+  - 🟧 Admin:
+      - Release Process: admin-release_process.md
+      - Actions Workflows: admin-actions_workflow_overview.md
+      - CLI Interface: admin-cli_interface.md
 
 
 plugins:
   - search
-  - mermaid2 # removed as adding table sorting via pymdownx.superfences
+  - mermaid2: # retain as pymdownx.superfences not displaying mermaid
+      arguments:
+        securityLevel: loose
   - with-pdf:
       output_path: "pdf/csc_ssd_api_documentation.pdf"
       cover: true
@@ -64,6 +68,18 @@ plugins:
       # draft_docs:""
       # not_in_nav:""
 
+markdown_extensions:
+  # mermaid + fenced content
+  - attr_list
+  - admonition
+  - pymdownx.details
+  - pymdownx.highlight
+  #- pymdownx.superfences
+  # include partials from docs/_partials
+  - pymdownx.snippets:
+      check_paths: true
+      base_path:
+        - docs
 
 extra_css: 
   - assets/css/styles.css
