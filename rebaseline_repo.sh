@@ -75,7 +75,9 @@ done
 
 # Delete ALL remote tags
 echo "-> Deleting remote tags"
-REMOTE_TAGS=$(git ls-remote --tags --quiet origin | awk '{print $2}' | sed 's#refs/tags/##' | sed 's#\^\{\}##' | sort -u)
+REMOTE_TAGS=$(git ls-remote --tags --refs origin | awk '{print $2}' | sed 's#refs/tags/##')
+# or avoid sed REMOTE_TAGS=$(git ls-remote --tags --refs origin | awk '{print $2}' | awk -F/ '{print $3}')
+
 if [ -n "$REMOTE_TAGS" ]; then
   for TAG in $REMOTE_TAGS; do
     echo "   - deleting tag: $TAG"
