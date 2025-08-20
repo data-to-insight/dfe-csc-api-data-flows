@@ -1,48 +1,32 @@
 #!/bin/bash
 # release.sh — CSC API Pipeline Release Script
-# v1.1
+# v1.3
 
 #
-# This script automates release process for CSC API Pipeline project
-# It does following steps:
+# Automates release process for CSC API Pipeline:
+# 1) Safety: on main, clean working tree
+# 2) Prompt for new semantic version (defaults to last tag + patch)
+# 3) Clean caches/builds
+# 4) Update pyproject.toml if needed and commit
+# 5) Build sdist/wheel + twine check
+# 6) (Linux) skip exe build; (Windows) optional PyInstaller exe build
+# 7) Create release_bundle + release.zip
+# 8) Tag & push to trigger Actions
 #
-# 1. Verifies on the main branch (release safety check)
-# 2. Prompts for new semantic version tag (default is last tag + patch bump)
-# 3. Ensures working dir is clean (no uncommitted changes)
-# 4. Fully cleans build artifacts, caches, and temp files
-# 5. Updates version in pyproject.toml and commits change
-# 6. Builds Py package (.tar.gz` and `.whl) - PEP 517 standards
-# 7. Optionally builds Windows `.exe` using PyInstaller (if on Windows)
-# 8. Creates release_bundle/ dir containing:
-#    - Built distribution files
-#    - README.md
-#    - .env.example
-#    - Optional PowerShell and SQL deployment scripts
-# 9. Archives all bundled files into release.zip
-# 10. Prompts for confirmation and pushes the Git tag and main branch to origin
-#
-# Output:
-# - A clean versioned release archive at release.zip
-# - Tagged version pushed to Git
-#
-# Notes:
-# - Use chmod +x ./release.sh to make the script executable
-# - Script intended to be run manually from Codespace(or shell)
-# - release is via actions workflow/push
 
 set -e
 
 echo "CSC API Pipeline Release Script"
 echo "----------------------------------"
 
-# Confirm curr branch is main (safety chk)
+# --- Safety: ensure on main
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 if [[ "$CURRENT_BRANCH" != "main" ]]; then
   echo "Releases must be made from the 'main' branch (current: $CURRENT_BRANCH)"
   exit 1
 fi
 
-# Confirm version prep
+# --- Determine default next tag
 LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
 IFS='.' read -r MAJOR MINOR PATCH <<<"${LAST_TAG#v}"
 NEXT_TAG="v$MAJOR.$MINOR.$((PATCH + 1))"
@@ -51,13 +35,13 @@ echo "Last release tag: $LAST_TAG"
 read -p "Enter new version tag [default: $NEXT_TAG]: " VERSION
 VERSION="${VERSION:-$NEXT_TAG}"
 
-# Ensure clean repo
+# --- Working tree got to be clean
 if [[ -n $(git status --porcelain) ]]; then
   echo "Uncommitted changes found. Please commit or stash before releasing."
   exit 1
 fi
 
-# Full clean
+# --- Full clean
 echo "Full clean..."
 find . -type d -name "__pycache__" -exec rm -rf {} +
 find . -type d -name "*.egg-info" -exec rm -rf {} +
@@ -67,17 +51,28 @@ rm -rf .pytest_cache/ .coverage .vscode/ .idea/
 echo "Clean old builds..."
 rm -rf build dist *.egg-info release_bundle release.zip
 
-# Bump version in pyproject.toml
-echo "Updating pyproject.toml version to $VERSION..."
-sed -i.bak "s/^version = .*/version = \"${VERSION#v}\"/" pyproject.toml
-rm pyproject.toml.bak
+# --- Version normalisation
+# Users may enter "0.2.0" or "v0.2.0":
+#  - Git tag will be "vX.Y.Z"
+#  - pyproject.toml will be "X.Y.Z"
+RAW_VERSION="$VERSION"
+VERSION_TAG="v${RAW_VERSION#v}"     # ensure leading v
+VERSION_PEP440="${RAW_VERSION#v}"   # strip any leading v
 
-# Auto commit version bump
-echo "Committing version bump..."
-git add pyproject.toml
-git commit -m "Bump version to $VERSION"
+# --- Bump pyproject.toml only if needed
+echo "Updating pyproject.toml version to $VERSION_PEP440..."
+CURRENT_PEP440=$(grep -E '^version\s*=\s*"' pyproject.toml | sed -E 's/^version\s*=\s*"([^"]+)".*/\1/')
+if [[ "$CURRENT_PEP440" != "$VERSION_PEP440" ]]; then
+  # On Linux/GNU sed. (macOS would need: sed -i '' ...)
+  sed -i.bak "s/^version = \".*\"/version = \"$VERSION_PEP440\"/" pyproject.toml && rm -f pyproject.toml.bak
+  echo "Committing version bump to $VERSION_TAG..."
+  git add pyproject.toml
+  git commit -m "Bump version to $VERSION_TAG"
+else
+  echo "pyproject.toml already at $VERSION_PEP440 — no commit needed."
+fi
 
-# Build package (preflight)
+# --- Build package (sdist + wheel)
 echo "Installing build tooling..."
 python -m pip install --upgrade pip
 python -m pip install build twine
@@ -90,7 +85,7 @@ ls -lah dist || true
 echo "Twine metadata check..."
 twine check dist/*
 
-# Smoke test wheel in fresh venv
+# --- Quick smoke test in fresh venv
 echo "Smoke testing wheel..."
 python -m venv .relvenv
 # shellcheck disable=SC1091
@@ -101,7 +96,7 @@ python -c "import api_pipeline; print('Import OK:', api_pipeline.__name__)"
 deactivate
 rm -rf .relvenv
 
-# Build Windows .exe if Windows (so not in codespace)
+# --- Windows exe build (skipped on Codespaces/Linux)
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" || "$OSTYPE" == "cygwin" ]]; then
   if command -v pyinstaller &> /dev/null; then
     echo "Build Windows .exe..."
@@ -114,7 +109,7 @@ else
   echo "Not on Windows — skipping .exe build"
 fi
 
-# Bundle for upload (local convenience; CI also creates own ZIP)
+# --- Bundle for upload (CI also assembles artifacts)
 echo "Creating release zip..."
 mkdir -p release_bundle
 cp dist/* release_bundle/ || true
@@ -123,20 +118,21 @@ cp api_pipeline_pshell/phase_1_api_payload.ps1 release_bundle/ || true
 cp api_sql_raw_json_query/populate_ssd_api_data_staging.sql release_bundle/ || true
 zip -r release.zip release_bundle/
 
-# Tag and push release
-read -p "Push Git tag $VERSION and trigger release? (y/n): " CONFIRM
+# --- Tag and push release
+read -p "Push Git tag $VERSION_TAG and trigger release? (y/n): " CONFIRM
 if [[ $CONFIRM == "y" ]]; then
-  git tag "$VERSION"
+  # Create or update tag to current HEAD
+  git tag "$VERSION_TAG" 2>/dev/null || git tag -f "$VERSION_TAG"
   git push origin main
-  git push origin "$VERSION"
-  echo "Tag $VERSION pushed. Git Actions will build release."
+  git push origin "$VERSION_TAG" --force-with-lease
+  echo "Tag $VERSION_TAG pushed. GitHub Actions should build the release."
 else
   echo "Skipped tag push."
 fi
 
-# summarise outputs
+# --- Summary
 echo "Release bundle contents:"
 ls -lh release_bundle/ || true
-echo ""
-echo "Release completed: $VERSION"
-echo "Output: release.zip"
+echo
+echo "Release completed: $VERSION_TAG"
+echo "Output archive: release.zip"
