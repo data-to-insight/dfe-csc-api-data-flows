@@ -1,0 +1,8 @@
+{% for page in nav.pages %}
+    {% if not page.meta or not page.meta.hide_from_pdf %}
+        <h1>{{ page.title }}</h1>
+        {{ page.content }}
+    {% else %}
+        <!-- Skipping {{ page.title }} (hidden from PDF) -->
+    {% endif %}
+{% endfor %}

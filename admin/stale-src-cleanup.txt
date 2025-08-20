@@ -1,0 +1,3 @@
+# delete the local and remote cleanup branch
+git branch -d cleanup/remove-stale-src
+git push origin --delete cleanup/remove-stale-src

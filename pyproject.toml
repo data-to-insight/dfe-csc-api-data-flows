@@ -1,0 +1,60 @@
+[project]
+name = "csc_api_pipeline"
+version = "0.1.11"
+description = "API payload builder and sender for CSC"
+requires-python = ">=3.10"
+license = "MIT"  # SPDX 
+readme = { file = "api_pipeline/README.md", content-type = "text/markdown" }
+dependencies = [
+  "requests>=2.31,<3",
+  "pyodbc>=5,<6",
+  "python-dotenv>=1.0,<2"
+]
+
+
+[project.optional-dependencies]
+dev = [
+  "memory-profiler>=0.61,<1"
+]
+test = [
+  "pytest>=8,<9",
+  "pytest-mock>=3,<4"
+]
+docs = [
+  "mkdocs>=1.6,<2",
+  "mkdocs-material>=9.5,<10",
+  "mkdocs-awesome-pages-plugin>=2.9,<3",
+  "mkdocs-mermaid2-plugin>=1.2,<2",
+  # Towards PDF render:
+  "mkdocs-with-pdf>=0.9,<1",
+  "weasyprint>=65,<66"
+]
+build = [
+  "build>=1,<2",
+  # Towards local .exe build:
+  "pyinstaller>=6,<7"
+]
+notebooks = [
+  "jupyterlab>=4,<5",
+  "ipykernel>=6,<7"
+  # For later use in notebook
+  # "pandas>=2.2,<3",
+  # "matplotlib>=3.8,<4",
+  # "seaborn>=0.13,<0.14"
+]
+
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["api_pipeline*"]
+
+[project.scripts]
+csc-api = "api_pipeline.entry_point:cli"
+csc-api-pipeline = "api_pipeline.entry_point:cli"
+
+# wheel exclusions (see MANIFEST for dist exclusions)
+[tool.setuptools.exclude-package-data]
+api_pipeline = ["*.env.example", "README.md"]
+

@@ -1,0 +1,64 @@
+# Local Authority System Requirements
+
+## Prerequisites
+
+In preparation towards the CSC API Dataflow project, Local Authorities must ensure that the following are in place.
+<!-- [![Download PDF](https://img.shields.io/badge/Download-PDF-red)](/csc_api_data_collection/pdf/csc_ssd_api_documentation.pdf) -->
+
+
+### System Requirements
+
+**IT System Support Team Requirements**:
+
+A list summary that LA colleagues can share with their IT support teams to enable project access.
+
+- **SSD Deployment**: Access to CMS reporting DB (with permissions SELECT/CREATE/ALTER/DROP table+index)
+- **DB Compatibility**: At **120+** to enable more efficient JSON manipulation (both for SDD and API payload creation). Potential work-arounds exist for <= 120, but will be less optimised. 
+- **Automation**: Phase 1 is possible with PowerShell 5.1+(with ability to import `SqlServer` module (or alternative)), Phase 2 will require Python - Script language will be the same that will require running from the server to enable to full API automation later. At this stage we are anticipating that Phase 1 deployment can be done using only Powershell, but that Phase 2 will require a combined or alternative approach involving Python or an executable file of the Python supplied to your LA for server deployment. Phase 1 and 2 combined are possible with the recommended Python based solution.  
+
+---
+
+**CMS**:
+
+Pilot LAs are expected to be using:
+
+ - **SystemC(Liquid Logic)** | **Mosaic** | **Eclipse** | **Azeus**-In Development/TBC | **Other**-TBC
+
+**Database**:
+
+- **SystemC**   : SQL Server 2017+ with compatibility settings **120+**
+- **Mosaic**    : SQL Server 2017+ with compatibility settings **120+**
+- **Mosaic**    : Oracle users(**TBC**) - depreciated.
+- **Eclipse**   : PostgreSQL (**TBC – development nearing completion**)
+- **Eclipse**   : SQL Server data warehouse (**TBC**) - Not within initial phases
+- **Azeus**     : Oracle (**TBC - in development**) 
+
+**Database Additions**:
+
+- The **Standard Safeguarding Dataset (SSD)** structure deployed with D2I guidance on CMS database  _(e.g., for SystemC, commonly `HDM_Local`)_
+
+Additional supplied SSD add-on(s), including:
+
+  - API submisison and reponse tracking table to store pending JSON payloads and API response codes (essentially just an additional table added to the SSD deployment, whereby all required SQL is supplied by D2I).
+
+**Automation**:
+
+Phase 2 of the project development stream is undergoing testing at the moment. Efforts to-date towards this phase suggests a high liklihood of the requirements shifting from Powershell to a Python based implemention that can be deployed to LAs either as a raw Python script and/or an executable. 
+
+**Phase 1**
+
+- **PowerShell 5.1+** or alternatively **Python 3.0+**
+- **Permissions to run**: **PowerShell**, or **Python** script locally would reduce early testing overheads, but scripts must be able to run later as part of the **server tasks/overnights** for automating the daily data extraction & API data submissions. 
+
+**Phase 1 and 2**
+
+- **Python 3.0+**
+- **Permissions to run**: **Python**, script locally would reduce early testing overheads, but either .py or .exe(of the supplied .py) scripts must be able to run later as part of the **server tasks/overnights** for automating the daily data extraction & API data submissions.
+
+--- 
+
+### Support
+
+D2I will be available to support local authorities directly on some/all of the above where access allows, and to assist with needed set-up config or localised changes to the available scripts.  
+
+

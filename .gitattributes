@@ -1,0 +1,38 @@
+# Exclude from Git Source code (zip/tar.gz) archive
+
+# -------- dev/CI/docs dirs ----------
+.github/                             export-ignore
+docs/                                export-ignore
+site/                                export-ignore
+admin/                               export-ignore
+
+# -------- Build outputs / artifacts ------------
+build/                               export-ignore
+dist/                                export-ignore
+release_bundle/                      export-ignore
+csc_api_pipeline.egg-info/           export-ignore
+release.zip                          export-ignore
+
+# # -------- Notebooks & tests ----------------------------------------------
+# notebooks/                           export-ignore
+# tests/                               export-ignore
+
+# -------- Root-level project files not needed for end-users ---
+mkdocs.yml                           export-ignore
+clean.sh                             export-ignore
+setup.sh                             export-ignore
+release.sh                           export-ignore
+requirements.txt                     export-ignore
+pytest.ini                           export-ignore
+sccm.yml                             export-ignore
+sccm_graph_static.svg                export-ignore
+
+# -------- Keep only *current* SQL helper  ------------------
+# Exclude dev-only SQL
+api_sql_raw_json_query/dev/  export-ignore
+
+# NOTE: do NOT mark these paths with export-ignore:
+#   api_pipeline/**                               - keep package source
+#   api_pipeline_pshell/phase_1_api_payload.ps1   - keep helper
+#   api_sql_raw_json_query/populate_ssd_api_data_staging.sql  - keep helper
+#   LICENSE, README.md, pyproject.toml, MANIFEST.in          - keep root essentials

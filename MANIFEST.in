@@ -1,0 +1,40 @@
+# Pkg metadata / docs for PyPI
+include api_pipeline/README.md
+include api_pipeline/.env.example
+include LICENSE
+include README.md
+include MANIFEST.in
+include pyproject.toml
+
+# Keep bytecode/junk out of sdist
+global-exclude *.py[cod] __pycache__/* .DS_Store *.spec
+
+# ---- Prune build outputs and CI artifacts ----
+prune build
+prune dist
+prune release_bundle
+prune site
+prune csc_api_pipeline.egg-info
+prune .github
+
+# ---- Prune docs / notebooks / dev-only content ----
+prune docs
+prune notebooks
+prune api_pipeline/notebooks
+
+# ---- Dev helpers Project Phase 1 (keep sdist code-only) ----
+prune api_pipeline_pshell
+
+# ---- SQL helpers: include only .sql and exclude dev bucket ----
+recursive-include api_sql_raw_json_query *.sql
+prune api_sql_raw_json_query/dev
+
+# ---- Root-level dev files not needed in sdist ----
+exclude mkdocs.yml
+exclude requirements.txt
+exclude pytest.ini
+exclude clean.sh
+exclude setup.sh
+exclude release.sh
+exclude sccm.yml
+exclude sccm_graph_static.svg
