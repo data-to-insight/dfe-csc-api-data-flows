@@ -32,8 +32,8 @@ Prerequisites:
 
 
 Author: D2I
-Version: 0.3.4
-Last Updated: 010425
+Version: 0.3.5
+Last Updated: 02/09/25
 #>
 
 
@@ -43,6 +43,9 @@ Write-Host "#####################################################" -ForegroundCo
 Write-Host "### Script Execution Started: $scriptStartTime ###" -ForegroundColor Gray
 Write-Host "#####################################################" -ForegroundColor Gray
 
+
+# IMPORTANT 
+# Set $true values if testing locally
 
 # Test-mode flags
 $internalTesting = $false # Set $false to (re)enable external API calls
