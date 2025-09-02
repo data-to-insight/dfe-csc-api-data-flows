@@ -280,7 +280,8 @@ WHERE person_id = '$personId';
 "@
         # pass -debugSql to view update on console: Execute-NonQuerySql -connectionString $connectionString -query $updateQuery -debugSql
         Execute-NonQuerySql -connectionString $connectionString -query $updateQuery 
-        Write-Host "Logged API error for person_id ${personId}: ${statusMessage}" -ForegroundColor Yellow
+        Write-Host "Logged API error for person_id '$personId': $statusMessage" -ForegroundColor Yellow
+
     }
 }
 
@@ -309,9 +310,11 @@ WHERE person_id = '$personId';
         Execute-NonQuerySql -connectionString $connectionString -query $updateQuery
 
         if ($personId) {
-            Write-Host "Logged API error for person_id ${personId}: ${escapedResponse}" -ForegroundColor Yellow
+            Write-Host "Logged API error for person_id '$personId': $escapedResponse" -ForegroundColor Yellow
+
         } else {
-            Write-Host "Logged API error for unknown person_id. Message: ${escapedResponse}" -ForegroundColor Yellow
+            Write-Host "Logged API error for unknown person_id: $escapedResponse" -ForegroundColor Yellow
+
         }
     }
 }
@@ -774,7 +777,7 @@ WHERE person_id = '$personId';
 "@
             Execute-NonQuerySql -connectionString $connectionString -query $updateQuery
         } catch {
-            Write-Host "Failed partial for ${personId}: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "Failed partial for person_id '$personId': $($_.Exception.Message)" -ForegroundColor Red
         }
     }
 
@@ -850,7 +853,7 @@ function Get-PreviousJsonPayloadFromDb {
         $reader.Close()
         $connection.Close()
     } catch {
-        Write-Host "Failed to fetch previous JSON for $personId, $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "Failed to fetch previous JSON for person_id '$personId': $($_.Exception.Message)" -ForegroundColor Red
     }
 
     return $result
@@ -990,14 +993,15 @@ for ($batchIndex = 0; $batchIndex -lt $totalBatches; $batchIndex++) {
             $batchSlice += $record
         } else {
             # record not as expected
-            Write-Host "Skipping empty or invalid record during batch slice. Person ID: '$pidCheck'" -ForegroundColor Yellow
+            Write-Host "Skipping empty or invalid record during batch slice. person_id '$pidCheck'" -ForegroundColor Yellow
         }
     }
 
 
 
     if ($batchSlice.Count -eq 0) {
-        Write-Host "No valid records in batch $($batchIndex + 1). Skipping this batch" -ForegroundColor Yellow
+        Write-Host "No valid records in batch $($batchIndex + 1). Skipping this batch"
+
         continue
     }
 
