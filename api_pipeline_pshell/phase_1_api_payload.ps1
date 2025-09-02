@@ -50,6 +50,7 @@ $useTestRecord = $false  # $false creates payload from DB live|anon staging data
 
 
 # Temp local logging (failsafe)
+# LA's|Local tests should comment out or change to valid local path
 $testOutputFilePath = "C:\Users\RobertHa\Documents\api_payload_test.json"  
 $logFile = "C:\Users\RobertHa\Documents\api_temp_log.json"
 
