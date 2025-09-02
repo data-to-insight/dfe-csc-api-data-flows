@@ -1042,6 +1042,17 @@ for ($batchIndex = 0; $batchIndex -lt $totalBatches; $batchIndex++) {
 
     Write-Host $connectionString
 
+    # # DEBUG:
+    # # Uncomment to enable secondary level of assurance that data only leaves LA when expected
+    # if (-not $script:confirmedSend) {
+    #     $ans = Read-Host "About to send data externally to $api_endpoint_with_lacode, send now (y/n)?"
+    #     if ($ans -notmatch '^(?i)y(es)?$') {
+    #         Write-Host "Send aborted." -ForegroundColor Yellow
+    #         return
+    #     }
+    #     $script:confirmedSend = $true
+    # }
+
     Send-ApiBatch -batch $batchSlice `
                   -endpoint $api_endpoint_with_lacode `
                   -headers $headers `
