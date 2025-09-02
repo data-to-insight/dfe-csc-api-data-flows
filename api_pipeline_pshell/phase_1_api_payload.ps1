@@ -265,9 +265,9 @@ function Handle-BatchFailure {
         $personId = $record.person_id
 
         if ($failedIndexesSet.ContainsKey([string]$i)) {
-            $statusMessage = "API error ($statusCode): $errorMessage — $detailedError"
+            $statusMessage = "API error ($statusCode): $errorMessage, $detailedError"
         } else {
-            $statusMessage = "API error ($statusCode): $errorMessage — Record valid but batch failed"
+            $statusMessage = "API error ($statusCode): $errorMessage, Record valid but batch failed"
         }
 
         $escapedMessage = $statusMessage -replace "'", "''"
@@ -343,7 +343,7 @@ function Send-ApiBatch {
         try {
             $response = Invoke-RestMethod -Uri $endpoint -Method Post -Headers $headers -Body $FinalJsonPayload -ContentType "application/json" -TimeoutSec $timeout
 
-            Write-Host "Raw API Response: $response"
+            Write-Host "Raw API response: $response"
 
             $responseItems = $response -split '\s+'
 
@@ -384,7 +384,7 @@ function Send-ApiBatch {
                 default { $api_response_message = "Unexpected Error: $httpStatus"; $retryAllowed = $true }
             }
 
-            Write-Host "API Request Failed with HTTP Status: $httpStatus ($api_response_message)" -ForegroundColor Red
+            Write-Host "API request failed with HTTP status: $httpStatus ($api_response_message)" -ForegroundColor Red
 
             # Fallback for exceptions without Response or StatusCode (e.g. TLS errors, DNS fail, etc.)
             if (-not $_.Exception.Response) {
@@ -394,11 +394,7 @@ function Send-ApiBatch {
 
 
             if ($detailedErrorMessage) {
-                Write-Host "API Error Detail: $detailedErrorMessage" -ForegroundColor DarkGray
-            }
-
-            if ($detailedErrorMessage) {
-                Write-Host "API Error Detail: $detailedErrorMessage" -ForegroundColor DarkGray
+                Write-Host "API error detail: $detailedErrorMessage" -ForegroundColor DarkGray
             }
 
             if (-not $retryAllowed) {
@@ -423,7 +419,7 @@ function Send-ApiBatch {
                 if ($httpStatus -eq 403) {
                     # 403 responses retry, using exponential backoff: 5s -> 10s -> 20s -> 30s (cap)
                     $retryDelay = [Math]::Min(30, $retryDelay * 2)
-                    Write-Host "403 received — applying exponential backoff. Retrying in $retryDelay seconds..." -ForegroundColor Magenta
+                    Write-Host "403 received, applying exponential backoff, retrying in $retryDelay seconds..." -ForegroundColor Magenta
                 } else {
                     Write-Host "Retrying in $retryDelay seconds..."
                     $retryDelay *= 2
@@ -457,13 +453,14 @@ function Get-PendingRecordsFromDb {
 
     if ($usePartialPayload) {
     # switch between whether process uses partial_json_payload or json_payload field to obtain payload records
-        # AND TRY_CAST(partial_json_payload AS NVARCHAR(MAX)) <> '';
+    # Dev note. Refactor needed here if re-applying casting.  
+        # AND TRY_CAST(LTRIM(RTRIM(partial_json_payload)) AS NVARCHAR(MAX)) <> ''
         $query = @"
 SELECT person_id, partial_json_payload
 FROM $tableName
 WHERE (submission_status = 'pending' OR submission_status = 'error')
 AND partial_json_payload IS NOT NULL 
-AND LTRIM(RTRIM(partial_json_payload)) <> '';
+AND LTRIM(RTRIM(partial_json_payload)) `<>` '';
 "@
     } else {
         # AND TRY_CAST(json_payload AS NVARCHAR(MAX)) <> '';
@@ -472,7 +469,7 @@ SELECT person_id, json_payload
 FROM $tableName
 WHERE (submission_status = 'pending' OR submission_status = 'error')
 AND json_payload IS NOT NULL 
-AND LTRIM(RTRIM(json_payload)) <> '';
+AND LTRIM(RTRIM(json_payload)) `<>` '';
 "@
     }
 
@@ -498,7 +495,7 @@ AND LTRIM(RTRIM(json_payload)) <> '';
             }
 
             if (-not $rawJson -or $rawJson.Trim() -eq "") {
-                Write-Host "Skipping record — person_id '$personId' has NULL or empty JSON" -ForegroundColor Yellow
+                Write-Host "Skipping record, person_id '$personId' has NULL or empty JSON" -ForegroundColor Yellow
                 continue
             }
 
@@ -506,12 +503,12 @@ AND LTRIM(RTRIM(json_payload)) <> '';
                 $parsedJson = $rawJson | ConvertFrom-Json -ErrorAction Stop
 
                 if ($null -eq $parsedJson) {
-                    Write-Host "Skipping record — person_id '$personId' has unparsable JSON" -ForegroundColor Yellow
+                    Write-Host "Skipping record, person_id '$personId' has unparsable JSON" -ForegroundColor Yellow
                     continue
                 }
 
                 if ($parsedJson.PSObject.Properties.Count -eq 0) {
-                    Write-Host "Skipping record — person_id '$personId' has empty parsed JSON (no properties)" -ForegroundColor Yellow
+                    Write-Host "Skipping record, person_id '$personId' has empty parsed JSON (no properties)" -ForegroundColor Yellow
                     continue
                 }
 
@@ -648,10 +645,10 @@ function Prune-UnchangedElements {
                                 if ($diffItem.Count -gt 0) {
                                     $arrayResult += $diffItem
                                 } elseif ($currItem.PSObject.Properties.Name -contains 'purge' -and $currItem.PSObject.Properties.Count -le 2) {
-                                    # Unchanged, only _id + purge — omit
+                                    # Unchanged, only _id + purge omit
                                 }
                             } else {
-                                # Missing from current — emit purge:true with ID
+                                # Missing from current emit purge:true with ID
                                 $purgeItem = @{}
                                 $purgeItem[$idName] = $idValue
                                 $purgeItem['purge'] = $true
@@ -853,7 +850,7 @@ function Get-PreviousJsonPayloadFromDb {
         $reader.Close()
         $connection.Close()
     } catch {
-        Write-Host "Failed to fetch previous JSON for $personId — $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "Failed to fetch previous JSON for $personId, $($_.Exception.Message)" -ForegroundColor Red
     }
 
     return $result
@@ -930,14 +927,14 @@ if ($useTestRecord) {
     $JsonArray = Get-PendingRecordsFromDb -connectionString $connectionString -tableName $api_data_staging_table -usePartialPayload:$usePartialPayload
 
     if ($usePartialPayload) {
-        Write-Host "DELTAS payload mode active — using field partial_json_payload as source for records" -ForegroundColor Green
+        Write-Host "Deltas payload mode active (using field partial_json_payload)" -ForegroundColor Green
     } else {
-        Write-Host "FULL|Non-deltas payload mode active — using field json_payload as source for records" -ForegroundColor Green
+        Write-Host "Full payload mode active (using field json_payload)" -ForegroundColor Green
     }
 }
 
 
-Write-Host "Number of records in API payload : $($JsonArray.Count)"
+Write-Host "Number of records in API payload: $($JsonArray.Count)"
 # we don't eed to process anything if there is nothing returned from db
 if (-not $JsonArray -or $JsonArray.Count -eq 0) {
     Write-Host "No valid records to send. Skipping API submission." -ForegroundColor Green
@@ -1000,7 +997,7 @@ for ($batchIndex = 0; $batchIndex -lt $totalBatches; $batchIndex++) {
 
 
     if ($batchSlice.Count -eq 0) {
-        Write-Host "No valid records in batch $($batchIndex + 1). Skipping this batch." -ForegroundColor Yellow
+        Write-Host "No valid records in batch $($batchIndex + 1). Skipping this batch" -ForegroundColor Yellow
         continue
     }
 
@@ -1035,7 +1032,7 @@ for ($batchIndex = 0; $batchIndex -lt $totalBatches; $batchIndex++) {
     #>
 
 
-    write-host $connectionString `
+    Write-Host $connectionString
 
     Send-ApiBatch -batch $batchSlice `
                   -endpoint $api_endpoint_with_lacode `
@@ -1052,12 +1049,12 @@ for ($batchIndex = 0; $batchIndex -lt $totalBatches; $batchIndex++) {
 $scriptStopwatch.Stop()
 
 Write-Host ""
-Write-Host "Performance Summary" -ForegroundColor Blue
+Write-Host "Performance summary" -ForegroundColor Blue
 if ($usePartialPayload) {
-    Write-Host ("Partial JSON Generation Time : {0:N2} seconds" -f $partialStopwatch.Elapsed.TotalSeconds)
+    Write-Host ("Partial JSON generation time: {0:N2} seconds" -f $partialStopwatch.Elapsed.TotalSeconds)
 }
-Write-Host ("DB Write Time                : {0:N2} seconds" -f $cumulativeDbWriteTime)
-Write-Host ("Total Script Runtime         : {0:N2} seconds" -f $scriptStopwatch.Elapsed.TotalSeconds)
+Write-Host ("DB write time                : {0:N2} seconds" -f $cumulativeDbWriteTime)
+Write-Host ("Total script runtime         : {0:N2} seconds" -f $scriptStopwatch.Elapsed.TotalSeconds)
 
 
 
