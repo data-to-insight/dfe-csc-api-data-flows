@@ -1043,15 +1043,35 @@ for ($batchIndex = 0; $batchIndex -lt $totalBatches; $batchIndex++) {
     Write-Host $connectionString
 
     # # DEBUG:
-    # # Uncomment to enable secondary level of assurance that data only leaves LA when expected
+    # # Uncomment to enable secondary level of assurance that data only leaves LA when user explicitly acknowledges via y/n
     # if (-not $script:confirmedSend) {
-    #     $ans = Read-Host "About to send data externally to $api_endpoint_with_lacode, send now (y/n)?"
+    #     # build a brief summary
+    #     $sourceKind = if ($useTestRecord) {
+    #         "hard coded test record"
+    #     } else {
+    #         "database table $api_data_staging_table, field " + $(if ($usePartialPayload) { "partial_json_payload" } else { "json_payload" })
+    #     }
+    #     $sampleIds = ($batchSlice | ForEach-Object { $_.person_id } | Where-Object { $_ } | Select-Object -First 5)
+    #     $sampleText = if ($sampleIds) { ($sampleIds -join ", ") } else { "none" }
+
+    #     Write-Host ""
+    #     Write-Host "Send|batch summary" -ForegroundColor Cyan
+    #     Write-Host ("Endpoint: {0}" -f $api_endpoint_with_lacode)
+    #     Write-Host ("Total records to send: {0} across {1} batches of up to {2}" -f $totalRecords, $totalBatches, $batchSize)
+    #     Write-Host ("This batch size: {0}" -f $batchSlice.Count)
+    #     Write-Host ("Source: {0}" -f $sourceKind) -ForegroundColor Red
+    #     Write-Host ("Sample person_id(s): {0}" -f $sampleText)
+    #     Write-Host "--------------------------------------------------------------------------" -ForegroundColor Cyan
+    #     Write-Host ""
+
+    #     $ans = Read-Host "Proceed to send now (y/n)?"
     #     if ($ans -notmatch '^(?i)y(es)?$') {
-    #         Write-Host "Send aborted." -ForegroundColor Yellow
+    #         Write-Host "Send aborted by user." -ForegroundColor Yellow
     #         return
     #     }
     #     $script:confirmedSend = $true
     # }
+
 
     Send-ApiBatch -batch $batchSlice `
                   -endpoint $api_endpoint_with_lacode `
