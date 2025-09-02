@@ -314,8 +314,9 @@ WHERE json_payload IS NOT NULL; -- prevent blank rows mid-nesting fails
 
 
 
+-- -- IMPORTANT
+-- -- run only once at initialisation
 
--- -- only once at initialisation
 -- -- new setup requires populating prev_hash, as no previous exists
 -- UPDATE ssd_api_data_staging
 -- SET previous_hash = current_hash;
