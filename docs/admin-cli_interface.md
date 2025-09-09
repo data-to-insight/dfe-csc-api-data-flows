@@ -25,7 +25,7 @@
 | `API_ENDPOINT_LA` | **GET‑safe** endpoint used for connectivity checks (e.g., health/metadata). |
 | `SUPPLIER_KEY` | Supplier identifier header required by the API (if applicable). |
 
-> Tip: keep secrets out of scripts. Prefer `.env` or OS‑level secrets.
+> Important: keep secrets out of scripts. Use `.env` or OS‑level secrets.
 
 ---
 
@@ -41,13 +41,13 @@ csc_api_pipeline.exe [command]
 python -m api_pipeline [command]
 ```
 
-> All commands write diagnostics to **stdout**. Integrate with your scheduler or capture to a log file as needed.
+> All commands write diagnostics to **stdout**. Integrate with the scheduler or capture to log file.
 
 ---
 
 ## Quick start (no data needed)
 
-To validate your environment **without any staging rows**, run the smoke diagnostics:
+To validate the environment **without any staging rows**, run the smoke diagnostics:
 ```text
 csc_api_pipeline.exe smoke
 # or
