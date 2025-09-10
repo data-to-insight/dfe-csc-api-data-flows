@@ -15,6 +15,7 @@ theme:
     - navigation.sections     # highlight current section during scroll
     - tasklist                # checklist boxes in dev planning
     - content.tables.sort     # Table sorting
+    - content.code.fences  # make sure fenced code is rendered correctly
 
     # - navigation.tabs       # swap to tabs in ribbon (depreciated)
     # - content.pdf             #  Enable the PDF button    
@@ -29,6 +30,7 @@ nav:
   - 🟧 Local Authority Guidance:
       - System & Access Requirements: system_requirements.md
   - 🟧 SSD Deployment:
+      - LA Deployment Roadmap: roadmap_la_deployment.md  
       - SSD Schema: deploy_ssd_schema.md
   - 🟧 API Deployment:
       - API Download : release.md
@@ -43,7 +45,7 @@ nav:
   # - Stakeholders: stakeholders.md
 
   - 🟧 Development:
-      - Implementation Roadmap: implementation_roadmap.md
+      - Implementation Roadmap: roadmap_implementation.md
       # - Feature Backlog: feature_backlog.md
 
   - 🟧 Admin:
@@ -57,6 +59,9 @@ plugins:
   - mermaid2: # retain as pymdownx.superfences not displaying mermaid
       arguments:
         securityLevel: loose
+  - kroki: # converts diagrams (DOT, PlantUML, Mermaid, etc.) into images
+      server: https://kroki.io
+      file_format: svg
   - with-pdf:
       output_path: "pdf/csc_ssd_api_documentation.pdf"
       cover: true
@@ -81,12 +86,15 @@ markdown_extensions:
       base_path:
         - docs
 
+
 extra_css: 
   - assets/css/styles.css
 extra_javascript:
   - assets/js/scripts.js
   - assets/js/colourCells.js # dev plan cell status colouration
   - assets/js/tables.js # sorting on dev plan table(s)
+
+
 extra_templates:
   - overrides/pdf/default.html.j2
 extra:

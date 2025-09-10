@@ -10,10 +10,10 @@
 
 ## Prerequisites
 
-- Windows host (for EXE) or Python 3.10+ (recommended 3.11) for source usage.
-- **ODBC Driver 18 for SQL Server** installed.
-- Network reachability to your SQL Server and the CSC API.
-- A configured `.env` (see `.env.example`) or equivalent environment variables.
+- Windows host (for EXE) or Python 3.10+ (recommended 3.11) for source usage
+- **ODBC Driver 18 for SQL Server** installed
+- Network reachability to your SQL Server and the CSC API
+- A configured `.env` (see `.env.example`) or equivalent environment variables
 
 ### Required environment variables (minimum)
 | Key | Purpose |
@@ -117,7 +117,7 @@ python -m api_pipeline run
 
 ---
 
-### `smoke` — no‑data diagnostics
+### `run-smoke` — no‑data diagnostics
 Chains the built‑in tests; ideal for first‑time setup and support tickets.
 
 **Examples**
@@ -141,11 +141,6 @@ csc_api_pipeline.exe test-endpoint
 python -m api_pipeline test-endpoint
 ```
 
-**Common issues surfaced**
-- Wrong `SCOPE` / audience or token URL.
-- Proxy/TLS inspection breaking cert validation.
-- Missing `SUPPLIER_KEY` (if required by the API).
-
 ---
 
 ### `test-db-connection` — SQL connectivity
@@ -158,9 +153,9 @@ python -m api_pipeline test-db-connection
 ```
 
 **If it fails**
-- Verify `SQL_CONN_STR` (server, database, auth).
-- Ensure **ODBC Driver 18 for SQL Server** is installed.
-- Check firewalls/VPN routing.
+- Verify `SQL_CONN_STR` (server, database, auth)
+- Ensure **ODBC Driver 18 for SQL Server** is installed
+- Check firewalls/VPN routing
 
 ---
 
@@ -176,8 +171,8 @@ python -m api_pipeline test-schema
 ```
 
 **Notes**
-- Uses `SELECT TOP 0 *` for speed—no data is read.
-- Will return non‑zero if the required columns are missing.
+- Uses `SELECT TOP 0 *` for speed—no data is read
+- Will return non‑zero if the required columns are missing
 
 ---
 
@@ -210,11 +205,11 @@ Ensure the service account has:
 
 ## Troubleshooting checklist
 
-- **Try `smoke` first** — fastest way to pinpoint which layer fails.
-- **DB fails:** check `SQL_CONN_STR`, ODBC Driver 18, firewall/VPN.
-- **Token fails:** verify `CLIENT_ID/SECRET`, `TOKEN_ENDPOINT`, `SCOPE`.
-- **API GET fails:** confirm `API_ENDPOINT_LA` is GET‑safe and not blocked by proxy/TLS inspection.
-- **Schema fails:** create/alter `ssd_api_data_staging_anon` and rerun.
+- **Try `smoke` first** — fastest way to pinpoint which layer fails
+- **DB fails:** check `SQL_CONN_STR`, ODBC Driver 18, firewall/VPN
+- **Token fails:** verify `CLIENT_ID/SECRET`, `TOKEN_ENDPOINT`, `SCOPE`
+- **API GET fails:** confirm `API_ENDPOINT_LA` is GET‑safe and not blocked by proxy/TLS inspection
+- **Schema fails:** create/alter `ssd_api_data_staging_anon` and rerun
 
 For deeper issues, see: *Troubleshooting & FAQ*.
 
