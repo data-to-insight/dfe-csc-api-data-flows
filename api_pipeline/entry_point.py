@@ -1,22 +1,22 @@
-
 # api_pipeline/entry_point.py
 import sys
 
 # DEBUG
 # ..(main) $ python -c "from api_pipeline.entry_point import cli; print('cli OK')"
 
-
-# Dev note: Help requ manual updates 
+# Dev note: Help requires manual updates
 HELP_TEXT = """
 CSC API Pipeline CLI
 
 Usage:
   csc_api_pipeline run                   Run the pipeline
-  csc_api_pipeline test-endpoint         Test API endpoint connectivity
   csc_api_pipeline test-db-connection    Test DB connection
   csc_api_pipeline test-schema           Validate DB schema
-  csc_api_pipeline run-smoke             Run smoke tests
+  csc_api_pipeline run-smoke             Run smoke tests (recommended)
   csc_api_pipeline --help | -h           Show this help
+
+Notes:
+  'test-endpoint' has been deprecated (replaced by run-smoke)
 """
 
 def cli():
@@ -26,22 +26,24 @@ def cli():
 
     # Defer heavy imports so --help doesn't pull config/auth/etc.
     from .main import main
-    from .test import test_endpoint, test_db_connection, test_schema, run_smoke
+    from .test import test_db_connection, test_schema, run_smoke
 
     command = sys.argv[1] if len(sys.argv) >= 2 else "run"
 
-    if command == "run":
-        main()
-    elif command == "test-endpoint":
-        test_endpoint()
-    elif command == "test-db-connection":
-        test_db_connection()
-    elif command == "test-schema":
-        test_schema()
-    elif command == "run-smoke":
-        run_smoke()
+    command_map = {
+        "run": main,
+        "test-db-connection": test_db_connection,
+        "test-schema": test_schema,
+        "run-smoke": run_smoke
+    }
+
+    if command in command_map:
+        command_map[command]()
     else:
         print(HELP_TEXT)
+
+if __name__ == "__main__":
+    cli()
 
 
 # # Extended HELP
@@ -62,15 +64,15 @@ def cli():
 # Commands:
 # ---------
 #   run                   Run full API submission pipeline process
-#   smoke                 No-data smoke checks (DB connectivity, OAuth, safe API GET)
-#   test-endpoint         Check API connectivity and token authentication
+#   run-smoke             Run no-data smoke checks (DB connectivity, OAuth, harmless POST)
 #   test-db-connection    Check database connection
 #   test-schema           Validate required table structure/schema
 #   --help, -h            Show this help message
 
 # Aliases:
 # --------
-#   --mode smoke          Same as 'smoke' (useful for parity with docs/examples)
+#   run-smoke             Formerly 'smoke'; now uses safe POST to test API connectivity
+
 
 # Commands detail:
 # ----------------
@@ -81,17 +83,12 @@ def cli():
 #     - Detect changes and generate payloads
 #     - Submit to API with retries and logging
 
-# • smoke
+# • run-smoke
 #     Perform safe, no-data diagnostic run:
 #     - SELECT 1 against DB (no staging-table dependency)
 #     - Acquire OAuth token (client_credentials)
 #     - Harmless GET to API endpoint (no mutation)
 #     - Advisory schema check
-
-# • test-endpoint
-#     Verify API connection using credentials in .env:
-#     - Authenticates and sends test GET request
-#     - Prints response and any issues
 
 # • test-db-connection
 #     Connect to database using SQL_CONN_STR from .env:

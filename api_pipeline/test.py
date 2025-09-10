@@ -30,70 +30,6 @@ def _fail(label: str, err):
 
 # ----------------- public tests -----------------
 
-def test_endpoint():
-    """
-    Safe GET path to prove auth + outbound HTTPS/TLS works
-    Uses client_credentials to obtain token and calls API_ENDPOINT_LA with GET
-    Does not submit or mutate data
-    Returns True/False
-    """
-    _print_header("API connectivity & auth (test_endpoint)")
-    print("Requesting token (client_credentials)…")
-    token_data = {
-        "grant_type": "client_credentials",
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "scope": SCOPE,
-    }
-
-    try:
-        token_response = requests.post(TOKEN_ENDPOINT, data=token_data, timeout=15)
-        token_response.raise_for_status()
-        token_json = token_response.json()
-        access_token = token_json.get("access_token")
-        if not access_token:
-            raise RuntimeError(f"No access_token in response: {json.dumps(token_json)[:500]}")
-        _ok("Token acquired")
-    except requests.exceptions.RequestException as e:
-        _fail("Token request", e)
-        if getattr(e, "response", None) is not None:
-            try:
-                print("Response body:\n", e.response.text[:2000])
-            except Exception:
-                pass
-        return False
-    except Exception as e:
-        _fail("Token parsing", e)
-        return False
-
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {access_token}",
-        "SupplierKey": SUPPLIER_KEY,
-    }
-
-    print(f"Sending test GET request to: {API_ENDPOINT_LA}")
-    try:
-        response = requests.get(API_ENDPOINT_LA, headers=headers, timeout=15)
-        print(f"Status code: {response.status_code}")
-        body_preview = response.text[:2000] if isinstance(response.text, str) else str(response.content)[:2000]
-        print("Response body (preview):\n", body_preview)
-        if 200 <= response.status_code < 300:
-            _ok("API GET reachable")
-            return True
-        else:
-            _fail("API GET", f"Unexpected status {response.status_code}")
-            return False
-    except requests.exceptions.RequestException as e:
-        _fail("API GET", e)
-        if getattr(e, "response", None) is not None:
-            try:
-                print("Response body:\n", e.response.text[:2000])
-            except Exception:
-                pass
-        return False
-
-
 def test_db_connection():
     """
     Verifies SQL connectivity using configured SQL_CONN_STR
@@ -115,7 +51,7 @@ def test_db_connection():
 
 def test_schema():
     """
-    Checks essential columns exist in the staging table
+    Checks essential columns exist in staging table
     This is *advisory* and does not change data
     Returns True/False
     """
@@ -152,26 +88,70 @@ def test_schema():
 
 def run_smoke():
     """
-    Composite 'smoke' run that exercises:
+    Composite 'smoke' run that chks:
       - DB connectivity (SELECT 1)
       - Token acquisition
-      - Harmless GET to API_ENDPOINT_LA
+      - Harmless POST to API_ENDPOINT_LA with dummy payload
       - Advisory schema check (won't block install if table doesn't exist yet)
-    Returns True/False and prints compact summary suitable for CI or Scheduled Tasks
+    Returns True/False and output compact summary, also for CI or scheduled tasks
     """
     _print_header("Smoke run (no data required)")
     start = time.time()
     db_ok = test_db_connection()
-    api_ok = test_endpoint()
-    schema_ok = test_schema()  # if the table doesn't exist yet, may return False
+    api_ok = _smoke_post_to_api()
+    schema_ok = test_schema()
 
     overall = db_ok and api_ok and schema_ok
     duration = time.time() - start
 
     print("\nSummary:")
     print(f"  DB connectivity : {'PASS' if db_ok else 'FAIL'}")
-    print(f"  API GET/Auth    : {'PASS' if api_ok else 'FAIL'}")
+    print(f"  API POST/Auth   : {'PASS' if api_ok else 'FAIL'}")
     print(f"  Schema advisory : {'PASS' if schema_ok else 'FAIL'}")
     print(f"Completed in {duration:.2f}s")
 
     return overall
+
+
+def _smoke_post_to_api():
+    """
+    Acquires token and sends harmless dummy POST to API
+    Intended for smoke test only.
+    """
+    print("Requesting token for smoke test...")
+    token_data = {
+        "grant_type": "client_credentials",
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+        "scope": SCOPE
+    }
+
+    try:
+        response = requests.post(TOKEN_ENDPOINT, data=token_data)
+        response.raise_for_status()
+        access_token = response.json().get("access_token")
+    except Exception as e:
+        print("Token acquisition failed:", e)
+        return False
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {access_token}",
+        "SupplierKey": SUPPLIER_KEY
+    }
+
+    dummy_payload = {}  # or use {"test": true} 
+    print("Sending harmless POST to API...")
+    try:
+        response = requests.post(API_ENDPOINT_LA, headers=headers, json=dummy_payload)
+        print(f"Status: {response.status_code}")
+        if response.status_code in [200, 400, 422]:
+            print("API responded to dummy POST")
+            return True
+        else:
+            print("Unexpected response:", response.text)
+            return False
+    except Exception as e:
+        print("POST request failed:", e)
+        return False
+
