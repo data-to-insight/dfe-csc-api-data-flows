@@ -59,9 +59,6 @@ plugins:
   - mermaid2: # retain as pymdownx.superfences not displaying mermaid
       arguments:
         securityLevel: loose
-  - kroki: # converts diagrams (DOT, PlantUML, Mermaid, etc.) into images
-      server: https://kroki.io
-      file_format: svg
   - with-pdf:
       output_path: "pdf/csc_ssd_api_documentation.pdf"
       cover: true
