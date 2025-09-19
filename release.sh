@@ -109,12 +109,13 @@ else
   echo "Not on Windows — skipping .exe build"
 fi
 
-# --- Bundle for upload (CI also assembles artifacts)
+# --- Bundle for upload (CI also assembles artifacts) 
 echo "Creating release zip..."
 mkdir -p release_bundle
 cp dist/* release_bundle/ || true
 cp README.md api_pipeline/.env.example release_bundle/ || true
 cp api_pipeline_pshell/phase_1_api_payload.ps1 release_bundle/ || true
+cp api_pipeline_pshell/phase_1_dfe_api_credentials_test.ps1 release_bundle/ || true
 cp api_sql_raw_json_query/populate_ssd_api_data_staging.sql release_bundle/ || true
 zip -r release.zip release_bundle/
 

@@ -29,8 +29,8 @@ nav:
 
   - 🟧 Local Authority Guidance:
       - System & Access Requirements: system_requirements.md
-  - 🟧 SSD Deployment:
       - LA Deployment Roadmap: roadmap_la_deployment.md  
+  - 🟧 SSD Deployment:
       - SSD Schema: deploy_ssd_schema.md
   - 🟧 API Deployment:
       - API Download : release.md
