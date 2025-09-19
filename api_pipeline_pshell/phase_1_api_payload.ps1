@@ -1,6 +1,5 @@
 
 <#
-
 Script Name: SSD API
 Description:
     PowerShell script automates extraction of pre-defined JSON payload from SSD (CMS (SQL)Server instance), 
@@ -30,42 +29,40 @@ Prerequisites:
 - .net accessible (db connection) or SqlServer PowerShell module installed
 - (SQL)Server with SSD structure deployed Incl. populated api_data_staging_table(_anon in test) non-core table
 
-
-Author: D2I
-Version: 0.3.5
-Last Updated: 02/09/25
 #>
+$VERSION = '0.3.6'
+Write-Host ("CSC API staging build: v{0}" -f $VERSION)
+
+# ----------- LA Config -----------
+# DfE supplied details from https://pp-find-and-use-an-api.education.gov.uk/api/83
+
+$api_endpoint   = "https://pp-api.education.gov.uk/children-in-social-care-data-receiver-test/1" 
+$token_endpoint = "https://REPLACE_ME_TOKEN_URL"
+$client_id      = "REPLACE_ME_CLIENT_ID"                # OAuth Credentials
+$client_secret  = "REPLACE_ME_CLIENT_SECRET"            # OAuth Credentials
+$scope          = "REPLACE_ME_SCOPE"                    # OAuth Credentials
+$supplier_key   = "REPLACE_ME_SUPPLIER_KEY"             
+
+$la_code        = 000   # 3 digit old LA code e.g., 846
+# ----------- LA Config END -----------
+
+
+
+# ----------- Config OVERIDE -----------
+# D2I DEV details in here
+# ----------- Config OVERIDE END -----------
+
 
 
 # DEV | PRE-TEST
-$scriptStartTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-Write-Host "#####################################################" -ForegroundColor Gray
-Write-Host "### Script Execution Started: $scriptStartTime ###" -ForegroundColor Gray
-Write-Host "#####################################################" -ForegroundColor Gray
-
-
-# IMPORTANT 
-# Set $true values if testing locally
-
-# Test-mode flags
-$internalTesting = $false # Set $false to (re)enable external API calls
-$useTestRecord = $false  # $false creates payload from DB live|anon staging data | $true creates payload from hard-coded test data
-
+# Test-mode flags - IMPORTANT - # Set $true values if testing locally
+$internalTesting = $false       # Set $false to (re)enable external API calls
+$useTestRecord = $false         # $false creates payload from DB live|anon staging data | $true creates payload from hard-coded test data
 
 # Temp local logging (failsafe)
 # LA's|Local tests should comment out or change to valid local path
 $testOutputFilePath = "C:\Users\RobertHa\Documents\api_payload_test.json"  
 $logFile = "C:\Users\RobertHa\Documents\api_temp_log.json"
-
-
-$scriptStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-
-
-
-# Payload switch 
-# $false == json_payload         - phase 1 : full records payload(db field: json_payload)
-# $true  == partial_json_payload - phase 2 : partial|deltas(db field: partial_json_payload)
-$usePartialPayload = $true
 
 ## end DEV | PRE-TEST
 
@@ -79,27 +76,11 @@ $server = "ESLLREPORTS04V"
 $database = "HDM_Local"
 $api_data_staging_table = "ssd_api_data_staging_anon"  # IMPORTANT - LIVE: ssd_api_data_staging | TESTING : ssd_api_data_staging_anon
 
-
-# API Configuration
-# DfE supplied details from https://pp-find-and-use-an-api.education.gov.uk/api/83
-
-$api_endpoint = "https://pp-api.education.gov.uk/children-in-social-care-data-receiver-test/1"
-$token_endpoint = "DfE supplied detail"
-
-# OAuth Credentials
-$client_id = "DfE supplied detail"
-$client_secret = "DfE supplied detail"
-$scope = "DfE supplied detail"
-
-# Subscription Key
-$supplier_key = "DfE supplied detail"
+$usePartialPayload = $false # Payload switch 
+# $false == json_payload         - phase 1 : full records payload(db field: json_payload)
+# $true  == partial_json_payload - phase 2 : partial|deltas(db field: partial_json_payload)
 
 
-## LA specifics
-##
-
-# Endpoint with LA Code
-$la_code = 845 
 $api_endpoint_with_lacode = "$api_endpoint/children_social_care_data/$la_code/children"
 Write-Host "Final API Endpoint: $api_endpoint_with_lacode"
 
@@ -116,6 +97,16 @@ $query = "SELECT person_id, json_payload, previous_json_payload, partial_json_pa
 
 ## Main processing 
 ##
+$scriptStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+
+
+
+$scriptStartTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+Write-Host "#####################################################" -ForegroundColor Gray
+Write-Host "### Script Execution Started: $scriptStartTime ###" -ForegroundColor Gray
+Write-Host "#####################################################" -ForegroundColor Gray
+
+
 
 function Get-OAuthToken {
 
@@ -134,23 +125,6 @@ function Get-OAuthToken {
         return $null
     }
 }
-# fresh token
-$bearer_token = Get-OAuthToken
-
-# did we get a token ok
-if (-not $bearer_token) {
-    Write-Host "Failed to retrieve OAuth token. Exiting script." -ForegroundColor Red
-    exit
-}
-
-
-# Guidance states SupplierKey must be supplied
-$headers = @{
-    "Content-Type"  = "application/json"
-    "Authorization" = "Bearer $bearer_token"
-    "SupplierKey"   = $supplier_key
-}
-
 
 
 
@@ -913,6 +887,28 @@ $FailedResponses = New-Object System.Collections.ArrayList # track failed API re
 
 # potentially move to environment var
 $connectionString = "Server=$server;Database=$database;Integrated Security=True;"
+
+
+
+
+
+# fresh token
+$bearer_token = Get-OAuthToken
+
+# did we get a token ok
+if (-not $bearer_token) {
+    Write-Host "Failed to retrieve OAuth token. Exiting script." -ForegroundColor Red
+    exit
+}
+
+# Guidance states SupplierKey must be supplied
+$headers = @{
+    "Content-Type"  = "application/json"
+    "Authorization" = "Bearer $bearer_token"
+    "SupplierKey"   = $supplier_key
+}
+
+
 
 
 ### debug: testing partial|deltas data payload json

@@ -2,17 +2,20 @@
 # D2I minimal CSC API connectivity test (PowerShell 5.0)(POST only)
 # - OAuth client credentials
 # - POST either [] or hard-coded record
-
+$VERSION = '0.1.0'
+Write-Host ("CSC API staging build: v{0}" -f $VERSION)
 
 # ----------- LA Config -----------
-$api_endpoint   = "https://REPLACE_ME_BASE_URL"          # no trailing slash
-$token_endpoint = "https://REPLACE_ME_TOKEN_URL"
-$client_id      = "REPLACE_ME_CLIENT_ID"
-$client_secret  = "REPLACE_ME_CLIENT_SECRET"
-$scope          = "REPLACE_ME_SCOPE"
-$supplier_key   = "REPLACE_ME_SUPPLIER_KEY"
+# DfE supplied details from https://pp-find-and-use-an-api.education.gov.uk/api/83
 
-$la_code        = 000   # e.g., 846
+$api_endpoint   = "https://pp-api.education.gov.uk/children-in-social-care-data-receiver-test/1" 
+$token_endpoint = "https://REPLACE_ME_TOKEN_URL"
+$client_id      = "REPLACE_ME_CLIENT_ID"                # OAuth Credentials
+$client_secret  = "REPLACE_ME_CLIENT_SECRET"            # OAuth Credentials
+$scope          = "REPLACE_ME_SCOPE"                    # OAuth Credentials
+$supplier_key   = "REPLACE_ME_SUPPLIER_KEY"             
+
+$la_code        = 000   # 3 digit old LA code e.g., 846
 # ----------- LA Config END -----------
 
 
