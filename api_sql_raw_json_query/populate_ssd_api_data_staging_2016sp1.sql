@@ -200,30 +200,41 @@ END
                              ORDER BY clap.clap_cla_placement_start_date DESC
                              FOR JSON PATH) AS [child_looked_after_placements],
 
-                            -- Nested adoptions
-                           (SELECT CONVERT(VARCHAR(10), perm.perm_adm_decision_date, 23) AS [initial_decision_date],
-                                   CONVERT(VARCHAR(10), perm.perm_matched_date, 23)        AS [matched_date],
-                                   CONVERT(VARCHAR(10), perm.perm_placed_for_adoption_date, 23) AS [placed_date],
-                                   CAST(0 AS bit) AS [purge]
-                              FROM ssd_permanence perm
-                             WHERE perm.perm_person_id = p.pers_person_id
-                                OR perm.perm_cla_id IN (SELECT clae2.clae_cla_id
-                                                         FROM ssd_cla_episodes clae2
-                                                         WHERE clae2.clae_person_id = p.pers_person_id)
-                             FOR JSON PATH) AS [adoption],
+                            -- Nested adoption (single JSON object, not an array, or null)
+                            JSON_QUERY((
+                                SELECT TOP 1
+                                    CONVERT(VARCHAR(10), perm.perm_adm_decision_date, 23)       AS [initial_decision_date],
+                                    CONVERT(VARCHAR(10), perm.perm_matched_date, 23)            AS [matched_date],
+                                    CONVERT(VARCHAR(10), perm.perm_placed_for_adoption_date, 23) AS [placed_date],
+                                    CAST(0 AS bit) AS [purge]
+                                FROM ssd_permanence perm
+                                WHERE perm.perm_person_id = p.pers_person_id
+                                OR perm.perm_cla_id IN (
+                                        SELECT clae2.clae_cla_id
+                                        FROM ssd_cla_episodes clae2
+                                        WHERE clae2.clae_person_id = p.pers_person_id
+                                    )
+                                ORDER BY COALESCE(
+                                            perm.perm_placed_for_adoption_date,
+                                            perm.perm_matched_date,
+                                            perm.perm_adm_decision_date
+                                        ) DESC
+                                FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
+                            )) AS [adoption],
 
-                            -- Nested care leavers
-                           JSON_QUERY((
-                               SELECT
-                                   CONVERT(VARCHAR(10), clea.clea_care_leaver_latest_contact, 23) AS [contact_date],
-                                   LEFT(clea.clea_care_leaver_activity, 2) AS [activity],
-                                   LEFT(clea.clea_care_leaver_accommodation, 1) AS [accommodation],
-                                   CAST(0 AS bit) AS [purge]
-                               FROM ssd_care_leavers clea
-                               WHERE clea.clea_person_id = p.pers_person_id
-                               ORDER BY clea.clea_care_leaver_latest_contact DESC
-                               FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
-                           )) AS [care_leavers],
+                            -- Nested care leaver (single JSON object, not an array, or null)
+                            JSON_QUERY((
+                                SELECT TOP 1
+                                    CONVERT(VARCHAR(10), clea.clea_care_leaver_latest_contact, 23) AS [contact_date],
+                                    LEFT(clea.clea_care_leaver_activity, 2) AS [activity],
+                                    LEFT(clea.clea_care_leaver_accommodation, 1) AS [accommodation],
+                                    CAST(0 AS bit) AS [purge]
+                                FROM ssd_care_leavers clea
+                                WHERE clea.clea_person_id = p.pers_person_id
+                                ORDER BY clea.clea_care_leaver_latest_contact DESC
+                                FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
+                            )) AS [care_leavers],
+
 
                            CONVERT(VARCHAR(10), cine.cine_close_date, 23) AS [closure_date],
                            cine.cine_close_reason AS [closure_reason],
