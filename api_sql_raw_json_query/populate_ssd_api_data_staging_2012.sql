@@ -312,15 +312,16 @@ END');
                             FOR XML PATH(''), TYPE
                         ).value('.', 'nvarchar(max)'), 1, 1, '') + ']' + ','
 
-                    /* adoption */
+                    /* adoption as single object, most recent */
                     + '"adoption":' +
-                        '[' + STUFF((
-                            SELECT ',' + '{'
+                        ISNULL((
+                            SELECT TOP 1
+                                   '{'
                                    + '"initial_decision_date":' + dbo.JsonString(CONVERT(varchar(10), perm.perm_adm_decision_date, 23)) + ','
-                                   + '"matched_date":' + dbo.JsonString(CONVERT(varchar(10), perm.perm_matched_date, 23)) + ','
-                                   + '"placed_date":'  + dbo.JsonString(CONVERT(varchar(10), perm.perm_placed_for_adoption_date, 23)) + ','
+                                   + '"matched_date":'          + dbo.JsonString(CONVERT(varchar(10), perm.perm_matched_date, 23)) + ','
+                                   + '"placed_date":'           + dbo.JsonString(CONVERT(varchar(10), perm.perm_placed_for_adoption_date, 23)) + ','
                                    + '"purge":false'
-                                + '}'
+                                   + '}'
                             FROM ssd_permanence perm
                             WHERE perm.perm_person_id = p.pers_person_id
                                OR perm.perm_cla_id IN (
@@ -328,10 +329,14 @@ END');
                                     FROM ssd_cla_episodes clae2
                                     WHERE clae2.clae_person_id = p.pers_person_id
                                )
-                            FOR XML PATH(''), TYPE
-                        ).value('.', 'nvarchar(max)'), 1, 1, '') + ']' + ','
+                            ORDER BY COALESCE(
+                                      perm.perm_placed_for_adoption_date,
+                                      perm.perm_matched_date,
+                                      perm.perm_adm_decision_date
+                                    ) DESC
+                        ), 'null') + ','
 
-                    /* care_leavers as a single object, pick most recent */
+                    /* care_leavers as single object, most recent */
                     + '"care_leavers":' +
                         ISNULL((
                             SELECT TOP 1
@@ -354,6 +359,7 @@ END');
                 WHERE cine.cine_person_id = p.pers_person_id
                 FOR XML PATH(''), TYPE
             ).value('.', 'nvarchar(max)'), 1, 1, '') + ']'
+
     ) AS sce(episodes_array_json)
 )
 SELECT person_id, json_payload
