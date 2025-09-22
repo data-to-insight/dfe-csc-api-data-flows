@@ -32,12 +32,15 @@ $la_code        = 000   # 3 digit old LA code e.g., 846
 
 
 # pick up when didnt reach HTTP at all (DNS/TCP/TLS/proxy path issues), when $_\.Exception.Response is null
-# Diagnostics toggles
+# diag opts1
 $ENABLE_DIAGNOSTICS = $true
 $DIAG_ON_HTTP_CODES = @(401,403,407,408,413,415,429,500,502,503,504)  # when to run diags even if HTTP reached
 $DIAG_HTTP_PROBE    = $true  # do quick HEAD probes as part of diagnostics
 
-
+# diag opts2
+$DIAG_PRINT   = $false   # live spam off; print inside COPY block instead
+$DIAG_CAPTURE = $true
+$script:DiagData = $null
 
 
 
@@ -126,136 +129,118 @@ function Get-OAuthToken {
 function Get-ConnectivityDiagnostics {
     param([Parameter(Mandatory=$true)][string]$Url)
 
-    try { $uri = [uri]$Url } catch { Write-Host "DIAG: Bad URL: $Url" -ForegroundColor Yellow; return }
+    $info = [ordered]@{
+        Ran             = $true
+        Dns             = $null
+        Tcp             = $null
+        TlsProtocol     = $null
+        TlsCert         = $null
+        TlsIssuer       = $null
+        TlsPolicyErrors = $null
+        ProxyWinHttp    = $null
+        ProxyDotNet     = $null
+        ProxyBypass     = $null
+        EnvHttpProxy    = $env:HTTP_PROXY
+        EnvHttpsProxy   = $env:HTTPS_PROXY
+        EnvNoProxy      = $env:NO_PROXY
+        HeadRoot        = $null
+        HeadPath        = $null
+        Note            = $null
+    }
+    function _p($t,$c='Gray'){ if($script:DIAG_PRINT){ Write-Host $t -ForegroundColor $c } }
+
+    try { $uri = [uri]$Url } catch { _p "DIAG: Bad URL: $Url" Yellow; $info.Note="bad url"; return [pscustomobject]$info }
     $targetHost = $uri.Host
     $targetPort = if ($uri.IsDefaultPort) { if ($uri.Scheme -eq 'https') { 443 } else { 80 } } else { $uri.Port }
 
-    Write-Host "----- CONNECTIVITY DIAGNOSTICS -----" -ForegroundColor Cyan
+    _p "----- CONNECTIVITY DIAGNOSTICS -----" Cyan
 
     # DNS
     try {
         $ips = @()
-        try {
-            $ips = (Resolve-DnsName -Name $targetHost -Type A -ErrorAction Stop).IPAddress
-        } catch {
-            $ips = [System.Net.Dns]::GetHostAddresses($targetHost) | ForEach-Object { $_.IPAddressToString }
-        }
-        Write-Host ("DNS   : {0} -> {1}" -f $targetHost, (($ips | Select-Object -Unique) -join ", "))
-    } catch {
-        Write-Host ("DNS   : FAILED ({0})" -f $_.Exception.Message) -ForegroundColor Yellow
-    }
+        try { $ips = (Resolve-DnsName -Name $targetHost -Type A -ErrorAction Stop).IPAddress }
+        catch { $ips = [System.Net.Dns]::GetHostAddresses($targetHost) | ForEach-Object { $_.IPAddressToString } }
+        $info.Dns = ("{0} -> {1}" -f $targetHost, (($ips | Select-Object -Unique) -join ", "))
+        _p ("DNS   : {0}" -f $info.Dns)
+    } catch { $info.Dns = "FAILED: " + $_.Exception.Message; _p ("DNS   : {0}" -f $info.Dns) Yellow }
 
-    # TCP + TLS (via proxy if present)
-    try {
-        $defaultProxy = [System.Net.WebRequest]::DefaultWebProxy
-        $useProxy = $false; $proxyHost = $null; $proxyPort = 0
-        if ($defaultProxy) {
-            $puri = $defaultProxy.GetProxy($uri)
-            $bypass = $defaultProxy.IsBypassed($uri)
-            if (-not $bypass -and $puri -and $puri.Scheme -eq 'http') {
-                $useProxy = $true; $proxyHost = $puri.Host; $proxyPort = $puri.Port
-            }
-        }
-
-        if ($useProxy) {
-            # CONNECT tunnel
-            $tcp = New-Object System.Net.Sockets.TcpClient
-            $tcp.Connect($proxyHost, $proxyPort)
-            $net = $tcp.GetStream()
-            $sw  = New-Object System.IO.StreamWriter($net); $sw.NewLine = "`r`n"; $sw.AutoFlush = $true
-            $sr  = New-Object System.IO.StreamReader($net)
-
-            $sw.WriteLine(("CONNECT {0}:{1} HTTP/1.1" -f $targetHost, $targetPort))
-            $sw.WriteLine(("Host: {0}:{1}" -f $targetHost, $targetPort))
-            $sw.WriteLine("Proxy-Connection: Keep-Alive")
-            $sw.WriteLine()
-
-            $status = $sr.ReadLine()
-            if ($status -notmatch '^HTTP/1\.\d 200') { throw "Proxy CONNECT failed: $status" }
-            # consume remaining proxy headers
-            while (($line = $sr.ReadLine()) -and $line -ne '') { }
-
-            Write-Host ("TCP   : Proxy tunnel OK via {0}:{1}" -f $proxyHost, $proxyPort)
-
-            $script:__sslErrors = [System.Net.Security.SslPolicyErrors]::None
-            $ssl = New-Object System.Net.Security.SslStream($net, $false, { param($s,$cert,$chain,$errors) $script:__sslErrors = $errors; $true })
-            $ssl.AuthenticateAsClient($targetHost)
-
-            $cert  = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $ssl.RemoteCertificate
-            $proto = $ssl.SslProtocol
-            Write-Host ("TLS   : OK ({0})  Cert: {1}  Issuer: {2}" -f $proto, $cert.Subject, $cert.Issuer)
-            if ($script:__sslErrors -ne [System.Net.Security.SslPolicyErrors]::None) {
-                Write-Host ("TLS   : Policy errors: {0}" -f $script:__sslErrors) -ForegroundColor Yellow
-            }
-            $ssl.Close(); $net.Close(); $tcp.Close()
-        }
-        else {
-            # direct path
-            $tcp = New-Object System.Net.Sockets.TcpClient
-            $iar = $tcp.BeginConnect($targetHost, $targetPort, $null, $null)
-            if (-not $iar.AsyncWaitHandle.WaitOne(3000)) { $tcp.Close(); throw "TCP connect timeout" }
-            $tcp.EndConnect($iar)
-            Write-Host ("TCP   : Connected to {0}:{1}" -f $targetHost, $targetPort)
-
-            $script:__sslErrors = [System.Net.Security.SslPolicyErrors]::None
-            $ssl = New-Object System.Net.Security.SslStream($tcp.GetStream(), $false, { param($s,$cert,$chain,$errors) $script:__sslErrors = $errors; $true })
-            $ssl.AuthenticateAsClient($targetHost)
-
-            $cert  = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $ssl.RemoteCertificate
-            $proto = $ssl.SslProtocol
-            Write-Host ("TLS   : OK ({0})  Cert: {1}  Issuer: {2}" -f $proto, $cert.Subject, $cert.Issuer)
-            if ($script:__sslErrors -ne [System.Net.Security.SslPolicyErrors]::None) {
-                Write-Host ("TLS   : Policy errors: {0}" -f $script:__sslErrors) -ForegroundColor Yellow
-            }
-            $ssl.Close(); $tcp.Close()
-        }
-    } catch {
-        Write-Host ("TCP/TLS: FAILED ({0})" -f $_.Exception.Message) -ForegroundColor Yellow
-    }
-
-
-    # Proxy info
+    # Proxy (WinHTTP)
     try {
         $winhttp = (netsh winhttp show proxy) 2>$null
         if ($winhttp) {
             $line = ($winhttp -split "`r?`n" | Select-String -Pattern 'Direct access|Proxy Server').Line
-            if ($line) { Write-Host ("Proxy : {0}" -f ($line -join " | ")) }
+            if ($line) { $info.ProxyWinHttp = ($line -join " | "); _p ("Proxy : {0}" -f $info.ProxyWinHttp) }
         }
+    } catch {}
+
+    # TCP + TLS (honour .NET proxy)
+    $def = $null; $puri=$null; $bypass=$true
+    try {
+        $def = [System.Net.WebRequest]::DefaultWebProxy
+        if ($def) { $puri = $def.GetProxy($uri); $bypass = $def.IsBypassed($uri) }
+        $info.ProxyDotNet = ($puri -as [string]); $info.ProxyBypass = $bypass
+        if($info.ProxyDotNet){ _p ("Proxy(.NET): {0}  (bypass={1})" -f $info.ProxyDotNet,$info.ProxyBypass) }
     } catch {}
 
     try {
-        $defaultProxy = [System.Net.WebRequest]::DefaultWebProxy
-        if ($defaultProxy) {
-            $proxyUri = $defaultProxy.GetProxy($uri)
-            $bypass   = $defaultProxy.IsBypassed($uri)
-            Write-Host ("Proxy(.NET): {0}  (bypass={1})" -f ($proxyUri -as [string]), $bypass)
+        $useProxy = ($def -and -not $bypass -and $puri -and $puri.Scheme -eq 'http')
+        if ($useProxy) {
+            $tcp = New-Object System.Net.Sockets.TcpClient
+            $tcp.Connect($puri.Host, $puri.Port)
+            $net = $tcp.GetStream()
+            $sw  = New-Object System.IO.StreamWriter($net); $sw.NewLine="`r`n"; $sw.AutoFlush=$true
+            $sr  = New-Object System.IO.StreamReader($net)
+            $sw.WriteLine(("CONNECT {0}:{1} HTTP/1.1" -f $targetHost,$targetPort))
+            $sw.WriteLine(("Host: {0}:{1}" -f $targetHost,$targetPort))
+            $sw.WriteLine("Proxy-Connection: Keep-Alive")
+            $sw.WriteLine()
+            $status = $sr.ReadLine()
+            if ($status -notmatch '^HTTP/1\.\d 200') { throw "Proxy CONNECT failed: $status" }
+            while (($line = $sr.ReadLine()) -and $line -ne '') { }
+            $info.Tcp = ("Proxy tunnel OK via {0}:{1}" -f $puri.Host,$puri.Port)
+            _p ("TCP   : {0}" -f $info.Tcp)
+            $script:__sslErrors = [System.Net.Security.SslPolicyErrors]::None
+            $ssl = New-Object System.Net.Security.SslStream($net,$false,{ param($s,$cert,$chain,$errors) $script:__sslErrors=$errors; $true })
+            $ssl.AuthenticateAsClient($targetHost)
+            $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $ssl.RemoteCertificate
+            $info.TlsProtocol=$ssl.SslProtocol; $info.TlsCert=$cert.Subject; $info.TlsIssuer=$cert.Issuer; $info.TlsPolicyErrors=$script:__sslErrors
+            _p ("TLS   : OK ({0})  Cert: {1}  Issuer: {2}" -f $info.TlsProtocol,$info.TlsCert,$info.TlsIssuer)
+            if ($script:__sslErrors -ne [System.Net.Security.SslPolicyErrors]::None) { _p ("TLS   : Policy errors: {0}" -f $script:__sslErrors) Yellow }
+            $ssl.Close(); $net.Close(); $tcp.Close()
+        } else {
+            $tcp = New-Object System.Net.Sockets.TcpClient
+            $iar = $tcp.BeginConnect($targetHost,$targetPort,$null,$null)
+            if (-not $iar.AsyncWaitHandle.WaitOne(3000)) { $tcp.Close(); throw "TCP connect timeout" }
+            $tcp.EndConnect($iar)
+            $info.Tcp = ("Connected to {0}:{1}" -f $targetHost,$targetPort); _p ("TCP   : {0}" -f $info.Tcp)
+            $script:__sslErrors = [System.Net.Security.SslPolicyErrors]::None
+            $ssl = New-Object System.Net.Security.SslStream($tcp.GetStream(),$false,{ param($s,$cert,$chain,$errors) $script:__sslErrors=$errors; $true })
+            $ssl.AuthenticateAsClient($targetHost)
+            $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $ssl.RemoteCertificate
+            $info.TlsProtocol=$ssl.SslProtocol; $info.TlsCert=$cert.Subject; $info.TlsIssuer=$cert.Issuer; $info.TlsPolicyErrors=$script:__sslErrors
+            _p ("TLS   : OK ({0})  Cert: {1}  Issuer: {2}" -f $info.TlsProtocol,$info.TlsCert,$info.TlsIssuer)
+            if ($script:__sslErrors -ne [System.Net.Security.SslPolicyErrors]::None) { _p ("TLS   : Policy errors: {0}" -f $script:__sslErrors) Yellow }
+            $ssl.Close(); $tcp.Close()
         }
-        if ($env:HTTPS_PROXY) { Write-Host ("Env HTTPS_PROXY: {0}" -f $env:HTTPS_PROXY) }
-        elseif ($env:HTTP_PROXY) { Write-Host ("Env HTTP_PROXY : {0}" -f $env:HTTP_PROXY) }
-        if ($env:NO_PROXY) { Write-Host ("Env NO_PROXY    : {0}" -f $env:NO_PROXY) }
-    } catch {}
+    } catch { $info.Note = "TLS fail: " + $_.Exception.Message; _p ("TCP/TLS: FAILED ({0})" -f $_.Exception.Message) Yellow }
 
-    # Optional HTTP HEAD probes
+    # HEAD probes
     if ($DIAG_HTTP_PROBE) {
         try {
-            $rootUrl = "{0}://{1}/" -f $uri.Scheme, $uri.Host
+            $rootUrl = "{0}://{1}/" -f $uri.Scheme,$uri.Host
             $rootResp = Invoke-WebRequest -Uri $rootUrl -Method Head -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
-            Write-Host ("HTTP  : HEAD {0} -> {1}" -f $rootUrl, $rootResp.StatusCode)
-            if ($rootResp.Headers['Server']) { Write-Host ("HTTP  : Server={0}" -f $rootResp.Headers['Server']) }
-            if ($rootResp.Headers['Via'])    { Write-Host ("HTTP  : Via={0}"    -f $rootResp.Headers['Via']) }
-        } catch {
-            Write-Host ("HTTP  : HEAD {0} FAILED ({1})" -f $rootUrl, $_.Exception.Message) -ForegroundColor Yellow
-        }
+            $info.HeadRoot = ("{0} -> {1}" -f $rootUrl,$rootResp.StatusCode); _p ("HTTP  : HEAD {0}" -f $info.HeadRoot)
+        } catch { $info.HeadRoot = ("{0} FAILED ({1})" -f $rootUrl,$_.Exception.Message); _p ("HTTP  : HEAD {0}" -f $info.HeadRoot) Yellow }
         try {
             $pathResp = Invoke-WebRequest -Uri $Url -Method Head -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
-            Write-Host ("HTTP  : HEAD {0} -> {1}" -f $Url, $pathResp.StatusCode)
-        } catch {
-            Write-Host ("HTTP  : HEAD {0} FAILED ({1})" -f $Url, $_.Exception.Message) -ForegroundColor Yellow
-        }
+            $info.HeadPath = ("{0} -> {1}" -f $Url,$pathResp.StatusCode); _p ("HTTP  : HEAD {0}" -f $info.HeadPath)
+        } catch { $info.HeadPath = ("{0} FAILED ({1})" -f $Url,$_.Exception.Message); _p ("HTTP  : HEAD {0}" -f $info.HeadPath) Yellow }
     }
 
-    Write-Host "------------------------------------" -ForegroundColor Cyan
+    _p "------------------------------------" Cyan
+    return [pscustomobject]$info
 }
+
 
 
 
@@ -280,6 +265,7 @@ $headers = @{
 # ----------- Payload options -----------
 $emptyArrayPayload = "[]" # just empty
 
+# structure from DfE spec 0.8.0 
 # minimum payload
 $hardcodedPayloadMin = @' 
 [
@@ -305,7 +291,7 @@ $hardcodedPayloadMin = @'
     ]
 '@
 
-# DfE spec 0.8.0 sample record (array-wrapped)
+# sample full record (array-wrapped)
 $hardcodedPayloadFull = @'
 [
   {
@@ -477,10 +463,15 @@ try {
             }
         } catch {}
 
-        # diagnostics on HTTP errors, uncomment:
-        # if ($ENABLE_DIAGNOSTICS) { Get-ConnectivityDiagnostics -Url $endpoint }
-        # Or use code allowlist:
-        if ($ENABLE_DIAGNOSTICS -and ($DIAG_ON_HTTP_CODES -contains [int]$code)) { Get-ConnectivityDiagnostics -Url $endpoint }
+        # # diagnostics on HTTP errors, uncomment:
+        # # if ($ENABLE_DIAGNOSTICS) { Get-ConnectivityDiagnostics -Url $endpoint }
+        # # Or use code allowlist:
+        # if ($ENABLE_DIAGNOSTICS -and ($DIAG_ON_HTTP_CODES -contains [int]$code)) { Get-ConnectivityDiagnostics -Url $endpoint }
+
+        # HTTP error branch:
+        if ($ENABLE_DIAGNOSTICS -and ($DIAG_ON_HTTP_CODES -contains [int]$code)) {
+            $script:DiagData = Get-ConnectivityDiagnostics -Url $endpoint
+        }
 
     } else {
         # did NOT reach HTTP (sender-side path issue: DNS/TCP/TLS/proxy)
@@ -495,14 +486,12 @@ try {
         $desc = "Transport/Other error"
         Write-Host ("Transport error after {0:N2}s: {1}" -f $swCall.Elapsed.TotalSeconds, $_.Exception.Message) -ForegroundColor DarkYellow
 
-        if ($ENABLE_DIAGNOSTICS) { Get-ConnectivityDiagnostics -Url $endpoint }
+        # transport branch:
+        if ($ENABLE_DIAGNOSTICS) {
+            $script:DiagData = Get-ConnectivityDiagnostics -Url $endpoint
+        }
     }
 }
-
-
-
-
-
 
 
 
@@ -520,12 +509,6 @@ $osCaption = if ($os) { $os.Caption } else { "<unknown>" }
 $osVersion = if ($os) { $os.Version } else { "<unknown>" }
 $osBuild   = if ($os) { $os.BuildNumber } else { "<unknown>" }
 
-
-
-
-
-# ----------- CLEAN UP -----------
-$preview=""
 
 # ----------- D2I COPY-ME block -----------
 $scriptEndTime       = Get-Date
@@ -548,6 +531,25 @@ Write-Host ("Total runtime (s)  : {0:N2}" -f $scriptTotalSeconds)
 $exitCode = if ($code -ge 200 -and $code -lt 300) { 0 } elseif ($code) { [int]$code } else { 1 }
 Write-Host ("Planned Exit Code  : {0}" -f $exitCode)
 Write-Host ("Preview            : {0}" -f $preview)
+
+if ($script:DiagData -and $script:DiagData.Ran) {
+    Write-Host "---- DIAG SUMMARY ----" -ForegroundColor DarkCyan
+    if ($script:DiagData.Dns)             { Write-Host ("DNS               : {0}" -f $script:DiagData.Dns) }
+    if ($script:DiagData.Tcp)             { Write-Host ("TCP               : {0}" -f $script:DiagData.Tcp) }
+    if ($script:DiagData.TlsProtocol)     { Write-Host ("TLS               : {0}" -f $script:DiagData.TlsProtocol) }
+    if ($script:DiagData.TlsCert)         { Write-Host ("TLS Cert          : {0}" -f $script:DiagData.TlsCert) }
+    if ($script:DiagData.TlsIssuer)       { Write-Host ("TLS Issuer        : {0}" -f $script:DiagData.TlsIssuer) }
+    if ($script:DiagData.TlsPolicyErrors) { Write-Host ("TLS Policy        : {0}" -f $script:DiagData.TlsPolicyErrors) }
+    if ($script:DiagData.ProxyWinHttp)    { Write-Host ("Proxy (WinHTTP)   : {0}" -f $script:DiagData.ProxyWinHttp) }
+    if ($script:DiagData.ProxyDotNet)     { Write-Host ("Proxy (.NET)      : {0} (bypass={1})" -f $script:DiagData.ProxyDotNet, $script:DiagData.ProxyBypass) }
+    if ($script:DiagData.EnvHttpsProxy)   { Write-Host ("Env HTTPS_PROXY   : {0}" -f $script:DiagData.EnvHttpsProxy) }
+    elseif ($script:DiagData.EnvHttpProxy){ Write-Host ("Env HTTP_PROXY    : {0}" -f $script:DiagData.EnvHttpProxy) }
+    if ($script:DiagData.EnvNoProxy)      { Write-Host ("Env NO_PROXY      : {0}" -f $script:DiagData.EnvNoProxy) }
+    if ($script:DiagData.HeadRoot)        { Write-Host ("HEAD Root         : {0}" -f $script:DiagData.HeadRoot) }
+    if ($script:DiagData.HeadPath)        { Write-Host ("HEAD Endpoint     : {0}" -f $script:DiagData.HeadPath) }
+    if ($script:DiagData.Note)            { Write-Host ("Diag Note         : {0}" -f $script:DiagData.Note) }
+}
+
 Write-Host "===== END D2I COPY BLOCK =====" -ForegroundColor Cyan
 Write-Host ""
 
@@ -556,6 +558,12 @@ $scriptEndStamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
 Write-Host "#####################################################" -ForegroundColor Gray
 Write-Host "### Script Execution Ended: $scriptEndStamp ###" -ForegroundColor Gray
 Write-Host "#####################################################" -ForegroundColor Gray
+
+
+
+# ----------- CLEAN UP -----------
+$preview=""
+
 
 # Exit for CI / calling shells
 if ($null -eq $exitCode) { $exitCode = 1 }
