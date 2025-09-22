@@ -25,7 +25,7 @@ $la_code        = 000   # 3 digit old LA code e.g., 846
 
 
 
-# ----------- Config OVERIDE -----------
+# ----------- Config OVERIDE ---------------
 # D2I Tests
 # 
 # ----------- Config OVERIDE END -----------
@@ -126,9 +126,9 @@ function Get-OAuthToken {
 function Get-ConnectivityDiagnostics {
     param([Parameter(Mandatory=$true)][string]$Url)
 
-    try { $u = [uri]$Url } catch { Write-Host "DIAG: Bad URL: $Url" -ForegroundColor Yellow; return }
-    $host = $u.Host
-    $port = if ($u.IsDefaultPort) { if ($u.Scheme -eq 'https') { 443 } else { 80 } } else { $u.Port }
+    try { $uri = [uri]$Url } catch { Write-Host "DIAG: Bad URL: $Url" -ForegroundColor Yellow; return }
+    $targetHost = $uri.Host
+    $targetPort = if ($uri.IsDefaultPort) { if ($uri.Scheme -eq 'https') { 443 } else { 80 } } else { $uri.Port }
 
     Write-Host "----- CONNECTIVITY DIAGNOSTICS -----" -ForegroundColor Cyan
 
@@ -136,73 +136,85 @@ function Get-ConnectivityDiagnostics {
     try {
         $ips = @()
         try {
-            $ips = (Resolve-DnsName -Name $host -Type A -ErrorAction Stop).IPAddress
+            $ips = (Resolve-DnsName -Name $targetHost -Type A -ErrorAction Stop).IPAddress
         } catch {
-            $ips = [System.Net.Dns]::GetHostAddresses($host) | ForEach-Object { $_.IPAddressToString }
+            $ips = [System.Net.Dns]::GetHostAddresses($targetHost) | ForEach-Object { $_.IPAddressToString }
         }
-        Write-Host ("DNS   : {0} -> {1}" -f $host, (($ips | Select-Object -Unique) -join ", "))
+        Write-Host ("DNS   : {0} -> {1}" -f $targetHost, (($ips | Select-Object -Unique) -join ", "))
     } catch {
         Write-Host ("DNS   : FAILED ({0})" -f $_.Exception.Message) -ForegroundColor Yellow
     }
 
-    # TCP + TLS
+    # TCP + TLS (via proxy if present)
     try {
-        $tcp = New-Object System.Net.Sockets.TcpClient
-        $iar = $tcp.BeginConnect($host, $port, $null, $null)
-        if (-not $iar.AsyncWaitHandle.WaitOne(3000)) { $tcp.Close(); throw "TCP connect timeout" }
-        $tcp.EndConnect($iar)
-        Write-Host ("TCP   : Connected to {0}:{1}" -f $host, $port)
-
-        # TLS handshake (also reveal MITM/inspection via issuer)
-        $script:__sslErrors = [System.Net.Security.SslPolicyErrors]::None
-        $ssl = New-Object System.Net.Security.SslStream($tcp.GetStream(), $false, { param($s,$cert,$chain,$errors) $script:__sslErrors = $errors; $true })
-        $ssl.AuthenticateAsClient($host)
-        $cert   = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $ssl.RemoteCertificate
-        $proto  = $ssl.SslProtocol
-        Write-Host ("TLS   : OK ({0})  Cert: {1}  Issuer: {2}" -f $proto, $cert.Subject, $cert.Issuer)
-        if ($script:__sslErrors -ne [System.Net.Security.SslPolicyErrors]::None) {
-            Write-Host ("TLS   : Policy errors: {0}" -f $script:__sslErrors) -ForegroundColor Yellow
+        $defaultProxy = [System.Net.WebRequest]::DefaultWebProxy
+        $useProxy = $false; $proxyHost = $null; $proxyPort = 0
+        if ($defaultProxy) {
+            $puri = $defaultProxy.GetProxy($uri)
+            $bypass = $defaultProxy.IsBypassed($uri)
+            if (-not $bypass -and $puri -and $puri.Scheme -eq 'http') {
+                $useProxy = $true; $proxyHost = $puri.Host; $proxyPort = $puri.Port
+            }
         }
 
-        # --- cert validity, SANs, chain summary, MITM hints ---
-        try {
-            $notBefore = $cert.NotBefore
-            $notAfter  = $cert.NotAfter
-            $daysLeft  = [int]([datetime]$notAfter - (Get-Date)).TotalDays
-            Write-Host ("TLS   : Cert valid {0} to {1} (~{2} days left)" -f $notBefore.ToString('yyyy-MM-dd'), $notAfter.ToString('yyyy-MM-dd'), $daysLeft)
+        if ($useProxy) {
+            # CONNECT tunnel
+            $tcp = New-Object System.Net.Sockets.TcpClient
+            $tcp.Connect($proxyHost, $proxyPort)
+            $net = $tcp.GetStream()
+            $sw  = New-Object System.IO.StreamWriter($net); $sw.NewLine = "`r`n"; $sw.AutoFlush = $true
+            $sr  = New-Object System.IO.StreamReader($net)
 
-            # SANs
-            $san = ($cert.Extensions | Where-Object { $_.Oid.FriendlyName -eq 'Subject Alternative Name' })
-            if ($san) {
-                $data = $san.Format($true) -replace "`r?`n", '; ' -replace '\s+', ' '
-                Write-Host ("TLS   : SANs -> {0}" -f $data)
+            $sw.WriteLine(("CONNECT {0}:{1} HTTP/1.1" -f $targetHost, $targetPort))
+            $sw.WriteLine(("Host: {0}:{1}" -f $targetHost, $targetPort))
+            $sw.WriteLine("Proxy-Connection: Keep-Alive")
+            $sw.WriteLine()
+
+            $status = $sr.ReadLine()
+            if ($status -notmatch '^HTTP/1\.\d 200') { throw "Proxy CONNECT failed: $status" }
+            # consume remaining proxy headers
+            while (($line = $sr.ReadLine()) -and $line -ne '') { }
+
+            Write-Host ("TCP   : Proxy tunnel OK via {0}:{1}" -f $proxyHost, $proxyPort)
+
+            $script:__sslErrors = [System.Net.Security.SslPolicyErrors]::None
+            $ssl = New-Object System.Net.Security.SslStream($net, $false, { param($s,$cert,$chain,$errors) $script:__sslErrors = $errors; $true })
+            $ssl.AuthenticateAsClient($targetHost)
+
+            $cert  = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $ssl.RemoteCertificate
+            $proto = $ssl.SslProtocol
+            Write-Host ("TLS   : OK ({0})  Cert: {1}  Issuer: {2}" -f $proto, $cert.Subject, $cert.Issuer)
+            if ($script:__sslErrors -ne [System.Net.Security.SslPolicyErrors]::None) {
+                Write-Host ("TLS   : Policy errors: {0}" -f $script:__sslErrors) -ForegroundColor Yellow
             }
+            $ssl.Close(); $net.Close(); $tcp.Close()
+        }
+        else {
+            # direct path
+            $tcp = New-Object System.Net.Sockets.TcpClient
+            $iar = $tcp.BeginConnect($targetHost, $targetPort, $null, $null)
+            if (-not $iar.AsyncWaitHandle.WaitOne(3000)) { $tcp.Close(); throw "TCP connect timeout" }
+            $tcp.EndConnect($iar)
+            Write-Host ("TCP   : Connected to {0}:{1}" -f $targetHost, $targetPort)
 
-            # Hostname match
-            $chain = New-Object System.Security.Cryptography.X509Certificates.X509Chain
-            $null = $chain.Build($cert)
-            $nameMatch = [System.Net.ServicePointManager]::CheckCertificateName($cert, $host)
-            Write-Host ("TLS   : Hostname match -> {0}" -f $nameMatch)
+            $script:__sslErrors = [System.Net.Security.SslPolicyErrors]::None
+            $ssl = New-Object System.Net.Security.SslStream($tcp.GetStream(), $false, { param($s,$cert,$chain,$errors) $script:__sslErrors = $errors; $true })
+            $ssl.AuthenticateAsClient($targetHost)
 
-            if ($chain.ChainStatus -and $chain.ChainStatus.Length -gt 0) {
-                $issues = ($chain.ChainStatus | ForEach-Object { $_.Status }) -join ', '
-                Write-Host ("TLS   : Chain issues -> {0}" -f $issues) -ForegroundColor Yellow
+            $cert  = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $ssl.RemoteCertificate
+            $proto = $ssl.SslProtocol
+            Write-Host ("TLS   : OK ({0})  Cert: {1}  Issuer: {2}" -f $proto, $cert.Subject, $cert.Issuer)
+            if ($script:__sslErrors -ne [System.Net.Security.SslPolicyErrors]::None) {
+                Write-Host ("TLS   : Policy errors: {0}" -f $script:__sslErrors) -ForegroundColor Yellow
             }
-
-            # Heuristic: known inspection issuers
-            $issuer = $cert.Issuer
-            $maybeMitm = @('Zscaler','Blue Coat','Symantec','Fortinet','Palo Alto','Cisco','Sophos','Netskope') | Where-Object { $issuer -match $_ }
-            if ($maybeMitm) {
-                Write-Host ("TLS   : Likely TLS inspection by: {0}" -f ($maybeMitm -join ', ')) -ForegroundColor Yellow
-            }
-        } catch {}
-
-        $ssl.Close(); $tcp.Close()
+            $ssl.Close(); $tcp.Close()
+        }
     } catch {
         Write-Host ("TCP/TLS: FAILED ({0})" -f $_.Exception.Message) -ForegroundColor Yellow
     }
 
-    # Proxy quick readouts
+
+    # Proxy info
     try {
         $winhttp = (netsh winhttp show proxy) 2>$null
         if ($winhttp) {
@@ -211,12 +223,11 @@ function Get-ConnectivityDiagnostics {
         }
     } catch {}
 
-    # --- .NET default proxy + env proxies ---
     try {
         $defaultProxy = [System.Net.WebRequest]::DefaultWebProxy
         if ($defaultProxy) {
-            $proxyUri = $defaultProxy.GetProxy($u)
-            $bypass   = $defaultProxy.IsBypassed($u)
+            $proxyUri = $defaultProxy.GetProxy($uri)
+            $bypass   = $defaultProxy.IsBypassed($uri)
             Write-Host ("Proxy(.NET): {0}  (bypass={1})" -f ($proxyUri -as [string]), $bypass)
         }
         if ($env:HTTPS_PROXY) { Write-Host ("Env HTTPS_PROXY: {0}" -f $env:HTTPS_PROXY) }
@@ -224,10 +235,10 @@ function Get-ConnectivityDiagnostics {
         if ($env:NO_PROXY) { Write-Host ("Env NO_PROXY    : {0}" -f $env:NO_PROXY) }
     } catch {}
 
-    # --- optional HTTP HEAD probes ---
+    # Optional HTTP HEAD probes
     if ($DIAG_HTTP_PROBE) {
         try {
-            $rootUrl = "{0}://{1}/" -f $u.Scheme, $u.Host
+            $rootUrl = "{0}://{1}/" -f $uri.Scheme, $uri.Host
             $rootResp = Invoke-WebRequest -Uri $rootUrl -Method Head -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
             Write-Host ("HTTP  : HEAD {0} -> {1}" -f $rootUrl, $rootResp.StatusCode)
             if ($rootResp.Headers['Server']) { Write-Host ("HTTP  : Server={0}" -f $rootResp.Headers['Server']) }
