@@ -8,16 +8,17 @@ The following table definitions (and populating) can be run after the main SSD s
 can be added into the main SSD - insert locations are marked via the meta tags of:
 
 
-Script by default uses: 
-FOR JSON PATH, JSON_QUERY, JSON_VALUE -> requires SQL Server 2016+ (2016 SP1 recommended)
-STRING_AGG-> requires SQL Server 2017+
-(The above will fail for earlier versions of SQL Server)
+-- Script compatibility and defaults
+-- Default uses XML PATH for aggregations, SQL Server 2012+
+-- Payload assembly uses FOR JSON, JSON_QUERY, JSON_VALUE, SQL Server 2016+
+-- Optional modern aggregation using STRING_AGG is included as commented block, SQL Server 2022+
+
 
 META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging"}
 META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging_anon"} - temp table for API testing, can be removed post testing
 */
 
-DECLARE @VERSION nvarchar(32) = N'0.1.1';
+DECLARE @VERSION nvarchar(32) = N'0.1.3';
 RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 
 
@@ -57,7 +58,8 @@ END
                    p.pers_person_id AS [la_child_id],
                    ISNULL(p.pers_common_child_id, 'SSD_PH_CCI') AS [mis_child_id],
                    CAST(0 AS bit) AS [purge],
-                   -- Child Details
+                   
+                   -- Child details
                    JSON_QUERY((
                        SELECT
                            p.pers_forename AS [first_name],
@@ -77,20 +79,10 @@ END
                            CONVERT(VARCHAR(10), p.pers_expected_dob, 23) AS [expected_date_of_birth],
                            CASE WHEN p.pers_sex IN ('M','F') THEN p.pers_sex ELSE 'U' END AS [sex],
                            p.pers_ethnicity AS [ethnicity],
-                            -- enable to return key + empty [] on zero data
-                            -- 	SELECT JSON_QUERY(
-                                -- 		'[' + 
-                                -- 		ISNULL(
-                                    -- 			STRING_AGG('"' + disa_disability_code + '"', ',') 
-                                    -- 			WITHIN GROUP (ORDER BY disa_disability_code),
-                                    -- 			''
-                                    -- 		) + 
-                                    -- 		']'
-                                    -- 	)
-                                    -- 	FROM ssd_disability
-                                    -- 	WHERE disa_person_id = p.pers_person_id
-                                    -- ) AS [disabilities],
+
+                           -- uses XML PATH OUTER APPLY below
                            COALESCE(JSON_QUERY(disab.disabilities), JSON_QUERY('[]')) AS [disabilities],
+
                            (SELECT TOP 1 a.addr_address_postcode
                               FROM ssd_address a
                               WHERE a.addr_person_id = p.pers_person_id
@@ -108,7 +100,8 @@ END
                            CAST(0 AS bit) AS [purge]
                        FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
                    )) AS [child_details],
-                   -- Health and Wellbeing
+
+                   -- Health and wellbeing
                    JSON_QUERY((
                        SELECT
                            (SELECT CONVERT(VARCHAR(10), csdq.csdq_sdq_completed_date, 23) AS [date],
@@ -123,7 +116,8 @@ END
                            CAST(0 AS bit) AS [purge]
                        FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
                    )) AS [health_and_wellbeing],
-                   -- Social care episodes (unchanged)
+
+                   -- Social care episodes
                    JSON_QUERY((
                        SELECT
                            cine.cine_referral_id AS [social_care_episode_id],
@@ -140,6 +134,8 @@ END
                                      WHERE i.invo_referral_id = cine.cine_referral_id) AS sorted_sw
                               ORDER BY sorted_sw.start_date DESC
                               FOR JSON PATH) AS [care_worker_details],
+
+                            -- Nested child and family assessments
                            (SELECT ca.cina_assessment_id AS [child_and_family_assessment_id],
                                    CONVERT(VARCHAR(10), ca.cina_assessment_start_date, 23) AS [start_date],
                                    CONVERT(VARCHAR(10), ca.cina_assessment_auth_date, 23)  AS [authorisation_date],
@@ -152,6 +148,8 @@ END
                                 ON af.cinf_assessment_id = ca.cina_assessment_id
                              WHERE ca.cina_referral_id = cine.cine_referral_id
                              FOR JSON PATH) AS [child_and_family_assessments],
+
+                            -- Nested child in need plans
                            (SELECT cinp.cinp_cin_plan_id AS [child_in_need_plan_id],
                                    CONVERT(VARCHAR(10), cinp.cinp_cin_plan_start_date, 23) AS [start_date],
                                    CONVERT(VARCHAR(10), cinp.cinp_cin_plan_end_date, 23)   AS [end_date],
@@ -159,6 +157,8 @@ END
                               FROM ssd_cin_plans cinp
                              WHERE cinp.cinp_referral_id = cine.cine_referral_id
                              FOR JSON PATH) AS [child_in_need_plans],
+
+                            -- Nested s47 assessments
                            (SELECT s47e.s47e_s47_enquiry_id AS [section_47_assessment_id],
                                    CONVERT(VARCHAR(10), s47e.s47e_s47_start_date, 23) AS [start_date],
                                    JSON_VALUE(s47e.s47e_s47_outcome_json, '$.CP_CONFERENCE_FLAG') AS [icpc_required_flag],
@@ -170,6 +170,8 @@ END
                                 ON icpc.icpc_s47_enquiry_id = s47e.s47e_s47_enquiry_id
                              WHERE s47e.s47e_referral_id = cine.cine_referral_id
                              FOR JSON PATH) AS [section_47_assessments],
+
+                            -- Nested child protection pplans
                            (SELECT cppl.cppl_cp_plan_id AS [child_protection_plan_id],
                                    CONVERT(VARCHAR(10), cppl.cppl_cp_plan_start_date, 23) AS [start_date],
                                    CONVERT(VARCHAR(10), cppl.cppl_cp_plan_end_date, 23)   AS [end_date],
@@ -177,6 +179,8 @@ END
                               FROM ssd_cp_plans cppl
                              WHERE cppl.cppl_referral_id = cine.cine_referral_id
                              FOR JSON PATH) AS [child_protection_plans],
+
+                            -- Nested child looked after placements
                            (SELECT clae.clae_cla_placement_id AS [child_looked_after_placement_id],
                                    CONVERT(VARCHAR(10), clae.clae_cla_episode_start_date, 23) AS [start_date],
                                    LEFT(clae.clae_cla_episode_start_reason, 3) AS [start_reason],
@@ -195,6 +199,8 @@ END
                              WHERE clae.clae_referral_id = cine.cine_referral_id
                              ORDER BY clap.clap_cla_placement_start_date DESC
                              FOR JSON PATH) AS [child_looked_after_placements],
+
+                            -- Nested adoptions
                            (SELECT CONVERT(VARCHAR(10), perm.perm_adm_decision_date, 23) AS [initial_decision_date],
                                    CONVERT(VARCHAR(10), perm.perm_matched_date, 23)        AS [matched_date],
                                    CONVERT(VARCHAR(10), perm.perm_placed_for_adoption_date, 23) AS [placed_date],
@@ -205,6 +211,8 @@ END
                                                          FROM ssd_cla_episodes clae2
                                                          WHERE clae2.clae_person_id = p.pers_person_id)
                              FOR JSON PATH) AS [adoption],
+
+                            -- Nested care leavers
                            JSON_QUERY((
                                SELECT
                                    CONVERT(VARCHAR(10), clea.clea_care_leaver_latest_contact, 23) AS [contact_date],
@@ -216,6 +224,7 @@ END
                                ORDER BY clea.clea_care_leaver_latest_contact DESC
                                FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
                            )) AS [care_leavers],
+
                            CONVERT(VARCHAR(10), cine.cine_close_date, 23) AS [closure_date],
                            cine.cine_close_reason AS [closure_reason],
                            CAST(0 AS bit) AS [purge]
@@ -223,22 +232,46 @@ END
                        WHERE cine.cine_person_id = p.pers_person_id
                        FOR JSON PATH
                    )) AS [social_care_episodes]
+
                FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
            ) AS json_payload
     FROM ssd_person p
+
     OUTER APPLY (
-        SELECT JSON_QUERY(
-                 '[' +
-                 ISNULL(
-                   STRING_AGG('"' + d.disa_disability_code + '"', ',')
-                     WITHIN GROUP (ORDER BY d.disa_disability_code),
-                   ''
-                 ) + ']'
-               ) AS disabilities
-        FROM ssd_disability AS d
-        WHERE d.disa_person_id = p.pers_person_id
+        /* Option A, XML PATH, SQL Server 2012+ (default for 2016 script) */
+        SELECT
+          JSON_QUERY(
+            N'[' +
+            STUFF((
+                SELECT N',' + QUOTENAME(d2.disa_disability_code, '"')
+                FROM ssd_disability AS d2
+                WHERE d2.disa_person_id = p.pers_person_id
+                ORDER BY d2.disa_disability_code
+                FOR XML PATH(''), TYPE
+            ).value('.', 'nvarchar(max)'), 1, 1, N'') +
+            N']'
+          ) AS disabilities
+
+        /* Option B, STRING_AGG, SQL Server 2022+
+           Leave commented, uncomment to use, performance adv if running latest versions
+           Notes:
+           - WITHIN GROUP (ORDER BY ...) requ SQL Server 2022|Azure SQL
+           - Keep QUOTENAME and ORDER BY for deterministic, safe quoted output
+        */
+        -- SELECT
+        --   JSON_QUERY(
+        --     N'[' +
+        --     ISNULL(
+        --       STRING_AGG('"' + d.disa_disability_code + '"', N',')
+        --         WITHIN GROUP (ORDER BY d.disa_disability_code),
+        --       N''
+        --     ) +
+        --     N']'
+        --   ) AS disabilities
     ) AS disab
+
 ),
+
 Hashed AS (
     SELECT
         person_id,
