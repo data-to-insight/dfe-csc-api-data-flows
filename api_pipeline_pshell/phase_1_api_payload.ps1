@@ -58,6 +58,15 @@ $client_secret  = "REPLACE_ME_CLIENT_SECRET"
 $scope          = "REPLACE_ME_SCOPE"
 $supplier_key   = "REPLACE_ME_SUPPLIER_KEY"
 $la_code        = 000   # 3 digit old LA code e.g. 846
+
+# local paths (optional)
+$testOutputFilePath = "C:\Users\RobertHa\Documents\api_payload_test.json" # example
+$logFile            = "C:\Users\RobertHa\Documents\api_temp_log.json"
+
+# db cfg
+$server = "ESLLREPORTS04V"
+$database = "HDM_Local"
+
 # ----------- LA Config END -----------
 
 
@@ -69,7 +78,6 @@ $la_code        = 000   # 3 digit old LA code e.g. 846
 
 
 # dev flags
-
 # Test-mode flags - IMPORTANT - # Set $true values if testing locally
 $internalTesting = $true     # set true to simulate send
 $useTestRecord   = $true     # true uses hard-coded test rec
@@ -77,18 +85,19 @@ $useTestRecord   = $true     # true uses hard-coded test rec
 # which payload, Phase 1 = $false
 $usePartialPayload = $false # full OR $true == deltas
 
-
-# temp local paths (optional)
-$testOutputFilePath = "C:\Users\RobertHa\Documents\api_payload_test.json"
-$logFile            = "C:\Users\RobertHa\Documents\api_temp_log.json"
-
-# db cfg
-$server = "ESLLREPORTS04V"
-$database = "HDM_Local"
+# which payload table
 $api_data_staging_table = "ssd_api_data_staging_anon"  # live: ssd_api_data_staging | test: _anon
 
 # phase switch (keep old flag for compat)
 $usePartialPayload = ($Phase -eq 'deltas')
+
+
+
+
+
+
+
+
 
 # start banner
 $scriptStart = Get-Date
