@@ -344,7 +344,7 @@ $emptyArrayPayload = "[]" # just empty
 
 # structure from DfE spec 0.8.0 
 # minimum payload
-$hardcodedPayloadMin = @' 
+$hardcodedPayloadMin = @'
 [
   {
     "la_child_id": "Child1234",
@@ -359,13 +359,15 @@ $hardcodedPayloadMin = @'
       "expected_date_of_birth": "2022-06-14",
       "sex": "M",
       "ethnicity": "WBRI",
-      "disabilities": ["HAND", "VIS"],
+      "disabilities": ["HAND","VIS"],
       "postcode": "AB12 3DE",
       "uasc_flag": true,
       "uasc_end_date": "2022-06-14",
       "purge": false
-    }
-    ]
+    },
+    "purge": false
+  }
+]
 '@
 
 # sample full record (array-wrapped)
