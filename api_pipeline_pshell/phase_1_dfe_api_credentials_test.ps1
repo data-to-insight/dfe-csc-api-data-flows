@@ -21,14 +21,21 @@ $la_code        = 000   # 3 digit old LA code e.g., 846
 
 
 
+# ----------- Config OVERIDE -----------
+# D2I Overide
 
-
-
-
-# ----------- Config OVERIDE ---------------
-# D2I Tests
-# 
 # ----------- Config OVERIDE END -----------
+
+
+
+
+
+
+# ----------- Build endpoint -----------
+$endpoint = ($api_endpoint.TrimEnd('/')) + "/children_social_care_data/$la_code/children"
+#Debug
+# Write-Host "Endpoint: $endpoint" -ForegroundColor Gray
+
 
 
 # pick up when didnt reach HTTP at all (DNS/TCP/TLS/proxy path issues), when $_\.Exception.Response is null
@@ -58,6 +65,7 @@ $timeoutSec     = 60
 
 # PS5 TLS
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
 
 # ----------- Utils -----------
 function Describe-Code([int]$c) {
@@ -244,23 +252,92 @@ function Get-ConnectivityDiagnostics {
 
 
 
-# ----------- Build endpoint -----------
-$endpoint = ($api_endpoint.TrimEnd('/')) + "/children_social_care_data/$la_code/children"
-#Debug
-# Write-Host "Endpoint: $endpoint" -ForegroundColor Gray
 
 # ----------- OAuth -----------
+
 $token = Get-OAuthToken -TokenUrl $token_endpoint -ClientId $client_id -ClientSecret $client_secret -Scope $scope
-if (-not $token) { 
+
+$headers = $null
+$code = $null; $desc = $null; $requestId = $null
+$swCall = [System.Diagnostics.Stopwatch]::StartNew()
+
+if (-not $token) {
     Write-Host "Cannot continue without token." -ForegroundColor Red
-    $exitCode = 1
-    goto END_OF_SCRIPT
+    $swCall.Stop()
+    $code = 401
+    $desc = Describe-Code 401   # or "Invalid token (401 Unauthorised)"
+    if ($ENABLE_DIAGNOSTICS -and ($DIAG_ON_HTTP_CODES -contains 401)) {
+        $script:DiagData = Get-ConnectivityDiagnostics -Url $endpoint
+    }
+}
+else {
+    $headers = @{
+        "Authorization" = "Bearer $token"
+        "SupplierKey"   = $supplier_key
+    }
+
+    # ----------- POST -----------
+    try {
+        $resp = Invoke-WebRequest -Uri $endpoint -Method Post -Headers $headers `
+                                  -ContentType "application/json" -Body $body `
+                                  -UseBasicParsing -TimeoutSec $timeoutSec -ErrorAction Stop
+
+        $swCall.Stop()
+        $code = $resp.StatusCode
+        $desc = Describe-Code $code
+
+        if ($resp -and $resp.Headers) {
+            $requestId = $resp.Headers["x-request-id"]
+            if (-not $requestId) { $requestId = $resp.Headers["Request-Id"] }
+            if (-not $requestId) { $requestId = $resp.Headers["X-Correlation-ID"] }
+        }
+    } catch {
+        $swCall.Stop()
+        $code = $null; $desc = $null; $errBody = $null
+
+        if ($_.Exception.Response) {
+            $code = $_.Exception.Response.StatusCode.value__
+            $desc = Describe-Code $code
+
+            try {
+                $requestId = $_.Exception.Response.Headers["x-request-id"]
+                if (-not $requestId) { $requestId = $_.Exception.Response.Headers["Request-Id"] }
+                if (-not $requestId) { $requestId = $_.Exception.Response.Headers["X-Correlation-ID"] }
+            } catch {}
+
+            Write-Host ("HTTP error: {0} ({1}) ({2:N2}s)" -f $code, $desc, $swCall.Elapsed.TotalSeconds) -ForegroundColor Yellow
+
+            try {
+                $reader  = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+                $errBody = $reader.ReadToEnd()
+                if ($errBody) {
+                    $preview = $errBody.Substring(0, [Math]::Min(400, $errBody.Length))
+                    Write-Host "Error body preview:" -ForegroundColor DarkGray
+                    Write-Host $preview
+                }
+            } catch {}
+
+            if ($ENABLE_DIAGNOSTICS -and ($DIAG_ON_HTTP_CODES -contains [int]$code)) {
+                $script:DiagData = Get-ConnectivityDiagnostics -Url $endpoint
+            }
+        } else {
+            if ($_.Exception -is [System.Net.WebException]) {
+                Write-Host ("WebException.Status: {0}" -f $_.Exception.Status) -ForegroundColor DarkGray
+                $hint = Describe-WebExceptionStatus $_.Exception.Status
+                Write-Host ("Transport hint     : {0}" -f $hint) -ForegroundColor DarkGray
+            }
+            $desc = "Transport/Other error"
+            Write-Host ("Transport error after {0:N2}s: {1}" -f $swCall.Elapsed.TotalSeconds, $_.Exception.Message) -ForegroundColor DarkYellow
+
+            if ($ENABLE_DIAGNOSTICS) {
+                $script:DiagData = Get-ConnectivityDiagnostics -Url $endpoint
+            }
+        }
+    }
 }
 
-$headers = @{
-    "Authorization" = "Bearer $token"
-    "SupplierKey"   = $supplier_key
-}
+
+
 
 # ----------- Payload options -----------
 $emptyArrayPayload = "[]" # just empty
@@ -399,15 +476,16 @@ $hardcodedPayloadFull = @'
 '@
 
 # cwitch depending on which payload 
-switch ($SEND_BODY_MODE.ToLower()) {
-    "empty" { $body = $emptyArrayPayload; break }
-    "full"  { $body = $hardcodedPayloadFull; break }
-    "min"   { $body = $hardcodedPayloadMin; break }
-    default {
-        Write-Host "Unknown SEND_BODY_MODE '$SEND_BODY_MODE' (use empty|full|min)" -ForegroundColor Yellow
-        $body = $emptyArrayPayload
+if (-not $SEND_BODY_MODE) { $SEND_BODY_MODE = 'full' }
+    switch ($SEND_BODY_MODE.ToLower()) {
+        "empty" { $body = $emptyArrayPayload; break }
+        "full"  { $body = $hardcodedPayloadFull; break }
+        "min"   { $body = $hardcodedPayloadMin; break }
+        default {
+            Write-Host "Unknown SEND_BODY_MODE '$SEND_BODY_MODE' (use empty|full|min)" -ForegroundColor Yellow
+            $body = $emptyArrayPayload
+        }
     }
-}
 $bodyBytes = [Text.Encoding]::UTF8.GetByteCount($body)
 #Debug
 # Write-Host ("Mode: {0}  |  Bytes: {1}" -f $SEND_BODY_MODE, $bodyBytes) -ForegroundColor Gray
@@ -510,6 +588,12 @@ $osVersion = if ($os) { $os.Version } else { "<unknown>" }
 $osBuild   = if ($os) { $os.BuildNumber } else { "<unknown>" }
 
 
+
+
+
+# ----------- CLEAN UP -----------
+$preview=""
+
 # ----------- D2I COPY-ME block -----------
 $scriptEndTime       = Get-Date
 $scriptTotalSeconds  = ($scriptEndTime - $scriptStartTime).TotalSeconds
@@ -554,16 +638,12 @@ Write-Host "===== END D2I COPY BLOCK =====" -ForegroundColor Cyan
 Write-Host ""
 
 
+
+
 $scriptEndStamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
 Write-Host "#####################################################" -ForegroundColor Gray
 Write-Host "### Script Execution Ended: $scriptEndStamp ###" -ForegroundColor Gray
 Write-Host "#####################################################" -ForegroundColor Gray
-
-
-
-# ----------- CLEAN UP -----------
-$preview=""
-
 
 # Exit for CI / calling shells
 if ($null -eq $exitCode) { $exitCode = 1 }

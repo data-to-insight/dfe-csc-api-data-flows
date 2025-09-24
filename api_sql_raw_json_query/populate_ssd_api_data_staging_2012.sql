@@ -49,7 +49,7 @@ BEGIN
         person_id NVARCHAR(48) NULL,                        -- link value (_person_id)
         previous_json_payload NVARCHAR(MAX) NULL,           -- historic last copy of last payload sent
         json_payload NVARCHAR(MAX) NOT NULL,                -- current awaiting payload
-        partial_json_payload NVARCHAR(MAX) NOT NULL,        -- current awaiting partial payload
+        partial_json_payload NVARCHAR(MAX) NULL,            -- current awaiting partial payload
         current_hash BINARY(32) NULL,                       -- current hash of JSON payload
         previous_hash BINARY(32) NULL,                      -- previous hash of JSON payload
         submission_status NVARCHAR(50) DEFAULT 'Pending',   -- Status: Pending, Sent, Error
@@ -463,7 +463,7 @@ BEGIN
         person_id NVARCHAR(48) NULL,                        -- link value (_person_id)
         previous_json_payload NVARCHAR(MAX) NULL,           -- historic last copy of last payload sent
         json_payload NVARCHAR(MAX) NOT NULL,                -- current awaiting payload
-        partial_json_payload NVARCHAR(MAX) NOT NULL,        -- current awaiting partial payload
+        partial_json_payload NVARCHAR(MAX) NULL,            -- current awaiting partial payload
         current_hash BINARY(32) NULL,                       -- current hash of JSON payload
         previous_hash BINARY(32) NULL,                      -- previous hash of JSON payload
         submission_status NVARCHAR(50) DEFAULT 'Pending',   -- Status: Pending, Sent, Error
