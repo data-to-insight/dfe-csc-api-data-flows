@@ -25,6 +25,14 @@ This new schema acts as a standardised middleware between your CMS and other pos
 
    In order to enable storing the needed data payload for the DfE's API data flow, we've added an additional non-core table to the core SSD specification. This, and all needed changes to the SSD will be packaged within the initial set up scripts and there is nothing additional that requires action. The ssd_api_data_staging table enables change tracking and the storing of the API submission/status reponses. All related set up and configuration will be supplied by D2I to populate this table with the pending JSON payloads.
 
+---
+
+## Log SSD/API support tickets  
+
+ - **Phase1 & Phase 2 LAs/deployment teams should [Log deployment bugs, required changes or running issues via](https://github.com/data-to-insight/dfe-csc-api-data-flows/issues) - the basic/free Github account may be required for this**  
+ - **LA colleagues are also encouraged to send the project your [general feedback, or your deployment requirements](https://forms.gle/rHTs5qJn8t6h6tQF8)**  
+
+---
 
 ## SSD : SystemC (SQL Server)
 

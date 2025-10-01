@@ -2,6 +2,15 @@
 
 > Note: Details here are currently *Powershell specific*, we're working on the Python/CLI related version as this was a more recent development within our project solution. 
 
+---
+
+## Log SSD/API support tickets  
+
+ - **Phase1 & Phase 2 LAs/deployment teams should [Log deployment bugs, required changes or running issues via](https://github.com/data-to-insight/dfe-csc-api-data-flows/issues) - the basic/free Github account may be required for this**  
+ - **LA colleagues are also encouraged to send the project your [general feedback, or your deployment requirements](https://forms.gle/rHTs5qJn8t6h6tQF8)**  
+
+---
+
 ### **How do I check my PowerShell version?**
 - Run:
 $PSVersionTable.PSVersion

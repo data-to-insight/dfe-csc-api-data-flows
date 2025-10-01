@@ -38,9 +38,16 @@ This front end focuses entirely on the *Data to Insight* API solution — includ
  - JSON extract and API logging from SSD   
  - CSC API connection to DfE  
 
- - **LA colleagues are encouraged to [feedback any and all running issues, general feedback, deployment requirements](https://forms.gle/rHTs5qJn8t6h6tQF8)**
+---
 
-If you are arriving here without previous knowledge of the wider scheme, please see:  
+## Log SSD/API support tickets  
+
+ - **Phase1 & Phase 2 LAs/deployment teams should [Log deployment bugs, required changes or running issues via](https://github.com/data-to-insight/dfe-csc-api-data-flows/issues) - the basic/free Github account may be required for this**  
+ - **LA colleagues are also encouraged to send the project your [general feedback, or your deployment requirements](https://forms.gle/rHTs5qJn8t6h6tQF8)**  
+
+---
+
+If you are arriving here without previous knowledge of the wider project aims, please see:  
 
 **DfE Published Project Documentation**  
 
@@ -61,7 +68,7 @@ If you are arriving here without previous knowledge of the wider scheme, please 
 This site is aimed at:
 - **Local authority teams** using or preparing to implement the D2I SSD API solution  
 - **DfE & D2I project teams** supporting onboarding and technical testing  
-- **Stakeholders** interested in the Standard Safeguarding Dataset(SSD)  
+- **Stakeholders** interested in the Standard Safeguarding Dataset(SSD) or D2I Early Adopters Project Solution  
 
 ## How will the D2I solution work?
 

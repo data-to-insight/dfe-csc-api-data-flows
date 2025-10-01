@@ -9,6 +9,12 @@ It also describes a **two‑stage rollout**: Analyst local tests → Server/over
 
 > If you do not want to install Python on servers, you can use the packaged **Windows `.exe`** (see *API Download* and *API PowerShell Deployment* for scheduling patterns).
 
+---
+
+## Log SSD/API support tickets  
+
+ - **Phase1 & Phase 2 LAs/deployment teams should [Log deployment bugs, required changes or running issues via](https://github.com/data-to-insight/dfe-csc-api-data-flows/issues) - the basic/free Github account may be required for this**  
+ - **LA colleagues are also encouraged to send the project your [general feedback, or your deployment requirements](https://forms.gle/rHTs5qJn8t6h6tQF8)**  
 
 ---
 
