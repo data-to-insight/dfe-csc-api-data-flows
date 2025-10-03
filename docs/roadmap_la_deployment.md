@@ -15,6 +15,7 @@ Last updated: 18/09/25
 **Suggested project team preparation by role**  
 **Analyst/Lead**  
 > - Register with and obtain DfE API credentials via [education.gov.uk/find-an-api](https://pp-find-and-use-an-api.education.gov.uk/find-an-api)  
+ - Agree a safe _team accessible_ location for the DfE API credentials (in case login user is unavailable!)
  - Confirm you have read access to source CMS reporting views/tables  
  - *Confirm you have write access|permission to run `CREATE TABLE` on a reporting instance(development or existing data team reporting instance is ideal. Does not have to be on/near Live)  
  - Confirm you have access to use PowerShell 5.1+ locally (is PowerShell installed?), and ideally local Anaconda/Python 
