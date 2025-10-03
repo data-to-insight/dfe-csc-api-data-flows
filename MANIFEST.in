@@ -17,10 +17,9 @@ prune site
 prune csc_api_pipeline.egg-info
 prune .github
 
-# ---- Prune docs / notebooks / dev-only content ----
+# ---- Prune docs and any *root-level* notebooks only / dev-only content  ----
 prune docs
 prune notebooks
-prune api_pipeline/notebooks
 
 # ---- Dev helpers Project Phase 1 (keep sdist code-only) ----
 prune api_pipeline_pshell
@@ -28,6 +27,19 @@ prune api_pipeline_pshell
 # ---- SQL helpers: include only .sql and exclude dev bucket ----
 recursive-include api_sql_raw_json_query *.sql
 prune api_sql_raw_json_query/dev
+
+
+# ---- Include notebooks and (smoke-test) scripts in package ----
+graft api_pipeline/notebooks
+graft api_pipeline/pshell
+
+include api_pipeline_pshell/phase_1_api_credentials_smoke_test.ps1
+include api_pipeline_pshell/phase_1_api_payload.ps1
+
+# hygiene for notebook byprods
+global-exclude .ipynb_checkpoints/*
+global-exclude *.nbconvert.ipynb
+
 
 # ---- Root-level dev files not needed in sdist ----
 exclude mkdocs.yml

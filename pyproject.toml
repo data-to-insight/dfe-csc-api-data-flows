@@ -46,9 +46,19 @@ notebooks = [
 [build-system]
 requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
+[tool.setuptools]
+include-package-data = true
 
 [tool.setuptools.packages.find]
 include = ["api_pipeline*"]
+
+# Include notebooks and PowerShell scripts inside the wheel
+[tool.setuptools.package-data]
+api_pipeline = [
+  "notebooks/**",
+  "pshell/*.ps1"
+]
+
 
 [project.scripts]
 csc-api = "api_pipeline.entry_point:cli"
@@ -57,4 +67,5 @@ csc-api-pipeline = "api_pipeline.entry_point:cli"
 # wheel exclusions (see MANIFEST for dist exclusions)
 [tool.setuptools.exclude-package-data]
 api_pipeline = ["*.env.example", "README.md"]
+
 
