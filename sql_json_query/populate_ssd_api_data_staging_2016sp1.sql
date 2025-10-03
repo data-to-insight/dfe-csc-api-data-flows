@@ -123,7 +123,17 @@ END
                            cine.cine_referral_id AS [social_care_episode_id],
                            CONVERT(VARCHAR(10), cine.cine_referral_date, 23) AS [referral_date],
                            cine.cine_referral_source_code AS [referral_source],
-                           cine.cine_referral_nfa AS [referral_no_further_action_flag],
+                            CASE
+                                WHEN TRY_CONVERT(bit, cine.cine_referral_nfa) IS NOT NULL
+                                    THEN TRY_CONVERT(bit, cine.cine_referral_nfa)
+                                -- SSD source enforces NCHAR(1) however..., some robustness here to wrap potential LA source strings
+                                -- SSD source field cine_referral_nfa in review as bool
+                                WHEN UPPER(LTRIM(RTRIM(cine.cine_referral_nfa))) IN ('Y','T','1')
+                                    THEN CAST(1 AS bit)
+                                WHEN UPPER(LTRIM(RTRIM(cine.cine_referral_nfa))) IN ('N','F','0')
+                                    THEN CAST(0 AS bit)
+                                ELSE CAST(NULL AS bit)
+                            END AS [referral_no_further_action_flag],
                            (SELECT *
                               FROM (SELECT pr.prof_staff_id AS [worker_id],
                                            CONVERT(VARCHAR(10), i.invo_involvement_start_date, 23) AS [start_date],

@@ -184,6 +184,8 @@ BEGIN TRY                               -- catch any runtime error, keep control
                         WHERE a.addr_person_id = p.pers_person_id
                         ORDER BY a.addr_address_start_date DESC)
                     ), N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r') + '"' END + ','
+
+                    
             + '"uasc_flag":' +
                 CASE WHEN (SELECT TOP 1 immi.immi_immigration_status
                         FROM ssd_immigration_status immi
@@ -228,11 +230,19 @@ BEGIN TRY                               -- catch any runtime error, keep control
                             + '"' END + ','
                         + '"referral_no_further_action_flag":'
                         + CASE
-                            WHEN TRY_CONVERT(bit, cine.cine_referral_nfa) = 1 -- Normalise flag to a string (in case)
-                                OR UPPER(CONVERT(varchar(5), cine.cine_referral_nfa)) IN ('Y','YES','TRUE','T')
-                            THEN 'true'
-                            ELSE 'false'
-                            END + ','
+                            -- SSD source enforces NCHAR(1) however..., some robustness here to wrap potential LA source strings
+                            -- SSD source field cine_referral_nfa in review as bool
+                            -- numeric/bit inputs (1/0, actual bit)
+                            WHEN TRY_CONVERT(bit, NULLIF(LTRIM(RTRIM(CONVERT(varchar(5), cine.cine_referral_nfa))), '')) IS NOT NULL
+                                THEN CASE TRY_CONVERT(bit, NULLIF(LTRIM(RTRIM(CONVERT(varchar(5), cine.cine_referral_nfa))), ''))
+                                        WHEN 1 THEN 'true' ELSE 'false' END
+                                -- SSD source enforces NCHAR(1) however..., some robustness here to wrap potential LA source strings
+                            WHEN UPPER(LTRIM(RTRIM(CONVERT(varchar(5), cine.cine_referral_nfa)))) IN ('Y','T','1')
+                                THEN 'true'
+                            WHEN UPPER(LTRIM(RTRIM(CONVERT(varchar(5), cine.cine_referral_nfa)))) IN ('N','F','0')
+                                THEN 'false'
+                            ELSE 'null'  -- unknown/blank
+                        END + ','
 
                         + '"care_worker_details":' +
                             '[' + STUFF((
