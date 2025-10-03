@@ -1,19 +1,19 @@
 
-# Enabling Proxy Support in Your PowerShell API Scripts (PS 5.1)
+# Enable Proxy Support in PowerShell API Scripts (PS 5.1)
 
-This guide shows how to add **optional** corporate proxy support to both the **main** and **smoke-test** CSC API scripts.
+How to/notes towards adding **optional** corporate proxy support to both **main** and **smoke-test** CSC API scripts.
 
-It keeps behaviour unchanged when no proxy is supplied, but lets sites that require an explicit proxy (and often proxy authentication) pass those details cleanly.
+Keeps behaviour unchanged when no proxy is supplied, but lets LAs that require an explicit proxy (proxy auth) pass those details. Most likely i will be implementing this, but in the short term these notes provided in case LAs need them directly. 
 
 ---
 
 ## Why this may be needed 
 
-- **Explicit proxies with auth**: Many organisations require outbound HTTPS to go via a proxy (often NTLM/Kerberos). Without `-Proxy` + creds you can hit `407` or timeouts before the token/API call.
+- **Explicit proxies with auth**: Many organisations require outbound HTTPS to go via a proxy (often NTLM/Kerberos). Without `-Proxy` + creds you can hit `407` or timeouts before token/API call.
 - **Transparent/WPAD/allowlists**: Other environments do one of:
   - *Transparent proxying* — no client config needed
-  - *WPAD/PAC or machine WinHTTP proxy* — .NET/PowerShell already knows the proxy
-  - *Allow-listed endpoints* — traffic to the token/API hosts bypasses the proxy
+  - *WPAD/PAC or machine WinHTTP proxy* — .NET/PowerShell already knows proxy
+  - *Allow-listed endpoints* — traffic to token/API hosts bypasses proxy
 - Result: some LAs dont needd to change scripts; others must pass proxy options
 
 ---
@@ -31,7 +31,7 @@ Everything is **optional**; if you don’t pass a proxy, script behaves as befor
 
 ## Add parameters
 
-Put this in script’s `param(...)` block (near the top, after any `Write-Host` banner is fine).
+Put this in `param(...)` block (nr top of script)
 
 ```powershell
 param(
@@ -48,13 +48,13 @@ param(
 )
 ```
 
-> Tip: don’t set both `-ProxyUseDefaultCreds` **and** `-ProxyCredential` at the same time.
+> Tip: don’t set both `-ProxyUseDefaultCreds` **and** `-ProxyCredential` at same time (might cause conflict here)
 
 ---
 
-## Step 2 — Helper to inject proxy options
+## inject proxy options
 
-Add this once. You’ll re‑use it for token + data calls.
+Add this. It gets re‑used for token + data calls
 
 ```powershell
 function Add-ProxyParams {
@@ -72,7 +72,7 @@ function Add-ProxyParams {
 
 ## (optional) Set global default proxy
 
-This helps diagnostics and any stray calls you forget to wire. Safe to omit.
+Helps diagnostic and stray calls you forget to wire.
 
 ```powershell
 if ($Proxy) {
@@ -87,7 +87,7 @@ if ($Proxy) {
 
 ## Update token function
 
-Ensure the **token** request uses the proxy. Example for AAD v2 (`scope`) and v1 (`resource`) support:
+Ensure **token** request uses proxy. Eg for AAD v2 (`scope`) and v1 (`resource`) support:
 
 ```powershell
 function Get-OAuthToken {
@@ -149,7 +149,7 @@ $irm = @{
   Uri         = $endpoint
   Method      = 'Post'
   Headers     = $headers
-  Body        = $bodyBytes   # or string body
+  Body        = $bodyBytes   # or str body
   ContentType = 'application/json; charset=utf-8'
   TimeoutSec  = $ApiTimeout
   ErrorAction = 'Stop'
@@ -187,7 +187,7 @@ Add-ProxyParams -h $irm | Out-Null
 $response = Invoke-RestMethod @irm
 ```
 
-- **Call-site** passes through the proxy options:
+- **Call-site** passes through proxy options:
 ```powershell
 Send-ApiBatch -batch $batchSlice `
   -endpoint $api_endpoint_with_lacode `
@@ -220,7 +220,7 @@ $cred = Get-Credential  # DOMAIN\user + password
   -ProxyCredential $cred
 ```
 
-### No proxy (default behaviour)
+### No proxy (def' behaviour)
 ```powershell
 .\phase_1_api_payload.ps1 -Phase full
 ```
@@ -229,16 +229,16 @@ $cred = Get-Credential  # DOMAIN\user + password
 
 ## tips
 
-- **401 on token**: wrong AAD flow (v1 vs v2), wrong `scope`/`resource`, client secret expired, or proxy intercepting/stripping auth — ensure token call also uses the proxy.
-- **407 Proxy Authentication Required**: pass `-ProxyUseDefaultCreds` (preferred on joined servers running as service accounts) **or** `-ProxyCredential`.
-- **403 from API**: token audience/scope mismatch, WAF rules — include clean headers (e.g. `Accept: application/json`, tame `User-Agent`), ensure payload matches schema.
-- **Timeouts / TLS errors**: proxy SSL inspection, blocked CONNECT; check with `netsh winhttp show proxy` and the script’s diagnostics.
-- **Mixed config**: don’t set both `-ProxyUseDefaultCreds` and `-ProxyCredential`.
+- **401 on token**: wrong AAD flow (v1 vs v2), wrong `scope`/`resource`, client secret expired, or proxy intercepting/stripping auth - ensure token call also uses the proxy
+- **407 Proxy Authentication Required**: pass `-ProxyUseDefaultCreds` (preferred on joined servers running as service accounts) **or** `-ProxyCredential`
+- **403 from API**: token audience/scope mismatch, WAF rules - include clean headers (e.g. `Accept: application/json`, tame `User-Agent`), ensure payload matches schema
+- **Timeouts / TLS errors**: proxy SSL inspection, blocked CONNECT; check with `netsh winhttp show proxy` and the script’s diagnostics
+- **Mixed config**: don’t set both `-ProxyUseDefaultCreds` and `-ProxyCredential`
 
 ---
 
 ## Notes
 
-- PS 5.1 uses .NET `HttpWebRequest` underneath. `-Proxy` on `Invoke-*` is explicit; `DefaultWebProxy` is fallback.
-- If your LA manages WinHTTP proxy via GPO, you may not need to pass `-Proxy` at all — the `DefaultWebProxy` path already works.
+- PS 5.1 uses .NET `HttpWebRequest` underneath. `-Proxy` on `Invoke-*` is explicit; `DefaultWebProxy` is fallback
+- If your LA manages WinHTTP proxy via GPO, you may not need to pass `-Proxy` at all - the `DefaultWebProxy` path already works
 
