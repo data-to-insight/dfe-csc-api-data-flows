@@ -74,8 +74,8 @@ BEGIN TRY                               -- catch any runtime error, keep control
           sdq.sdq_array_json,
           sce.episodes_array_json,
           '{'
-          + '"la_child_id":' + CASE WHEN CONVERT(nvarchar(48), p.pers_person_id) IS NULL THEN 'null' ELSE '"' + CONVERT(nvarchar(48), p.pers_person_id) + '"' END + ','
-          + '"mis_child_id":' + CASE WHEN ISNULL(p.pers_common_child_id, 'SSD_PH_CCI') IS NULL THEN 'null' ELSE '"' + ISNULL(p.pers_common_child_id, 'SSD_PH_CCI') + '"' END + ','
+          + '"la_child_id":' + CASE WHEN CONVERT(nvarchar(36), p.pers_person_id) IS NULL THEN 'null' ELSE '"' + LEFT(CONVERT(nvarchar(36), p.pers_person_id),36) + '"' END + ','
+          + '"mis_child_id":' + CASE WHEN ISNULL(p.pers_common_child_id, 'SSD_PH_CCI') IS NULL THEN 'null' ELSE '"' + LEFT(ISNULL(p.pers_common_child_id, 'SSD_PH_CCI'),36) + '"' END + ','
           + '"purge":false,'
           + '"child_details":' + cd.child_details_json + ','
           + '"health_and_wellbeing":{'
@@ -89,16 +89,22 @@ BEGIN TRY                               -- catch any runtime error, keep control
         /* disabilities -> JSON array */
         OUTER APPLY (
             SELECT
-                '[' + STUFF((
+                '[' + ISNULL(STUFF((
                     SELECT ',' + '"' +
-                        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max), d2.disa_disability_code),
+                        LEFT(UPPER(LTRIM(RTRIM(
+                            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max), d2.disa_disability_code),
                                 N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r')
-                        + '"'
-                    FROM ssd_disability AS d2
-                    WHERE d2.disa_person_id = p.pers_person_id
+                        ))),4) + '"'
+                    FROM (
+                        SELECT DISTINCT d2.disa_person_id, d2.disa_disability_code
+                        FROM ssd_disability AS d2
+                        WHERE d2.disa_person_id = p.pers_person_id
+                          AND d2.disa_disability_code IS NOT NULL
+                          AND LTRIM(RTRIM(d2.disa_disability_code)) <> ''
+                    ) AS d2
                     ORDER BY d2.disa_disability_code
                     FOR XML PATH(''), TYPE
-                ).value('.', 'nvarchar(max)'), 1, 1, '') + ']'
+                ).value('.', 'nvarchar(max)'), 1, 1, ''), '') + ']'
         ) AS disab(disabilities_json)
 
         /* sdq -> JSON array */
@@ -132,36 +138,42 @@ BEGIN TRY                               -- catch any runtime error, keep control
                 CASE WHEN p.pers_surname IS NULL THEN 'null' ELSE '"' +
                     REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max), p.pers_surname), N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r') + '"' END + ','
             + '"unique_pupil_number":' +
-                CASE WHEN (SELECT TOP 1 link_identifier_value
+                CASE WHEN EXISTS (
+                        SELECT 1
                         FROM ssd_linked_identifiers
                         WHERE link_person_id = p.pers_person_id
-                            AND link_identifier_type = 'Unique Pupil Number'
-                        ORDER BY link_valid_from_date DESC) IS NULL
-                    THEN 'null'
-                    ELSE '"' + REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max),
-                            (SELECT TOP 1 link_identifier_value
-                            FROM ssd_linked_identifiers
-                            WHERE link_person_id = p.pers_person_id
-                            AND link_identifier_type = 'Unique Pupil Number'
-                            ORDER BY link_valid_from_date DESC)
-                    ), N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r') + '"' END + ','
+                          AND link_identifier_type = 'Unique Pupil Number'
+                          AND LEN(link_identifier_value) = 13
+                          AND TRY_CONVERT(bigint, link_identifier_value) IS NOT NULL
+                    )
+                    THEN '"' + (SELECT TOP 1 link_identifier_value
+                                FROM ssd_linked_identifiers
+                                WHERE link_person_id = p.pers_person_id
+                                  AND link_identifier_type = 'Unique Pupil Number'
+                                  AND LEN(link_identifier_value) = 13
+                                  AND TRY_CONVERT(bigint, link_identifier_value) IS NOT NULL
+                                ORDER BY link_valid_from_date DESC) + '"'
+                    ELSE 'null' END + ','
             + '"former_unique_pupil_number":' +
-                CASE WHEN (SELECT TOP 1 link_identifier_value
+                CASE WHEN EXISTS (
+                        SELECT 1
                         FROM ssd_linked_identifiers
                         WHERE link_person_id = p.pers_person_id
-                            AND link_identifier_type = 'Former Unique Pupil Number'
-                        ORDER BY link_valid_from_date DESC) IS NULL
-                    THEN 'null'
-                    ELSE '"' + REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max),
-                            (SELECT TOP 1 link_identifier_value
-                            FROM ssd_linked_identifiers
-                            WHERE link_person_id = p.pers_person_id
-                            AND link_identifier_type = 'Former Unique Pupil Number'
-                            ORDER BY link_valid_from_date DESC)
-                    ), N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r') + '"' END + ','
+                          AND link_identifier_type = 'Former Unique Pupil Number'
+                          AND LEN(link_identifier_value) = 13
+                          AND TRY_CONVERT(bigint, link_identifier_value) IS NOT NULL
+                    )
+                    THEN '"' + (SELECT TOP 1 link_identifier_value
+                                FROM ssd_linked_identifiers
+                                WHERE link_person_id = p.pers_person_id
+                                  AND link_identifier_type = 'Former Unique Pupil Number'
+                                  AND LEN(link_identifier_value) = 13
+                                  AND TRY_CONVERT(bigint, link_identifier_value) IS NOT NULL
+                                ORDER BY link_valid_from_date DESC) + '"'
+                    ELSE 'null' END + ','
             + '"unique_pupil_number_unknown_reason":' +
                 CASE WHEN p.pers_upn_unknown IS NULL THEN 'null' ELSE '"' +
-                    REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max), p.pers_upn_unknown), N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r') + '"' END + ','
+                    REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max), LEFT(p.pers_upn_unknown,3)), N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r') + '"' END + ','
             + '"date_of_birth":' +
                 CASE WHEN p.pers_dob IS NULL THEN 'null' ELSE '"' + CONVERT(varchar(10), p.pers_dob, 23) + '"' END + ','
             + '"expected_date_of_birth":' +
@@ -170,7 +182,7 @@ BEGIN TRY                               -- catch any runtime error, keep control
                 CASE WHEN p.pers_sex IN ('M','F') THEN '"' + p.pers_sex + '"' ELSE '"U"' END + ','
             + '"ethnicity":' +
                 CASE WHEN p.pers_ethnicity IS NULL THEN 'null' ELSE '"' +
-                    REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max), p.pers_ethnicity), N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r') + '"' END + ','
+                    REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max), LEFT(p.pers_ethnicity,4)), N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r') + '"' END + ','
             + '"disabilities":' + ISNULL(disab.disabilities_json, '[]') + ','
             + '"postcode":' +
                 CASE WHEN (SELECT TOP 1 a.addr_address_postcode
@@ -179,27 +191,21 @@ BEGIN TRY                               -- catch any runtime error, keep control
                         ORDER BY a.addr_address_start_date DESC) IS NULL
                     THEN 'null'
                     ELSE '"' + REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max),
-                        (SELECT TOP 1 a.addr_address_postcode
-                        FROM ssd_address a
-                        WHERE a.addr_person_id = p.pers_person_id
-                        ORDER BY a.addr_address_start_date DESC)
+                        LEFT((SELECT TOP 1 a.addr_address_postcode
+                              FROM ssd_address a
+                              WHERE a.addr_person_id = p.pers_person_id
+                              ORDER BY a.addr_address_start_date DESC),8)
                     ), N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r') + '"' END + ','
 
                     
             + '"uasc_flag":' +
-                CASE WHEN (SELECT TOP 1 immi.immi_immigration_status
+                CASE WHEN EXISTS (
+                        SELECT 1
                         FROM ssd_immigration_status immi
                         WHERE immi.immi_person_id = p.pers_person_id
-                        ORDER BY CASE WHEN immi.immi_immigration_status_end_date IS NULL THEN 1 ELSE 0 END,
-                                    immi.immi_immigration_status_start_date DESC) IS NULL
-                    THEN 'null'
-                    ELSE '"' + REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max),
-                        (SELECT TOP 1 immi.immi_immigration_status
-                        FROM ssd_immigration_status immi
-                        WHERE immi.immi_person_id = p.pers_person_id
-                        ORDER BY CASE WHEN immi.immi_immigration_status_end_date IS NULL THEN 1 ELSE 0 END,
-                                    immi.immi_immigration_status_start_date DESC)
-                    ), N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r') + '"' END + ','
+                          AND (immi.immi_immigration_status = 'UASC' OR immi.immi_immigration_status LIKE '%UASC%')
+                     )
+                     THEN 'true' ELSE 'false' END + ','
             + '"uasc_end_date":' +
                 CASE WHEN (SELECT TOP 1 immi2.immi_immigration_status_end_date
                         FROM ssd_immigration_status immi2
@@ -222,10 +228,10 @@ BEGIN TRY                               -- catch any runtime error, keep control
             SELECT
                 '[' + STUFF((
                     SELECT ',' + '{'
-                        + '"social_care_episode_id":' + ISNULL(CONVERT(varchar(20), cine.cine_referral_id), 'null') + ','
+                        + '"social_care_episode_id":' + CASE WHEN cine.cine_referral_id IS NULL THEN 'null' ELSE '"' + LEFT(CONVERT(varchar(36), cine.cine_referral_id),36) + '"' END + ','
                         + '"referral_date":' + CASE WHEN cine.cine_referral_date IS NULL THEN 'null' ELSE '"' + CONVERT(varchar(10), cine.cine_referral_date, 23) + '"' END + ','
                         + '"referral_source":' + CASE WHEN cine.cine_referral_source_code IS NULL THEN 'null' ELSE '"' +
-                            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max), cine.cine_referral_source_code),
+                            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max), LEFT(cine.cine_referral_source_code,2)),
                                 N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r')
                             + '"' END + ','
                         + '"referral_no_further_action_flag":'
@@ -247,7 +253,7 @@ BEGIN TRY                               -- catch any runtime error, keep control
                         + '"care_worker_details":' +
                             '[' + STUFF((
                                 SELECT ',' + '{'
-                                    + '"worker_id":' + CASE WHEN sw.prof_staff_id IS NULL THEN 'null' ELSE '"' + CONVERT(nvarchar(50), sw.prof_staff_id) + '"' END + ','
+                                    + '"worker_id":' + CASE WHEN sw.prof_staff_id IS NULL THEN 'null' ELSE '"' + LEFT(CONVERT(nvarchar(50), sw.prof_staff_id),12) + '"' END + ','
                                     + '"start_date":' + CASE WHEN sw.start_date IS NULL THEN 'null' ELSE '"' + CONVERT(varchar(10), sw.start_date, 23) + '"' END + ','
                                     + '"end_date":'   + CASE WHEN sw.end_date   IS NULL THEN 'null' ELSE '"' + CONVERT(varchar(10), sw.end_date, 23)   + '"' END
                                     + '}'
@@ -267,7 +273,7 @@ BEGIN TRY                               -- catch any runtime error, keep control
                         + '"child_and_family_assessments":' +
                             '[' + STUFF((
                                 SELECT ',' + '{'
-                                    + '"child_and_family_assessment_id":' + ISNULL(CONVERT(varchar(20), ca.cina_assessment_id), 'null') + ','
+                                    + '"child_and_family_assessment_id":' + CASE WHEN ca.cina_assessment_id IS NULL THEN 'null' ELSE '"' + LEFT(CONVERT(varchar(36), ca.cina_assessment_id),36) + '"' END + ','
                                     + '"start_date":'        + CASE WHEN ca.cina_assessment_start_date IS NULL THEN 'null' ELSE '"' + CONVERT(varchar(10), ca.cina_assessment_start_date, 23) + '"' END + ','
                                     + '"authorisation_date":' + CASE WHEN ca.cina_assessment_auth_date  IS NULL THEN 'null' ELSE '"' + CONVERT(varchar(10), ca.cina_assessment_auth_date, 23)  + '"' END + ','
                                     + '"factors":' + ISNULL(NULLIF(af.cinf_assessment_factors_json, ''), '[]') + ','
@@ -283,7 +289,7 @@ BEGIN TRY                               -- catch any runtime error, keep control
                         + '"child_in_need_plans":' +
                             '[' + STUFF((
                                 SELECT ',' + '{'
-                                    + '"child_in_need_plan_id":' + ISNULL(CONVERT(varchar(20), cinp.cinp_cin_plan_id), 'null') + ','
+                                    + '"child_in_need_plan_id":' + CASE WHEN cinp.cinp_cin_plan_id IS NULL THEN 'null' ELSE '"' + LEFT(CONVERT(varchar(36), cinp.cinp_cin_plan_id),36) + '"' END + ','
                                     + '"start_date":' + CASE WHEN cinp.cinp_cin_plan_start_date IS NULL THEN 'null' ELSE '"' + CONVERT(varchar(10), cinp.cinp_cin_plan_start_date, 23) + '"' END + ','
                                     + '"end_date":'   + CASE WHEN cinp.cinp_cin_plan_end_date   IS NULL THEN 'null' ELSE '"' + CONVERT(varchar(10), cinp.cinp_cin_plan_end_date, 23)   + '"' END + ','
                                     + '"purge":false'
@@ -296,9 +302,15 @@ BEGIN TRY                               -- catch any runtime error, keep control
                         + '"section_47_assessments":' +
                             '[' + STUFF((
                                 SELECT ',' + '{'
-                                    + '"section_47_assessment_id":' + ISNULL(CONVERT(varchar(20), s47e.s47e_s47_enquiry_id), 'null') + ','
+                                    + '"section_47_assessment_id":' + CASE WHEN s47e.s47e_s47_enquiry_id IS NULL THEN 'null' ELSE '"' + LEFT(CONVERT(varchar(36), s47e.s47e_s47_enquiry_id),36) + '"' END + ','
                                     + '"start_date":' + CASE WHEN s47e.s47e_s47_start_date IS NULL THEN 'null' ELSE '"' + CONVERT(varchar(10), s47e.s47e_s47_start_date, 23) + '"' END + ','
-                                    + '"icpc_required_flag":null,'
+                                    + '"icpc_required_flag":' +
+                                        CASE 
+                                            WHEN s47e.s47e_s47_outcome_json IS NULL THEN 'null'
+                                            WHEN CHARINDEX('"CP_CONFERENCE_FLAG":"Y"', s47e.s47e_s47_outcome_json) > 0 OR CHARINDEX('"CP_CONFERENCE_FLAG":"1"', s47e.s47e_s47_outcome_json) > 0 THEN 'true'
+                                            WHEN CHARINDEX('"CP_CONFERENCE_FLAG":"N"', s47e.s47e_s47_outcome_json) > 0 OR CHARINDEX('"CP_CONFERENCE_FLAG":"0"', s47e.s47e_s47_outcome_json) > 0 THEN 'false'
+                                            ELSE 'null'
+                                        END + ','
                                     + '"icpc_date":' + CASE WHEN icpc.icpc_icpc_date IS NULL THEN 'null' ELSE '"' + CONVERT(varchar(10), icpc.icpc_icpc_date, 23) + '"' END + ','
                                     + '"end_date":' + CASE WHEN s47e.s47e_s47_end_date IS NULL THEN 'null' ELSE '"' + CONVERT(varchar(10), s47e.s47e_s47_end_date, 23) + '"' END + ','
                                     + '"purge":false'
@@ -313,7 +325,7 @@ BEGIN TRY                               -- catch any runtime error, keep control
                         + '"child_protection_plans":' +
                             '[' + STUFF((
                                 SELECT ',' + '{'
-                                    + '"child_protection_plan_id":' + ISNULL(CONVERT(varchar(20), cppl.cppl_cp_plan_id), 'null') + ','
+                                    + '"child_protection_plan_id":' + CASE WHEN cppl.cppl_cp_plan_id IS NULL THEN 'null' ELSE '"' + LEFT(CONVERT(varchar(36), cppl.cppl_cp_plan_id),36) + '"' END + ','
                                     + '"start_date":' + CASE WHEN cppl.cppl_cp_plan_start_date IS NULL THEN 'null' ELSE '"' + CONVERT(varchar(10), cppl.cppl_cp_plan_start_date, 23) + '"' END + ','
                                     + '"end_date":'   + CASE WHEN cppl.cppl_cp_plan_end_date   IS NULL THEN 'null' ELSE '"' + CONVERT(varchar(10), cppl.cppl_cp_plan_end_date, 23)   + '"' END + ','
                                     + '"purge":false'
@@ -326,26 +338,23 @@ BEGIN TRY                               -- catch any runtime error, keep control
                         + '"child_looked_after_placements":' +
                             '[' + STUFF((
                                 SELECT ',' + '{'
-                                    + '"child_looked_after_placement_id":' + ISNULL(CONVERT(varchar(20), clap.clap_cla_placement_id), 'null') + ','
-                                    + '"start_date":'   + CASE WHEN clae.clae_cla_episode_start_date IS NULL THEN 'null' ELSE '"' + CONVERT(varchar(10), clae.clae_cla_episode_start_date, 23) + '"' END + ','
+                                    + '"child_looked_after_placement_id":' + CASE WHEN clap.clap_cla_placement_id IS NULL THEN 'null' ELSE '"' + LEFT(CONVERT(varchar(36), clap.clap_cla_placement_id),36) + '"' END + ','
+                                    + '"start_date":'   + CASE WHEN clap.clap_cla_placement_start_date IS NULL THEN 'null' ELSE '"' + CONVERT(varchar(10), clap.clap_cla_placement_start_date, 23) + '"' END + ','
                                     + '"start_reason":' + CASE WHEN clae.clae_cla_episode_start_reason IS NULL THEN 'null' ELSE '"' +
-                                            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max), LEFT(clae.clae_cla_episode_start_reason, 3)), N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r')
+                                            REPLACE(REPLACE(REPLACE	REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max), LEFT(clae.clae_cla_episode_start_reason, 1)), N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r')
                                             + '"' END + ','
-                                    + '"end_date":'     + CASE WHEN clae.clae_cla_episode_ceased_date IS NULL THEN 'null' ELSE '"' + CONVERT(varchar(10), clae.clae_cla_episode_ceased_date, 23) + '"' END + ','
+                                    + '"placement_type":' + CASE WHEN clap.clap_cla_placement_type IS NULL THEN 'null' ELSE '"' +
+                                            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max), LEFT(clap.clap_cla_placement_type, 2)), N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r')
+                                            + '"' END + ','
+                                    + '"postcode":'       + CASE WHEN clap.clap_cla_placement_postcode IS NULL THEN 'null' ELSE '"' +
+                                            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max), LEFT(clap.clap_cla_placement_postcode, 8)), N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r')
+                                            + '"' END + ','
+                                    + '"end_date":'     + CASE WHEN clap.clap_cla_placement_end_date IS NULL THEN 'null' ELSE '"' + CONVERT(varchar(10), clap.clap_cla_placement_end_date, 23) + '"' END + ','
                                     + '"end_reason":'   + CASE WHEN clae.clae_cla_episode_ceased_reason IS NULL THEN 'null' ELSE '"' +
                                             REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max), LEFT(clae.clae_cla_episode_ceased_reason, 3)), N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r')
                                             + '"' END + ','
-                                    + '"placement_id":' + ISNULL(CONVERT(varchar(20), clap.clap_cla_placement_id), 'null') + ','
-                                    + '"placement_start_date":' + CASE WHEN clap.clap_cla_placement_start_date IS NULL THEN 'null' ELSE '"' + CONVERT(varchar(10), clap.clap_cla_placement_start_date, 23) + '"' END + ','
-                                    + '"placement_type":' + CASE WHEN clap.clap_cla_placement_type IS NULL THEN 'null' ELSE '"' +
-                                            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max), clap.clap_cla_placement_type), N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r')
-                                            + '"' END + ','
-                                    + '"postcode":'       + CASE WHEN clap.clap_cla_placement_postcode IS NULL THEN 'null' ELSE '"' +
-                                            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max), clap.clap_cla_placement_postcode), N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r')
-                                            + '"' END + ','
-                                    + '"placement_end_date":' + CASE WHEN clap.clap_cla_placement_end_date IS NULL THEN 'null' ELSE '"' + CONVERT(varchar(10), clap.clap_cla_placement_end_date, 23) + '"' END + ','
                                     + '"change_reason":' + CASE WHEN clap.clap_cla_placement_change_reason IS NULL THEN 'null' ELSE '"' +
-                                            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max), clap.clap_cla_placement_change_reason), N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r')
+                                            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max), LEFT(clap.clap_cla_placement_change_reason, 6)), N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r')
                                             + '"' END + ','
                                     + '"purge":false'
                                     + '}'
@@ -391,12 +400,12 @@ BEGIN TRY                               -- catch any runtime error, keep control
                                 + '}'
                             FROM ssd_care_leavers clea
                             WHERE clea.clea_person_id = p.pers_person_id
-                            ORDER BY clea.clea_care_leaver_latest_contact DESC
+                            ORDER BY clea.clea_care_lever_latest_contact DESC
                         ), 'null') + ','
 
                         + '"closure_date":'  + CASE WHEN cine.cine_close_date IS NULL THEN 'null' ELSE '"' + CONVERT(varchar(10), cine.cine_close_date, 23) + '"' END + ','
                         + '"closure_reason":' + CASE WHEN cine.cine_close_reason IS NULL THEN 'null' ELSE '"' +
-                            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max), cine.cine_close_reason),
+                            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max), LEFT(cine.cine_close_reason,3)),
                                 N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r')
                             + '"' END + ','
                         + '"purge":false'
@@ -447,12 +456,6 @@ END CATCH
 
 
 
--- -- Optional guard-rail to prevent exact duplicates
--- IF NOT EXISTS (
---     SELECT 1 FROM sys.indexes
---     WHERE name = 'UX_ssd_api_person_hash'
---       AND object_id = OBJECT_ID('ssd_api_data_staging')
--- )
 
 -- CREATE UNIQUE INDEX UX_ssd_api_person_hash
 -- ON ssd_api_data_staging(person_id, current_hash);
@@ -462,8 +465,12 @@ END CATCH
 -- META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging_anon"}
 -- =============================================================================
 -- Description: Table for TEST|ANON API payload and logging. 
+-- This table is non-live and solely for the pre-live data/api testing. It can be 
+-- depreciated/removed at any point by the LA; we'd expect this to be once 
+-- the toggle to LIVE sends are initiated to DfE. 
 -- Author: D2I
 -- =============================================================================
+
 
 -- IF OBJECT_ID('ssd_api_data_staging_anon', 'U') IS NOT NULL DROP TABLE ssd_api_data_staging_anon;
 IF OBJECT_ID(N'ssd_api_data_staging_anon', N'U') IS NULL
