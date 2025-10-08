@@ -326,10 +326,10 @@ function Send-ApiBatch {
     [string]$tableName,
     [ref]$FailedResponses,
     [string]$FinalJsonPayload,
-    [ref]$CumulativeDbWriteTime, # stopwatch -monitor write time
-    [int]$maxRetries = 3 # exponential backoff: 5s -> 10s -> 20s -> 30s (capped)
+    [ref]$CumulativeDbWriteTime, # stopwatch to monitor write time
+    [int]$maxRetries = 3,
+    [int]$timeout = 30 # exponential backoff: 5s -> 10s -> 20s -> 30s (capped)
   )
-
   if ($InternalTest -or $internalTesting) {
     W-Info "test mode send sim only"
     return
@@ -339,8 +339,7 @@ function Send-ApiBatch {
   $delay = 5
   while ($retryCount -lt $maxRetries) {
     try {
-      $response = Invoke-RestMethod -Uri $endpoint -Method Post -Headers $headers -Body $FinalJsonPayload -ContentType "application/json" -TimeoutSec $timeoutSec -ErrorAction Stop
-
+      $response = Invoke-RestMethod -Uri $endpoint -Method Post -Headers $headers -Body $FinalJsonPayload -ContentType "application/json" -TimeoutSec $timeout -ErrorAction Stop
       Write-Host "Raw API response: $response"
       $responseItems = Parse-ApiReply -Raw $response -Expect $batch.Count
       if ($responseItems.Count -ne $batch.Count) {
@@ -731,7 +730,7 @@ $batchSize = $BatchSize
 $totalBatches = [math]::Ceiling($totalRecords / $batchSize)
 $cumulativeDbWriteTime = 0.0 # reset db write stopwatch
 
-# Continue send logic
+# Continue with sending logic
 for ($batchIndex = 0; $batchIndex -lt $totalBatches; $batchIndex++) {
   # Loop through each batch
   $startIndex = $batchIndex * $batchSize
@@ -747,7 +746,7 @@ for ($batchIndex = 0; $batchIndex -lt $totalBatches; $batchIndex++) {
     $record = $JsonArray[$i]
     $pidCheck = $record.person_id
     $jsonCheck = $record.json        
-    # Check record valid: has requ fields, non-null, structured as expected
+    # Check record valid: has requ fields, non-null, and structured as we expect
     $valid = (
       $record -ne $null -and
       $record.PSObject.Properties["person_id"] -and
@@ -758,7 +757,7 @@ for ($batchIndex = 0; $batchIndex -lt $totalBatches; $batchIndex++) {
       $jsonCheck.PSObject.Properties.Count -gt 0
     )
 
-    # valid, add it to current batch slice, else # record not as expected
+    # valid, add it to the current batch slice, else # record not as expected
     if ($valid) { $batchSlice += $record } else { W-Warn ("skip empty or invalid rec. person_id '{0}'" -f $pidCheck) }
   }
 
@@ -769,7 +768,7 @@ for ($batchIndex = 0; $batchIndex -lt $totalBatches; $batchIndex++) {
     # incl. if single record, we need to physically/coerce wrap it within array wrapper [ ] before hitting api
 
   $finalPayload = ConvertTo-CorrectJson -batch $batchSlice
-  ## output entire payload for verification 
+  ## output the entire payload for verification 
   #Write-Host "final payload $($finalPayload)"   # debug
 
   Send-ApiBatch -batch $batchSlice `
@@ -779,8 +778,8 @@ for ($batchIndex = 0; $batchIndex -lt $totalBatches; $batchIndex++) {
     -tableName $api_data_staging_table `
     -FailedResponses ([ref]$FailedResponses) `
     -FinalJsonPayload $finalPayload `
-    -CumulativeDbWriteTime ([ref]$cumulativeDbWriteTime)
-
+    -CumulativeDbWriteTime ([ref]$cumulativeDbWriteTime) `
+    -timeout $ApiTimeout
 }
 
 # perf
