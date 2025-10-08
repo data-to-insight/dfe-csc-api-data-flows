@@ -144,14 +144,14 @@ END
                         COALESCE(JSON_QUERY((
                             SELECT
                                 CONVERT(varchar(10), csdq.csdq_sdq_completed_date, 23) AS [date],
-                                csdq.csdq_sdq_score AS [score]
-                              FROM ssd_sdq_scores csdq
-                             WHERE csdq.csdq_person_id = p.pers_person_id
-                               AND csdq.csdq_sdq_score IS NOT NULL
-                               AND csdq.csdq_sdq_completed_date IS NOT NULL
-                               AND csdq.csdq_sdq_completed_date > '1900-01-01'
-                             ORDER BY csdq.csdq_sdq_completed_date DESC
-                             FOR JSON PATH
+                                TRY_CONVERT(int, csdq.csdq_sdq_score) AS [score] -- is (decimal(10,2) required
+                            FROM ssd_sdq_scores csdq
+                            WHERE csdq.csdq_person_id = p.pers_person_id
+                            AND csdq.csdq_sdq_completed_date IS NOT NULL
+                            AND csdq.csdq_sdq_completed_date > '1900-01-01'
+                            AND TRY_CONVERT(int, csdq.csdq_sdq_score) IS NOT NULL -- exclude when val not valid int
+                            ORDER BY csdq.csdq_sdq_completed_date DESC
+                            FOR JSON PATH
                         )), JSON_QUERY('[]')) AS [sdq_assessments],
                         CAST(0 AS bit) AS [purge]
                     FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
