@@ -1,7 +1,130 @@
+<#
+.SYNOPSIS
+  SSD --> CSC API batch sender (full or deltas) with optional proxy and DB auth modes
+
+.DESCRIPTION
+  Pulls pending JSON payloads from SQL Server ($api_data_staging_table), batches and POSTs to CSC endpoint
+  Supports full or deltas(phase 2) payloads, retry with exponential backoff, and optional hard-coded test record
+  Proxy settings (if supplied) are applied to all HTTP calls. Db auth can be Windows Integrated or SQL auth
+
+.PARAMETER Phase
+  Payload mode: 'full' or 'deltas'. 'deltas' prepares/uses partial_json_payload before sending
+
+.PARAMETER InternalTest
+  Dry-run; skip real POSTs
+
+.PARAMETER UseTestRecord
+  Sends a single hard-coded sample record (useful for connectivity/tests)
+
+.PARAMETER BatchSize
+  Maximum records per POST
+
+.PARAMETER ApiTimeout
+  Per-request HTTP timeout in secs
+
+.PARAMETER Proxy
+  Proxy URI, e.g. http://proxy.myLA.local:8080
+
+.PARAMETER ProxyUseDefaultCredentials
+  Use current Windows logon for proxy auth
+
+.PARAMETER ProxyCredential
+  PSCredential to authenticate to proxy (ignored if -ProxyUseDefaultCredentials is present)
+
+.PARAMETER UseIntegratedSecurityDbConnection
+  When present, use Windows Integrated Security for SQL. When absent, use SQL auth via -DbUser/-DbPassword
+  (or DB_USER/DB_PASSWORD environment variables)
+
+.PARAMETER DbUser
+  SQL login (used when -UseIntegratedSecurityDbConnection is NOT set)
+
+.PARAMETER DbPassword
+  SQL password (used when -UseIntegratedSecurityDbConnection is NOT set)
+
+.NOTES
+  Version: 0.4.2
+  Requires: PowerShell 5.1+
+  Retries: up to 3 with exponential backoff (non-retriable: 204, 400, 413)
+  Legacy mappings remain for compatibility: $usePartialPayload, $internalTesting, $useTestRecord, $batchSize, $timeoutSec
+  If both -ProxyUseDefaultCredentials and -ProxyCredential are provided, default credentials take precedence
+
+.EXAMPLE
+  # Full send, Windows auth to SQL (no proxy)
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\phase_1_api_payload.ps1 -Phase full -UseIntegratedSecurityDbConnection
+
+.EXAMPLE
+  # Deltas, SQL auth to DB using env vars, using LA proxy with default creds
+  $env:DB_USER = "svc_csc"; $env:DB_PASSWORD = "P@ssw0rd!"
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\phase_1_api_payload.ps1 `
+    -Phase deltas -Proxy http://proxy.myLA.local:8080 -ProxyUseDefaultCredentials
+
+.EXAMPLE
+  # Full send with explicit proxy credential and custom timeout
+  $pcred = Get-Credential  # enter DOMAIN\user for proxy
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\phase_1_api_payload.ps1 `
+    -Phase full -Proxy http://proxy.myLA.local:8080 -ProxyCredential $pcred -ApiTimeout 45
+
+.EXAMPLE
+  # Dry run with hard-coded test record
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\phase_1_api_payload.ps1 -Phase full -UseTestRecord -InternalTest
+#>
+[CmdletBinding()]
+param(
+  [ValidateSet('full','deltas')] [string]$Phase = 'full',  # payload type
+  [switch]$InternalTest,                                   # simulate send
+  [switch]$UseTestRecord,                                  # use hard-coded fake record
+  [ValidateRange(1,100)] [int]$BatchSize = 100,            # DfE max batch size is 100
+  [ValidateRange(5,60)]  [int]$ApiTimeout = 30,            # in secs
+  [string]$Proxy,
+  [switch]$ProxyUseDefaultCredentials,
+  [PSCredential]$ProxyCredential,
+  [string]$DbUser = $env:DB_USER,
+  [string]$DbPassword = $env:DB_PASSWORD,
+  [switch]$UseIntegratedSecurityDbConnection               # use Windows auth when present
+)
+
+
+# ---- DEV QUICK OVERIDES (applied only when not CLI/params supplied) ----------------
+
+# set values for manual runs in the ISE/console
+# They will NOT override values you pass on the command line
+
+# Core toggles
+if (-not $PSBoundParameters.ContainsKey('Phase'))                             { $Phase  = 'full' }     # 'full' or 'deltas'
+if (-not $PSBoundParameters.ContainsKey('InternalTest'))                      { $InternalTest = $true }
+if (-not $PSBoundParameters.ContainsKey('UseTestRecord'))                     { $UseTestRecord = $true }
+
+# HTTP proxy (leave $null to disable)
+
+## Quick matrix for HTTP proxy flag use as kinda messy:
+## Proxy=$null, ProxyUseDefaultCredentials=$true --> System proxy + default creds (or direct if none)
+## Proxy='http://p:8080', ProxyUseDefaultCredentials=$true --> That proxy + default creds
+## Proxy='http://p:8080', ProxyUseDefaultCredentials=$false, ProxyCredential=...--> That proxy + supplied creds
+## So: null + true = use whatever proxy machine already has, and auth with my Windows creds if needed
+if (-not $PSBoundParameters.ContainsKey('Proxy'))                             { $Proxy = $null }       # e.g. 'http://proxy.myLA.local:8080' but $null==not forcing specific proxy URI/web cmdlets use OS/.NET system proxy(WinINET/WinHTTP/PAC) if one configured; otherwise go direct
+if (-not $PSBoundParameters.ContainsKey('ProxyUseDefaultCredentials'))        { $ProxyUseDefaultCredentials = $true } # cmdlets will send current users Win creds to proxy when challenged
+# If you want stored proxy credential by default, uncomment next line:
+# if (-not $PSBoundParameters.ContainsKey('ProxyCredential'))                 { $ProxyCredential = Get-Credential }  # or $null
+
+# HTTP tuning
+if (-not $PSBoundParameters.ContainsKey('ApiTimeout'))                        { $ApiTimeout = 20 }     # seconds
+if (-not $PSBoundParameters.ContainsKey('BatchSize'))                         { $BatchSize  = 50 }
+
+# DB auth mode
+if (-not $PSBoundParameters.ContainsKey('UseIntegratedSecurityDbConnection')) { $UseIntegratedSecurityDbConnection = $true }
+
+# DB creds (only set if still empty AND using SQL auth)
+if (-not $UseIntegratedSecurityDbConnection) {
+    if (-not $PSBoundParameters.ContainsKey('DbUser')     -and [string]::IsNullOrWhiteSpace($DbUser))     { $DbUser     = $env:DB_USER }
+    if (-not $PSBoundParameters.ContainsKey('DbPassword') -and [string]::IsNullOrWhiteSpace($DbPassword)) { $DbPassword = $env:DB_PASSWORD }
+}
+# ------------------------------------------------------------------------------
+
+
 
 # ----- Proxy defaults for all Invoke-WebRequest / Invoke-RestMethod calls -----
-# These lines implicitly pass -Proxy and either -ProxyUseDefaultCredentials or -ProxyCredential
-# on every web request in this script, without changing each call site.
+# implicitly pass -Proxy and either -ProxyUseDefaultCredentials or -ProxyCredential
+# on every web request
 $PSDefaultParameterValues = @{}
 if ($Proxy) {
   $PSDefaultParameterValues['Invoke-WebRequest:Proxy'] = $Proxy
@@ -15,63 +138,9 @@ if ($ProxyUseDefaultCredentials) {
   $PSDefaultParameterValues['Invoke-RestMethod:ProxyCredential'] = $ProxyCredential
 }
 # -----------------------------------------------------------------------------
-<#
-Script Name: SSD API
-Description:
-PowerShell script to pull pre-built JSON from SSD (SQL Server), send to API, and update $api_data_staging_table.
-Data refresh cadence set outside this script (SSD refresh).
 
-Key features:
-- Pulls pending JSON from $api_data_staging_table
-- Sends to API or sim mode
-- Marks Sent | Error | Testing
-- Phase switch: full or deltas
-- Batch + timeout controls
-
-Params (via param block):
-- Phase: full | deltas
-- InternalTest: switch for dry-run
-- UseTestRecord: switch for hard-coded sample
-- BatchSize: max recs per POST
-- ApiTimeout: per-call timeout (sec)
-
-Config:
-- Set $server, $database, $api_data_staging_table for LA env
-- OAuth cfg via $token_endpoint $client_id $client_secret $scope $supplier_key
-
-Notes:
-legacy vars mapped for compat: $usePartialPayload, $internalTesting, $useTestRecord, $batchSize, $timeoutSec
-If both -ProxyUseDefaultCredentials and -ProxyCredential, are passed, script prioritizes -ProxyUseDefaultCredentials
-
-Prereqs:
-- PowerShell 5.1+
-- .NET SQL client or SqlServer module
-- SSD schema incl $api_data_staging_table (or _anon for test)
-
-cli examples:
-- powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\phase_1_api_payload.ps1 -Phase full
-- powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\phase_1_api_payload.ps1 -Phase deltas
-- powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\phase_1_api_payload.ps1 -Phase full -InternalTest
-- powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\phase_1_api_payload.ps1 -Phase full -UseTestRecord -BatchSize 100 -ApiTimeout 30
-#>
-
-
-[CmdletBinding()]
-param(
-  [ValidateSet('full','deltas')] [string]$Phase = 'full',  # pick payload type
-  [switch]$InternalTest,                                   # simulate send
-  [switch]$UseTestRecord,                                  # use hard-coded fake record
-  [ValidateRange(1,100)] [int]$BatchSize = 100,            # per-batch
-  [ValidateRange(5,60)]  [int]$ApiTimeout = 30             # secs,
-  [string]$Proxy,
-  [switch]$ProxyUseDefaultCredentials,
-  [PSCredential]$ProxyCredential
-)
-$VERSION = '0.4.0'
+$VERSION = '0.4.2'
 Write-Host ("CSC API staging build: v{0}" -f $VERSION)
-
-
-
 
 # ----------- LA Config START -----------
 
@@ -79,7 +148,7 @@ Write-Host ("CSC API staging build: v{0}" -f $VERSION)
 # from https://pp-find-and-use-an-api.education.gov.uk/ (log in)
 
 $la_code         = "000" # Change to your 3 digit LA code
-$api_endpoint = "<hidden>" # 'Base URL' 
+$api_endpoint   = "https://pp-api.education.gov.uk/children-in-social-care-data-receiver-test/1" 
 
 
 # From the 'Native OAuth Application-flow' block
@@ -116,7 +185,7 @@ $logFile            = "C:\Users\d2i\Documents\api_temp_log.json" # example
 
 # ----------- DEV START ---------------
 
-# map to legacy vars from param cmdlet
+# map to legacy vars from param cmdlet (or the manual overides IF set!)
 $usePartialPayload = ($Phase -eq 'deltas')   # full=false, deltas=true # phase --> payload switch
 $internalTesting   = [bool]$InternalTest
 $useTestRecord     = [bool]$UseTestRecord
@@ -129,8 +198,6 @@ $api_data_staging_table = "ssd_api_data_staging_anon"  # live: ssd_api_data_stag
 # ----------- DEV END ---------------
 
 
-
-
 # tls
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
@@ -140,8 +207,6 @@ function W-Ok($m){ Write-Host $m -ForegroundColor Green }
 function W-Warn($m){ Write-Host $m -ForegroundColor Yellow }
 function W-Err($m){ Write-Host $m -ForegroundColor Red }
 function W-Dim($m){ Write-Host $m -ForegroundColor DarkGray }
-
-
 
 $scriptStart = Get-Date
 $scriptStartStamp = $scriptStart.ToString("yyyy-MM-dd HH:mm:ss")
@@ -156,6 +221,14 @@ $swScript = [System.Diagnostics.Stopwatch]::StartNew()
 $api_endpoint_with_lacode = "$api_endpoint/children_social_care_data/$la_code/children"
 W-Info "Final API Endpoint: $api_endpoint_with_lacode"
 
+# Proxy helper used by token + POST calls (explicit pass-through even if defaults not set)
+function Get-ProxySplat {
+  $s = @{}
+  if ($Proxy) { $s.Proxy = $Proxy }
+  if ($ProxyUseDefaultCredentials) { $s.ProxyUseDefaultCredentials = $true }
+  elseif ($ProxyCredential) { $s.ProxyCredential = $ProxyCredential }
+  return $s
+}
 
 # helpers
 function Test-Cfg {
@@ -190,8 +263,9 @@ function Get-OAuthToken {
     scope         = $scope
     grant_type    = "client_credentials"
   }
+  $proxy = Get-ProxySplat
   try {
-    $resp = Invoke-RestMethod -Uri $token_endpoint -Method Post -Body $body -ContentType "application/x-www-form-urlencoded" -ErrorAction Stop
+    $resp = Invoke-RestMethod -Uri $token_endpoint -Method Post -Body $body -ContentType "application/x-www-form-urlencoded" -TimeoutSec $timeoutSec -ErrorAction Stop @proxy
     return $resp.access_token
   } catch {
     W-Err ("oauth fail: {0}" -f $_.Exception.Message)
@@ -358,9 +432,10 @@ function Send-ApiBatch {
 
   $retryCount = 0
   $delay = 5
+  $proxy = Get-ProxySplat   # pick up CLI proxy settings, if any
   while ($retryCount -lt $maxRetries) {
     try {
-      $response = Invoke-RestMethod -Uri $endpoint -Method Post -Headers $headers -Body $FinalJsonPayload -ContentType "application/json" -TimeoutSec $timeoutSec -ErrorAction Stop
+      $response = Invoke-RestMethod -Uri $endpoint -Method Post -Headers $headers -Body $FinalJsonPayload -ContentType "application/json" -TimeoutSec $timeout -ErrorAction Stop @proxy
       Write-Host "Raw API response: $response"
       $responseItems = Parse-ApiReply -Raw $response -Expect $batch.Count
       if ($responseItems.Count -ne $batch.Count) {
@@ -407,11 +482,7 @@ function Send-ApiBatch {
         Handle-BatchFailure -batch $batch -connectionString $connectionString -tableName $tableName -errorMessage $apiMsg -detailedError $detail -statusCode $httpStatus
         break
       } else {
-        if ($httpStatus -eq 403) {
-          $delay = [Math]::Min(30, $delay * 2)
-        } else {
-          $delay = [Math]::Min(30, $delay * 2)
-        }
+        $delay = [Math]::Min(30, $delay * 2)
         $delay += Get-Random -Minimum 0 -Maximum 3
         W-Info ("retry in {0}s..." -f $delay)
         Start-Sleep -Seconds $delay
@@ -712,9 +783,33 @@ if(-not (Test-Cfg -Api $api_endpoint -Token $token_endpoint -Id $client_id -Sec 
   exit 1
 }
 
-# conn str
-# potentially move to environment var
-$connectionString = "Server=$server;Database=$database;Integrated Security=True;"
+# Build connection string (integrated vs SQL auth)
+if ($UseIntegratedSecurityDbConnection) {
+  $csb = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
+  $csb["Data Source"]            = $server
+  $csb["Initial Catalog"]        = $database
+  $csb["Integrated Security"]    = $true
+  # optional hardening:
+  $csb["Encrypt"]                = $true
+  $csb["TrustServerCertificate"] = $false
+  $connectionString = $csb.ToString()
+} else {
+  # protect against missing DB creds (env vars not set)
+  if ([string]::IsNullOrWhiteSpace($DbUser) -or [string]::IsNullOrWhiteSpace($DbPassword)) {
+    W-Err "DB credentials missing. Supply -DbUser and -DbPassword or set DB_USER/DB_PASSWORD environment variables."
+    exit 1
+  }
+  $csb = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
+  $csb["Data Source"]            = $server
+  $csb["Initial Catalog"]        = $database
+  $csb["Integrated Security"]    = $false
+  $csb["User ID"]                = $DbUser
+  $csb["Password"]               = $DbPassword
+  # optional hardening:
+  $csb["Encrypt"]                = $true
+  $csb["TrustServerCertificate"] = $false
+  $connectionString = $csb.ToString()
+}
 
 # fresh token + hdr
 $bearer_token = Get-OAuthToken
@@ -763,7 +858,7 @@ for ($batchIndex = 0; $batchIndex -lt $totalBatches; $batchIndex++) {
     # Loop records within range of batch
     # avoid out-of-range err (shouldn't normally happen)
     if ($i -ge $JsonArray.Count) { W-Warn ("idx {0} out of range, skip" -f $i); continue }
-# Get current record (person_id + json payload) for checks
+    # Get current record (person_id + json payload) for checks
     $record = $JsonArray[$i]
     $pidCheck = $record.person_id
     $jsonCheck = $record.json        
@@ -785,9 +880,8 @@ for ($batchIndex = 0; $batchIndex -lt $totalBatches; $batchIndex++) {
   if ($batchSlice.Count -eq 0) { W-Warn ("no valid records in batch {0}. skip" -f ($batchIndex+1)); continue }
   W-Info ("sending batch {0} of {1}..." -f ($batchIndex + 1), $totalBatches)
 
-    # ensure batch is valid structure 
-    # incl. if single record, we need to physically/coerce wrap it within array wrapper [ ] before hitting api
-
+  # ensure batch is valid structure 
+  # incl. if single record, we need to physically/coerce wrap it within array wrapper [ ] before hitting api
   $finalPayload = ConvertTo-CorrectJson -batch $batchSlice
   ## output entire payload for verification 
   #Write-Host "final payload $($finalPayload)"   # debug
