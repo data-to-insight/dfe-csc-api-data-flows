@@ -1,0 +1,149 @@
+# Workflow builds and uploads relevant CSC API Pipeline release assets
+# Included in release:
+#    csc_api_pipeline.exe         – PyInstaller-built Windows exe
+#    release.zip                 – Bundled release contents (scripts, config, docs, binary)
+#    dist/*.whl, *.tar.gz        – Python wheel and source distribution
+#    phase_1_api_payload.ps1     – Local-use PowerShell script
+#    populate_ssd_api_data_staging.sql – SQL setup util
+#    .env.example + README.md    – Config and documentation
+#
+# Notes: 
+# Supports manual trigger, tag-push, and Git release publishing.
+# Linux-based compatibility, job block included but commented. 
+
+
+
+name: Build and Upload EXE
+
+on:
+  workflow_dispatch: {}
+  push: # rem if releasing only on official release
+    tags:
+      - 'v*.*.*'
+  release:
+    types: [published]
+
+jobs:
+  build:
+    name: Build EXE and Upload to Release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install minimal build deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install .[build]    # uses pyproject extras: build= [build, pyinstaller]
+          pip install .           # install package locally so relative imports resolve
+
+      - name: Clean previous build (CMD)
+        shell: cmd
+        run: |
+          rmdir /s /q dist build || echo No previous build folders
+          del /q /f *.spec || echo No .spec file
+
+      # users see console logs (or switch to --windowed)
+      - name: Build EXE with PyInstaller
+        run: |
+          pyinstaller api_pipeline\entry_point.py --onefile --name csc_api_pipeline --console
+
+
+      # catche missing imports or pkg mistakes early, tiny smoke test on runner
+      - name: Smoke test EXE (--help)
+        run: |
+          dist\csc_api_pipeline.exe --help
+
+      - name: Build sdist & wheel
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+          python -m build --sdist --wheel --outdir dist
+
+      # check only meta relevant files, i.e. not the EXE
+      - name: Check metadata (twine)
+        run: |
+          pip install twine
+          twine check dist\*.whl dist\*.tar.gz
+
+      - name: Smoke test wheel (install & import)
+        shell: pwsh
+        run: |
+          python -m venv venv
+          .\venv\Scripts\Activate.ps1
+          pip install dist\*.whl
+          python -c "import api_pipeline; print('Import OK:', api_pipeline.__name__)"
+
+      # \"$($h.Hash)  $($_.Name)\" | Out-File -FilePath dist\SHA256SUMS.txt -Append -Encoding ASCII
+      - name: Generate SHA256 checksums
+        shell: pwsh
+        run: |
+          Remove-Item -ErrorAction SilentlyContinue dist\SHA256SUMS.txt
+          Get-ChildItem -Path dist -File | ForEach-Object {
+            $h = Get-FileHash -Path $_.FullName -Algorithm SHA256
+            '{0}  {1}' -f $h.Hash, $_.Name | Add-Content -Path dist\SHA256SUMS.txt -Encoding Ascii
+          }
+          Get-Content -Path dist\SHA256SUMS.txt
+
+
+      # zip with PowerShell Compress-Archive since it's on Windows(don't envisage pilot Linux use)
+      - name: Zip release files
+        run: |
+          mkdir release_bundle
+          copy dist\csc_api_pipeline.exe release_bundle\
+          copy README.md release_bundle\
+          copy api_pipeline\.env.example release_bundle\
+          copy api_pipeline_pshell\phase_1_api_payload.ps1 release_bundle\
+          copy api_sql_raw_json_query\populate_ssd_api_data_staging.sql release_bundle\
+          if (Test-Path notebooks\dfe_csc_api_testing.ipynb) { copy notebooks\dfe_csc_api_testing.ipynb release_bundle\ }  # optional (add .ipynb to release during pilot)
+          powershell Compress-Archive -Path release_bundle\* -DestinationPath release.zip 
+
+      - name: Upload Release Artifacts to Git
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/csc_api_pipeline.exe
+            release.zip
+            dist/*.whl
+            dist/*.tar.gz
+            dist/SHA256SUMS.txt
+            api_pipeline_pshell/phase_1_api_payload.ps1
+            api_sql_raw_json_query/populate_ssd_api_data_staging.sql
+            README.md
+            api_pipeline/.env.example
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # linux-build:
+  #   name: Build Python Packages (Linux)
+  #   runs-on: ubuntu-latest
+
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
+
+  #     - name: Set up Python
+  #       uses: actions/setup-python@v5
+  #       with:
+  #         python-version: '3.11'
+
+  #     - name: Install build tools
+  #       run: |
+  #         python -m pip install --upgrade pip
+  #         pip install build
+
+  #     - name: Build sdist and wheel
+  #       run: |
+  #         python -m build --sdist --wheel --outdir dist
+
+  #     - name: Upload Python artifacts
+  #       uses: actions/upload-artifact@v3
+  #       with:
+  #         name: csc-api-pipeline-linux-dist
+  #         path: dist/
