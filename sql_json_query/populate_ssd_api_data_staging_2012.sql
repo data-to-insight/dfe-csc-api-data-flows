@@ -112,20 +112,23 @@ BEGIN TRY                               -- catch any runtime error, keep control
             SELECT
                 '[' + STUFF((
                     SELECT ',' + '{'
-                        + '"date":'  + CASE WHEN csdq.csdq_sdq_completed_date IS NULL
-                                                THEN 'null' ELSE '"' + CONVERT(varchar(10), csdq.csdq_sdq_completed_date, 23) + '"' END + ','
-                        + '"score":' + CASE WHEN csdq.csdq_sdq_score IS NULL
-                                                THEN 'null' ELSE CONVERT(varchar(20), csdq.csdq_sdq_score) END
+                        + '"date":'  + CASE 
+                                        WHEN csdq.csdq_sdq_completed_date IS NULL 
+                                            THEN 'null' 
+                                        ELSE '"' + CONVERT(varchar(10), csdq.csdq_sdq_completed_date, 23) + '"' 
+                                    END + ','
+                        + '"score":' + CONVERT(varchar(20), TRY_CONVERT(int, csdq.csdq_sdq_score))
                         + '}'
                     FROM ssd_sdq_scores csdq
                     WHERE csdq.csdq_person_id = p.pers_person_id
-                    AND csdq.csdq_sdq_score IS NOT NULL
                     AND csdq.csdq_sdq_completed_date IS NOT NULL
                     AND csdq.csdq_sdq_completed_date > '19000101'
+                    AND TRY_CONVERT(int, csdq.csdq_sdq_score) IS NOT NULL   -- keep only numeric scores
                     ORDER BY csdq.csdq_sdq_completed_date DESC
                     FOR XML PATH(''), TYPE
                 ).value('.', 'nvarchar(max)'), 1, 1, '') + ']'
         ) AS sdq(sdq_array_json)
+
 
         /* child_details -> single JSON object */
         CROSS APPLY (
