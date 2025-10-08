@@ -14,10 +14,10 @@
   Dry-run; skip real POSTs
 
 .PARAMETER UseTestRecord
-  Sends a single hard-coded sample record (useful for connectivity/tests)
+  Sends single hard-coded fake/Sim record (for connectivity/tests)
 
 .PARAMETER BatchSize
-  Maximum records per POST
+  Max records per POST
 
 .PARAMETER ApiTimeout
   Per-request HTTP timeout in secs
@@ -32,7 +32,7 @@
   PSCredential to authenticate to proxy (ignored if -ProxyUseDefaultCredentials is present)
 
 .PARAMETER UseIntegratedSecurityDbConnection
-  When present, use Windows Integrated Security for SQL. When absent, use SQL auth via -DbUser/-DbPassword
+  When set, use Windows Integrated Security for SQL. When not set, use SQL auth via -DbUser/-DbPassword
   (or DB_USER/DB_PASSWORD environment variables)
 
 .PARAMETER DbUser
@@ -47,6 +47,19 @@
   Retries: up to 3 with exponential backoff (non-retriable: 204, 400, 413)
   Legacy mappings remain for compatibility: $usePartialPayload, $internalTesting, $useTestRecord, $batchSize, $timeoutSec
   If both -ProxyUseDefaultCredentials and -ProxyCredential are provided, default credentials take precedence
+
+.EXAMPLE
+  # # Smallest: use built-in hard-coded record, actually POST to API
+powershell -NoProfile -File .\phase_1_api_payload.ps1 -UseTestRecord -Phase full -BatchSize 1
+
+# With LA proxy using your Windows creds
+powershell -NoProfile -File .\phase_1_api_payload.ps1 -UseTestRecord `
+  -Proxy 'http://proxy.myLA.local:8080' -ProxyUseDefaultCredentials
+
+# With explicit proxy creds
+powershell -NoProfile -File .\phase_1_api_payload.ps1 -UseTestRecord `
+  -Proxy 'http://proxy.myLA.local:8080' -ProxyUseDefaultCredentials:$false `
+  -ProxyCredential (Get-Credential)
 
 .EXAMPLE
   # Full send, Windows auth to SQL (no proxy)
@@ -86,13 +99,13 @@ param(
 
 # ---- DEV QUICK OVERIDES (applied only when not CLI/params supplied) ----------------
 
-# set values for manual runs in the ISE/console
+# set values for manual runs in the ISE
 # They will NOT override values you pass on the command line
 
 # Core toggles
 if (-not $PSBoundParameters.ContainsKey('Phase'))                             { $Phase  = 'full' }     # 'full' or 'deltas'
-if (-not $PSBoundParameters.ContainsKey('InternalTest'))                      { $InternalTest = $true }
-if (-not $PSBoundParameters.ContainsKey('UseTestRecord'))                     { $UseTestRecord = $true }
+if (-not $PSBoundParameters.ContainsKey('InternalTest'))                      { $InternalTest = $false } # true=no external calls
+if (-not $PSBoundParameters.ContainsKey('UseTestRecord'))                     { $UseTestRecord = $true } # false switches to db calls
 
 # HTTP proxy (leave $null to disable)
 
@@ -102,7 +115,7 @@ if (-not $PSBoundParameters.ContainsKey('UseTestRecord'))                     { 
 ## Proxy='http://p:8080', ProxyUseDefaultCredentials=$false, ProxyCredential=...--> That proxy + supplied creds
 ## So: null + true = use whatever proxy machine already has, and auth with my Windows creds if needed
 if (-not $PSBoundParameters.ContainsKey('Proxy'))                             { $Proxy = $null }       # e.g. 'http://proxy.myLA.local:8080' but $null==not forcing specific proxy URI/web cmdlets use OS/.NET system proxy(WinINET/WinHTTP/PAC) if one configured; otherwise go direct
-if (-not $PSBoundParameters.ContainsKey('ProxyUseDefaultCredentials'))        { $ProxyUseDefaultCredentials = $true } # cmdlets will send current users Win creds to proxy when challenged
+if (-not $PSBoundParameters.ContainsKey('ProxyUseDefaultCredentials'))        { $ProxyUseDefaultCredentials = $false } # cmdlets will send current users Win creds to proxy when challenged
 # If you want stored proxy credential by default, uncomment next line:
 # if (-not $PSBoundParameters.ContainsKey('ProxyCredential'))                 { $ProxyCredential = Get-Credential }  # or $null
 
@@ -125,17 +138,25 @@ if (-not $UseIntegratedSecurityDbConnection) {
 # ----- Proxy defaults for all Invoke-WebRequest / Invoke-RestMethod calls -----
 # implicitly pass -Proxy and either -ProxyUseDefaultCredentials or -ProxyCredential
 # on every web request
-$PSDefaultParameterValues = @{}
+# clear any inherited session defaults so we don't accidentally pass proxy creds without a proxy
+$PSDefaultParameterValues.Remove('Invoke-WebRequest:Proxy')                        2>$null
+$PSDefaultParameterValues.Remove('Invoke-RestMethod:Proxy')                        2>$null
+$PSDefaultParameterValues.Remove('Invoke-WebRequest:ProxyUseDefaultCredentials')   2>$null
+$PSDefaultParameterValues.Remove('Invoke-RestMethod:ProxyUseDefaultCredentials')   2>$null
+$PSDefaultParameterValues.Remove('Invoke-WebRequest:ProxyCredential')              2>$null
+$PSDefaultParameterValues.Remove('Invoke-RestMethod:ProxyCredential')              2>$null
+
 if ($Proxy) {
   $PSDefaultParameterValues['Invoke-WebRequest:Proxy'] = $Proxy
   $PSDefaultParameterValues['Invoke-RestMethod:Proxy'] = $Proxy
-}
-if ($ProxyUseDefaultCredentials) {
-  $PSDefaultParameterValues['Invoke-WebRequest:ProxyUseDefaultCredentials'] = $true
-  $PSDefaultParameterValues['Invoke-RestMethod:ProxyUseDefaultCredentials'] = $true
-} elseif ($ProxyCredential) {
-  $PSDefaultParameterValues['Invoke-WebRequest:ProxyCredential'] = $ProxyCredential
-  $PSDefaultParameterValues['Invoke-RestMethod:ProxyCredential'] = $ProxyCredential
+
+  if ($ProxyUseDefaultCredentials) {
+    $PSDefaultParameterValues['Invoke-WebRequest:ProxyUseDefaultCredentials'] = $true
+    $PSDefaultParameterValues['Invoke-RestMethod:ProxyUseDefaultCredentials'] = $true
+  } elseif ($ProxyCredential) {
+    $PSDefaultParameterValues['Invoke-WebRequest:ProxyCredential'] = $ProxyCredential
+    $PSDefaultParameterValues['Invoke-RestMethod:ProxyCredential'] = $ProxyCredential
+  }
 }
 # -----------------------------------------------------------------------------
 
@@ -230,6 +251,7 @@ function Get-ProxySplat {
   return $s
 }
 
+
 # helpers
 function Test-Cfg {
   param($Api,$Token,$Id,$Sec,$Scope,$La,$Table,$Server,$Db)
@@ -290,6 +312,7 @@ function Execute-NonQuerySql {
       $cmd = $conn.CreateCommand()
       $cmd.CommandText = $query
       [void]$cmd.ExecuteNonQuery()
+      return $true
     } finally {
       if ($conn.State -ne 'Closed') { $conn.Close() }
       $conn.Dispose()
@@ -300,8 +323,10 @@ function Execute-NonQuerySql {
       Write-Host "Query that caused failure:" -ForegroundColor DarkGray
       Write-Host "$query" -ForegroundColor Yellow
     }
+    return $false
   }
 }
+
 
 function Update-ApiResponseForBatch {
   param (
@@ -344,8 +369,15 @@ SET
 FROM $tableName tgt
 INNER JOIN Updates u ON tgt.person_id = u.person_id;
 "@
-  Execute-NonQuerySql -connectionString $connectionString -query $updateQuery
-  Write-Host "Batch update of API response status completed." -ForegroundColor Cyan
+  $ok = Execute-NonQuerySql -connectionString $connectionString -query $updateQuery
+
+  if ($ok) {
+    # Execute-NonQuerySql returned true|success
+    Write-Host "Batch update of API response status completed." -ForegroundColor Cyan
+  } else {
+    Write-Host "Batch update failed (see error above)." -ForegroundColor Yellow
+  }
+
 }
 
 function Handle-BatchFailure {
@@ -426,7 +458,7 @@ function Send-ApiBatch {
     [int]$timeout = 30 # exponential backoff: 5s -> 10s -> 20s -> 30s (capped)
   )
   if ($InternalTest -or $internalTesting) {
-    W-Info "test mode send sim only"
+    W-Info "test mode send sim|fake payload only"
     return
   }
 
@@ -441,10 +473,16 @@ function Send-ApiBatch {
       if ($responseItems.Count -ne $batch.Count) {
         Write-Host "Response count ($($responseItems.Count)) does not match batch count ($($batch.Count)). Skipping updates." -ForegroundColor Yellow
       } else {
-        $dbSw = [System.Diagnostics.Stopwatch]::StartNew()
-        Update-ApiResponseForBatch -batch $batch -responseItems $responseItems -connectionString $connectionString -tableName $tableName
-        $dbSw.Stop()
-        $CumulativeDbWriteTime.Value += $dbSw.Elapsed.TotalSeconds
+        if (-not $useTestRecord) {
+          $dbSw = [System.Diagnostics.Stopwatch]::StartNew()
+          Update-ApiResponseForBatch -batch $batch -responseItems $responseItems -connectionString $connectionString -tableName $tableName
+          $dbSw.Stop()
+          $CumulativeDbWriteTime.Value += $dbSw.Elapsed.TotalSeconds
+        } else {
+          # if we're only using fake hard-coded record, dont attempt db hit
+          W-Info "UseTestRecord set — skipping DB update."
+        }
+
       }
       break
     } catch {
@@ -564,8 +602,8 @@ function Get-HardcodedTestRecord {
   # test api process with hard-coded minimal single fake record
   $jsonString = @'
     {
-      "la_child_id": "f96f473f1feb4d6da3379d06670844fd",
-      "mis_child_id": "nXLdcNLOkg1nS4LnEg0",
+      "la_child_id": "Fake1234",
+      "mis_child_id": "MISFake1234",
       "child_details": {
         "unique_pupil_number": "X5GLGl9mWSNjM",
         "former_unique_pupil_number": "DEF0123456789",
@@ -791,7 +829,7 @@ if ($UseIntegratedSecurityDbConnection) {
   $csb["Integrated Security"]    = $true
   # optional hardening:
   $csb["Encrypt"]                = $true
-  $csb["TrustServerCertificate"] = $false
+  $csb["TrustServerCertificate"] = $true # still get encryption, but bypassing CA validation (if SQL Server TLS cert is self-signed)
   $connectionString = $csb.ToString()
 } else {
   # protect against missing DB creds (env vars not set)
@@ -799,17 +837,26 @@ if ($UseIntegratedSecurityDbConnection) {
     W-Err "DB credentials missing. Supply -DbUser and -DbPassword or set DB_USER/DB_PASSWORD environment variables."
     exit 1
   }
+
+  # Build conn string with explicit TLS opt
   $csb = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
-  $csb["Data Source"]            = $server
-  $csb["Initial Catalog"]        = $database
-  $csb["Integrated Security"]    = $false
-  $csb["User ID"]                = $DbUser
-  $csb["Password"]               = $DbPassword
-  # optional hardening:
-  $csb["Encrypt"]                = $true
-  $csb["TrustServerCertificate"] = $false
+  $csb["Data Source"]     = $server
+  $csb["Initial Catalog"] = $database
+
+  $csb["Integrated Security"] = $false
+  $csb["User ID"]             = $DbUser
+  $csb["Password"]            = $DbPassword
+
+  # TLS settings
+  $csb["Encrypt"] = $true;  $csb["TrustServerCertificate"] = $true 
+  ## OR 
+  # $csb["Encrypt"] = $true;  $csb["TrustServerCertificate"] = $false    # needs trusted CA
+  # $csb["Encrypt"] = $false                                             # not recommended
+
   $connectionString = $csb.ToString()
+
 }
+
 
 # fresh token + hdr
 $bearer_token = Get-OAuthToken
