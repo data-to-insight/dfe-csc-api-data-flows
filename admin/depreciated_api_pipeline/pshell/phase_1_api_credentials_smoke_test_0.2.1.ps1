@@ -1,13 +1,33 @@
 ﻿<#
 .SYNOPSIS
-  CSC API, AAD v2 client credentials, token and POST sender
+  CSC API smoke test, AAD v2 client credentials, token and POST sender
+
 .DESCRIPTION
-  Single token call, v2 only. Posts selectable fake payload to CSC endpoint.
-  Plug your LA values, supplied by DfE in the Config block
-  Prints AAD errors when token fails, plus basic connectivity diagnostics.
+  Single token call (AAD v2 client credentials) and one POST of a minimal
+  JSON payload to CSC endpoint. Plug your LA values into labelled
+  Config block. Prints AAD errors when token fails plus connectivity diagnostics
+
+.PARAMETER ApiTimeout
+  Per-call timeout in seconds for both token request and POST (default 30, 5–120)
+
+
 .NOTES
-  Author, D2I
-  Date, 06/10/2025
+  File   : phase_1_api_credentials_smoke_test.ps1
+  Author : D2I
+  Date   : 08/10/2025
+
+.EXAMPLES
+  Optional guidance if running this as CLI
+
+  # Direct (no proxy), default timeout
+  powershell.exe -NoProfile -ExecutionPolicy Bypass `
+    -File .\phase_1_api_credentials_smoke_test.ps1
+
+  # Direct with custom timeout (60s)
+  powershell.exe -NoProfile -ExecutionPolicy Bypass `
+    -File .\phase_1_api_credentials_smoke_test.ps1 -ApiTimeout 60
+
+  # LA feedback welcomed! 
 #>
 [CmdletBinding()]
 param(
@@ -125,9 +145,11 @@ function Get-OAuthToken {
   $sw = [System.Diagnostics.Stopwatch]::StartNew()
   try {
     $resp = Invoke-RestMethod -Uri $TokenUrl -Method Post `
-             -Body $form `
-             -ContentType "application/x-www-form-urlencoded" `
-             -ErrorAction Stop
+         -Body $form `
+         -ContentType "application/x-www-form-urlencoded" `
+         -TimeoutSec $timeoutSec `
+         -ErrorAction Stop
+
     $sw.Stop()
     Write-Host ("Token fetched in {0:N2}s" -f $sw.Elapsed.TotalSeconds) -ForegroundColor DarkGray
     return $resp.access_token
@@ -238,13 +260,18 @@ function Get-ConnectivityDiagnostics {
 
     # HEAD probes
     if ($DIAG_HTTP_PROBE) {
+        # cap diag timeout so probes don't hang(too long)
+        $diagTimeout = [Math]::Min($timeoutSec, 30)
         try {
             $rootUrl = "{0}://{1}/" -f $uri.Scheme,$uri.Host
-            $rootResp = Invoke-WebRequest -Uri $rootUrl -Method Head -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+
+            Invoke-WebRequest -Uri $rootUrl -Method Head -UseBasicParsing -TimeoutSec $diagTimeout -ErrorAction Stop
+            
             $info.HeadRoot = ("{0} -> {1}" -f $rootUrl,$rootResp.StatusCode); _p ("HTTP  : HEAD {0}" -f $info.HeadRoot)
         } catch { $info.HeadRoot = ("{0} FAILED ({1})" -f $rootUrl,$_.Exception.Message); _p ("HTTP  : HEAD {0}" -f $info.HeadRoot) Yellow }
         try {
-            $pathResp = Invoke-WebRequest -Uri $Url -Method Head -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+            $pathResp = Invoke-WebRequest -Uri $Url -Method Head -UseBasicParsing -TimeoutSec $diagTimeout -ErrorAction Stop
+
             $info.HeadPath = ("{0} -> {1}" -f $Url,$pathResp.StatusCode); _p ("HTTP  : HEAD {0}" -f $info.HeadPath)
         } catch { $info.HeadPath = ("{0} FAILED ({1})" -f $Url,$_.Exception.Message); _p ("HTTP  : HEAD {0}" -f $info.HeadPath) Yellow }
     }
