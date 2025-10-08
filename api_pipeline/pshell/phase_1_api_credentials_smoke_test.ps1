@@ -1,514 +1,637 @@
-﻿<#
+<#
 .SYNOPSIS
-  CSC API, AAD v2 client credentials, token and POST sender
+  CSC API smoke test, AAD v2 client credentials, token and POST sender
+
 .DESCRIPTION
-  Single token call, v2 only. Posts selectable fake payload to CSC endpoint.
-  Plug your LA values, supplied by DfE in the Config block
-  Prints AAD errors when token fails, plus basic connectivity diagnostics.
+  Single token call (AAD v2 client credentials) and one POST of a minimal
+  JSON payload to CSC endpoint. Plug your LA values into labelled
+  Config block. Prints AAD errors when token fails plus connectivity diagnostics
+
+.PARAMETER ApiTimeout
+  Per-call timeout in seconds for both token request and POST (default 30, 5–120)
+
+.PARAMETER Proxy
+  Optional HTTP proxy URL (e.g. http://proxy.myorg.local:8080). Applied to both
+  token and POST calls
+
+.PARAMETER ProxyUseDefaultCredentials
+  If specified, use current Windows logon (default credentials) for proxy auth
+
+.PARAMETER ProxyCredential
+  Optional PSCredential for proxy auth. If provided, overrides
+  -ProxyUseDefaultCredentials.
+
 .NOTES
-  Author, D2I
-  Version, 0.1.3  PS 5.1 compatible (no ternary)
-  Date, 27/09/2025
+  File   : phase_1_api_credentials_smoke_test.ps1
+  Author : D2I
+  Date   : 08/10/2025
+
+.EXAMPLES
+  Guidance if running this as CLI
+
+  # Direct (no proxy), default timeout
+  powershell.exe -NoProfile -ExecutionPolicy Bypass `
+    -File .\phase_1_api_credentials_smoke_test.ps1
+
+  # Direct with custom timeout (60s)
+  powershell.exe -NoProfile -ExecutionPolicy Bypass `
+    -File .\phase_1_api_credentials_smoke_test.ps1 -ApiTimeout 60
+
+  # Use explicit proxy with current Windows credentials
+  powershell.exe -NoProfile -ExecutionPolicy Bypass `
+    -File .\phase_1_api_credentials_smoke_test.ps1 `
+    -Proxy http://proxy.myorg.local:8080 -ProxyUseDefaultCredentials
+
+  # Use explicit proxy with interactive credentials (prompts once)
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+    "& { $cred = Get-Credential; `
+         .\phase_1_api_credentials_smoke_test.ps1 `
+           -Proxy http://proxy.myorg.local:8080 -ProxyCredential $cred }"
+
+  # Use explicit proxy with non-interactive credentials
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+    "& { $sec = ConvertTo-SecureString 'P@ssw0rd!' -AsPlainText -Force; `
+         $cred = New-Object System.Management.Automation.PSCredential('MYDOMAIN\jdoe',$sec); `
+         .\phase_1_api_credentials_smoke_test.ps1 `
+           -Proxy http://proxy.myorg.local:8080 -ProxyCredential $cred }"
+
+  # PowerShell 7+ (pwsh) example with proxy + custom timeout
+  pwsh -NoProfile -File ./phase_1_api_credentials_smoke_test.ps1 `
+    -Proxy http://proxy.myorg.local:8080 -ProxyUseDefaultCredentials -ApiTimeout 45
+
+  # Tip: If your org sets system/WinINET proxy (PAC or manual), script also
+  # detects via .NET DefaultWebProxy for diagnostics. Passing -Proxy makes 
+  # proxy explicit for both token and POST calls.
+
+  # LA feedback welcomed! 
 #>
-$VERSION = '0.2.0'
+
+[CmdletBinding()]
+param(
+  [ValidateRange(5,120)] [int]$ApiTimeout = 30,
+
+  # --- Optional explicit proxy wiring ---
+  [string]$Proxy,                       # e.g. http://proxy.myLA:8080
+  [switch]$ProxyUseDefaultCredentials,  # use machine/AD account for the proxy
+  [PSCredential]$ProxyCredential        # or pass an explicit PSCredential
+)
+
+$timeoutSec = $ApiTimeout
+
+$VERSION = '0.3.0'
 Write-Host ("CSC API staging build: v{0}" -f $VERSION)
-
-
 
 # ----------- LA Config START -----------
 # REQUIRED, replace the details in quotes below with your LA's credentials as supplied by DfE
-# from https://pp-find-and-use-an-api.education.gov.uk/ (once logged in)
+# from https://pp-find-and-use-an-api.education.gov.uk/ (once logged in), transfer the following details into the quotes:
 
 $api_endpoint = "https://pp-api.education.gov.uk/children-in-social-care-data-receiver-test/1" # 'Base URL' - Shouldn't need to change
 
-
 # From the 'Native OAuth Application-flow' block
-$client_id       = "OAUTH_CLIENT_ID_CODE" # 'OAuth Client ID'
-$client_secret   = "NATIVE_OAUTH_PRIMARY_KEY_CODE"  # 'Native OAuth Application-flow' - 'Primary key' or 'Secondary key'
-$scope           = "OAUTH_SCOPE_LINK" # 'OAuth Scope'
-$token_endpoint = "OAUTH_TOKEN_ENDPOINT" # From the 'Native OAuth Application-flow' block - 'OAuth token endpoint'
+$client_id       = "OAUTH_CLIENT_ID_CODE"                # 'OAuth Client ID'
+$client_secret   = "NATIVE_OAUTH_PRIMARY_KEY_CODE"       # 'Native OAuth Application-flow' - 'Primary key' or 'Secondary key'
+$scope           = "OAUTH_SCOPE_LINK"                    # 'OAuth Scope'
+$token_endpoint  = "OAUTH_TOKEN_ENDPOINT"                # From the 'Native OAuth Application-flow' block - 'OAuth token endpoint'
 
-# From the 'subscription key' block
-$supplier_key    = "SUBSCRIPTION_PRIMARY_KEY_CODE" # From the 'subscription key' block - 'Primary key' or 'Secondary key'
+# From 'subscription key' block
+$supplier_key    = "SUBSCRIPTION_PRIMARY_KEY_CODE"       # From the 'subscription key' block - 'Primary key' or 'Secondary key'
 
-
-$la_code         = "000" # Change to your 3 digit LA code
-
+$la_code         = "000" # Change to your 3 digit LA code(within quotes)
 # ----------- LA Config END -----------
-
-
-
-#TLS and proxy
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-[System.Net.ServicePointManager]::Expect100Continue = $false
-try { [System.Net.WebRequest]::DefaultWebProxy.Credentials = [System.Net.CredentialCache]::DefaultNetworkCredentials } catch {}
-
-
-
-# Test|Dev switches
-$SEND_BODY_MODE     = 'full'     # empty, min, full
-$TOKEN_PROBE_ONLY   = $false     # set $true to test getting OAuth token only
-$timeoutSec         = 60
-
-
 
 
 # ----------- Config OVERIDE -----------
 # D2I Overide block
-
-# ----------- Config OVERIDE END -----------
-
+# --------- Config OVERIDE END ---------
 
 
-# Payload selector, empty, min, full
-if (-not $SEND_BODY_MODE) { $SEND_BODY_MODE = 'min' }
-$timeoutSec = 60
 
-# Optional, run token probe only, set to $true to isolate token issues
-if (-not $TOKEN_PROBE_ONLY) { $TOKEN_PROBE_ONLY = $false }
-
-# Diagnostics
+# pick up when didnt reach HTTP at all (DNS/TCP/TLS/proxy path issues), when $_\.Exception.Response is null
+# diag opts1
 $ENABLE_DIAGNOSTICS = $true
-$DIAG_ON_HTTP_CODES = @(401,403,407,408,413,415,429,500,502,503,504)
-$DIAG_HTTP_PROBE    = $true
-$DIAG_PRINT         = $false
-$DIAG_CAPTURE       = $true
-$script:DiagData    = $null
-#endregion
+$DIAG_ON_HTTP_CODES = @(204,401,403,407,408,413,415,429,500,502,503,504)  # when to run diags even if HTTP reached
+$DIAG_HTTP_PROBE    = $true  # do quick HEAD probes as part of diagnostic
 
+# diag opts2
+$DIAG_PRINT   = $false   # live spam off; print inside COPY block instead
+$DIAG_CAPTURE = $true
+$script:DiagData = $null
 
+$scriptStartTime      = Get-Date
+$scriptStartTimeStamp = $scriptStartTime.ToString("yyyy-MM-dd HH:mm:ss")
+Write-Host "#####################################################" -ForegroundColor Gray
+Write-Host "### Script Execution Started: $scriptStartTimeStamp ###" -ForegroundColor Gray
+Write-Host "#####################################################" -ForegroundColor Gray
+
+# PS5 TLS
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+[System.Net.ServicePointManager]::Expect100Continue = $false
+
+# ----------- Build a proxy splat (used everywhere) -----------
+# If -Proxy is supplied but no creds flags provided, default to -ProxyUseDefaultCredentials.
+$ProxyArgs = @{}
+if ($PSBoundParameters.ContainsKey('Proxy') -and $Proxy) {
+  $ProxyArgs['Proxy'] = $Proxy
+
+  if ($ProxyCredential) {
+    $ProxyArgs['ProxyCredential'] = $ProxyCredential
+  } elseif ($ProxyUseDefaultCredentials -or -not $PSBoundParameters.ContainsKey('ProxyUseDefaultCredentials')) {
+    # default to machine creds when no explicit choice was made
+    $ProxyArgs['ProxyUseDefaultCredentials'] = $true
+  }
+  Write-Host ("Proxy enabled: {0}  (DefaultCreds={1}, ExplicitCreds={2})" -f `
+      $Proxy, ($ProxyArgs.ContainsKey('ProxyUseDefaultCredentials')), ($ProxyArgs.ContainsKey('ProxyCredential'))) -ForegroundColor DarkGray
+} else {
+  Write-Host "Proxy disabled (no -Proxy provided)." -ForegroundColor DarkGray
+}
+
+# ----------- Utils -----------
 function Describe-Code([int]$c) {
   switch ($c) {
-    204 { "No content" }
-    400 { "Malformed payload, 400 BadRequest" }
-    401 { "Invalid token, 401 Unauthorised" }
-    403 { "Forbidden, access disallowed, 403" }
-    405 { "Method not allowed, 405" }
-    408 { "Request timeout, 408" }
-    413 { "Payload too large, 413" }
-    415 { "Unsupported media type, 415" }
-    429 { "Rate limited, 429" }
-    500 { "Internal server error, 500" }
-    502 { "Bad gateway, 502" }
-    503 { "Service unavailable, 503" }
-    504 { "Gateway timeout, 504" }
-    default { try { ([System.Net.HttpStatusCode]$c).ToString() } catch { "Other or unexpected, $c" } }
+    204 { "No content (204)" }
+    400 { "Malformed payload (400 BadRequest)" }
+    401 { "Invalid token (401 Unauthorised)" }
+    403 { "Forbidden / access disallowed (403)" }
+    405 { "Method not allowed (405)" }
+    408 { "Request timeout (408) — network/WAF/proxy" }
+    413 { "Payload too large (413)" }
+    415 { "Unsupported media type (415)" }
+    429 { "Rate limited (429)" }
+    500 { "Internal server error (500)" }
+    502 { "Bad gateway (502) — upstream proxy/gateway" }
+    503 { "Service unavailable (503)" }
+    504 { "Gateway timeout (504) — upstream path issue" }
+    default { try { ([System.Net.HttpStatusCode]$c).ToString() } catch { "Other/Unexpected ($c)" } }
   }
 }
 
 function Describe-WebExceptionStatus($status) {
   switch ($status) {
-    'NameResolutionFailure'      { 'DNS resolution failed' }
-    'ConnectFailure'             { 'TCP connect failed, firewall or blocked port' }
+    'NameResolutionFailure'      { 'DNS resolution failed (sender-side or proxy DNS)' }
+    'ConnectFailure'             { 'TCP connect failed (firewall/blocked port)' }
     'ConnectionClosed'           { 'Connection closed prematurely' }
-    'ReceiveFailure'             { 'Receive failed, proxy or inspection likely' }
-    'SendFailure'                { 'Send failed, MTU or inspection likely' }
-    'Timeout'                    { 'Connection or request timed out' }
+    'ReceiveFailure'             { 'Receive failed (proxy/WAF/SSL inspection?)' }
+    'SendFailure'                { 'Send failed (MTU/proxy/SSL inspection?)' }
+    'Timeout'                    { 'Connection/request timed out (network/WAF)' }
     'TrustFailure'               { 'Certificate trust failed' }
-    'SecureChannelFailure'       { 'TLS handshake failed' }
+    'SecureChannelFailure'       { 'TLS handshake failed (protocol/cipher/inspection)' }
     'ProxyNameResolutionFailure' { 'Proxy DNS failed' }
-    'ProxyAuthenticationRequired'{ 'Proxy requires authentication, 407' }
+    'ProxyAuthenticationRequired'{ 'Proxy requires authentication (407)' }
     default { [string]$status }
   }
 }
 
-function Get-ConnectivityDiagnostics {
-  param([Parameter(Mandatory=$true)][string]$Url)
-  $info = [ordered]@{
-    Ran            = $true
-    Dns            = $null
-    Tcp            = $null
-    TlsProtocol    = $null
-    TlsCert        = $null
-    TlsIssuer      = $null
-    TlsPolicyErrors= $null
-    HeadRoot       = $null
-    HeadPath       = $null
-    Note           = $null
+function Get-OAuthToken {
+  param(
+    [string]$TokenUrl, [string]$ClientId, [string]$ClientSecret, [string]$Scope,
+    [hashtable]$ProxyArgs
+  )
+  $form = "client_id=$([uri]::EscapeDataString($ClientId))" +
+          "&client_secret=$([uri]::EscapeDataString($ClientSecret))" +
+          "&scope=$([uri]::EscapeDataString($Scope))" +
+          "&grant_type=client_credentials"
+
+  $sw = [System.Diagnostics.Stopwatch]::StartNew()
+  try {
+    $resp = Invoke-RestMethod -Uri $TokenUrl -Method Post `
+              -Body $form `
+              -ContentType "application/x-www-form-urlencoded" `
+              @ProxyArgs `
+              -ErrorAction Stop
+    $sw.Stop()
+    Write-Host ("Token fetched in {0:N2}s" -f $sw.Elapsed.TotalSeconds) -ForegroundColor DarkGray
+    return $resp.access_token
+  } catch {
+    $sw.Stop()
+    Write-Host ("Token request failed after {0:N2}s: {1}" -f $sw.Elapsed.TotalSeconds, $_.Exception.Message) -ForegroundColor Red
+    return $null
   }
-  try { $uri = [uri]$Url } catch { $info.Note="bad url"; return [pscustomobject]$info }
+}
+
+function Get-ConnectivityDiagnostics {
+  param(
+    [Parameter(Mandatory=$true)][string]$Url,
+    [hashtable]$ProxyArgs
+  )
+
+  $info = [ordered]@{
+    Ran             = $true
+    Dns             = $null
+    Tcp             = $null
+    TlsProtocol     = $null
+    TlsCert         = $null
+    TlsIssuer       = $null
+    TlsPolicyErrors = $null
+    ProxyWinHttp    = $null
+    ProxyDotNet     = $null
+    ProxyBypass     = $null
+    EnvHttpProxy    = $env:HTTP_PROXY
+    EnvHttpsProxy   = $env:HTTPS_PROXY
+    EnvNoProxy      = $env:NO_PROXY
+    HeadRoot        = $null
+    HeadPath        = $null
+    Note            = $null
+    ExplicitProxy   = if ($ProxyArgs -and $ProxyArgs.Proxy) { $ProxyArgs.Proxy } else { $null }
+    ExplicitProxyMode = if ($ProxyArgs -and $ProxyArgs.Proxy) {
+      if ($ProxyArgs.ContainsKey('ProxyCredential')) { 'ExplicitCreds' }
+      elseif ($ProxyArgs.ContainsKey('ProxyUseDefaultCredentials')) { 'DefaultCreds' }
+      else { 'NoCredFlags' }
+    } else { $null }
+  }
+  function _p($t,$c='Gray'){ if($script:DIAG_PRINT){ Write-Host $t -ForegroundColor $c } }
+
+  try { $uri = [uri]$Url } catch { _p "DIAG: Bad URL: $Url" Yellow; $info.Note="bad url"; return [pscustomobject]$info }
   $targetHost = $uri.Host
   $targetPort = if ($uri.IsDefaultPort) { if ($uri.Scheme -eq 'https') { 443 } else { 80 } } else { $uri.Port }
+
+  _p "----- CONNECTIVITY DIAGNOSTICS -----" Cyan
 
   # DNS
   try {
     $ips = @()
-    try { $ips = (Resolve-DnsName -Name $targetHost -Type A -ErrorAction Stop).IPAddress } catch { $ips = [System.Net.Dns]::GetHostAddresses($targetHost) | ForEach-Object { $_.IPAddressToString } }
+    try { $ips = (Resolve-DnsName -Name $targetHost -Type A -ErrorAction Stop).IPAddress }
+    catch { $ips = [System.Net.Dns]::GetHostAddresses($targetHost) | ForEach-Object { $_.IPAddressToString } }
     $info.Dns = ("{0} -> {1}" -f $targetHost, (($ips | Select-Object -Unique) -join ", "))
-  } catch { $info.Dns = "FAILED, " + $_.Exception.Message }
+    _p ("DNS   : {0}" -f $info.Dns)
+  } catch { $info.Dns = "FAILED: " + $_.Exception.Message; _p ("DNS   : {0}" -f $info.Dns) Yellow }
 
-  # TCP and TLS
+  # Proxy (WinHTTP)
   try {
-    $tcp = New-Object System.Net.Sockets.TcpClient
-    $iar = $tcp.BeginConnect($targetHost,$targetPort,$null,$null)
-    if (-not $iar.AsyncWaitHandle.WaitOne(3000)) { $tcp.Close(); throw "TCP connect timeout" }
-    $tcp.EndConnect($iar)
-    $info.Tcp = ("Connected to {0}:{1}" -f $targetHost,$targetPort)
-    $ssl = New-Object System.Net.Security.SslStream($tcp.GetStream(),$false,{ param($s,$cert,$chain,$errors) $script:__sslErrors=$errors; $true })
-    $script:__sslErrors = [System.Net.Security.SslPolicyErrors]::None
-    $ssl.AuthenticateAsClient($targetHost)
-    $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $ssl.RemoteCertificate
-    $info.TlsProtocol=$ssl.SslProtocol
-    $info.TlsCert=$cert.Subject
-    $info.TlsIssuer=$cert.Issuer
-    $info.TlsPolicyErrors=$script:__sslErrors
-    $ssl.Close(); $tcp.Close()
-  } catch { $info.Note = "TLS fail, " + $_.Exception.Message }
+    $winhttp = (netsh winhttp show proxy) 2>$null
+    if ($winhttp) {
+      $line = ($winhttp -split "`r?`n" | Select-String -Pattern 'Direct access|Proxy Server').Line
+      if ($line) { $info.ProxyWinHttp = ($line -join " | "); _p ("Proxy : {0}" -f $info.ProxyWinHttp) }
+    }
+  } catch {}
 
+    # TCP + TLS (honour .NET proxy)
+    $def = $null; $puri = $null; $bypass = $true
+    try {
+      # Pull whatever proxy .NET defaults (IE/WinHTTP/Env depending on machine config)
+      $def = [System.Net.WebRequest]::DefaultWebProxy
+      if ($def) {
+        # Ask proxy object what URL would actually send request to
+        # (returns proxy URL if proxy applies; otherwise returns original URL)
+        $puri    = $def.GetProxy($uri)
+        # Check if proxy rules say bypass (i.e., go direct) for URI
+        $bypass  = $def.IsBypassed($uri)
+      }
+      # Record what proxy .NET resolved (string form) and whether bypassing
+      $info.ProxyDotNet  = ($puri -as [string])
+      $info.ProxyBypass  = $bypass
+      if ($info.ProxyDotNet) {
+        _p ("Proxy(.NET): {0}  (bypass={1})" -f $info.ProxyDotNet, $info.ProxyBypass)
+      }
+    } catch { }
+
+    try {
+      # Decide if should actually use proxy tunnel:
+      #  - we have default proxy object
+      #  - we are NOT bypassing target
+      #  - we have proxy URI
+      #  - and it’s HTTP proxy (CONNECT tunneling below assumes 'http' scheme)
+      $useProxy = ($def -and -not $bypass -and $puri -and $puri.Scheme -eq 'http')
+
+      if ($useProxy) {
+        # --- PROXY PATH: open TCP socket to proxy + issue HTTP CONNECT ---
+
+        # TCP connect to proxy endpoint
+        $tcp = New-Object System.Net.Sockets.TcpClient
+        $tcp.Connect($puri.Host, $puri.Port)
+
+        # Get raw network stream for read/write
+        $net = $tcp.GetStream()
+        $sw  = New-Object System.IO.StreamWriter($net); $sw.NewLine="`r`n"; $sw.AutoFlush=$true
+        $sr  = New-Object System.IO.StreamReader($net)
+
+        # Ask proxy to establish tunnel to target host:port
+        $sw.WriteLine(("CONNECT {0}:{1} HTTP/1.1" -f $targetHost, $targetPort))
+        $sw.WriteLine(("Host: {0}:{1}" -f $targetHost, $targetPort))
+        $sw.WriteLine("Proxy-Connection: Keep-Alive")
+        $sw.WriteLine()  # blank line terminates HTTP headers
+
+        # Read status line back from proxy
+        $status = $sr.ReadLine()
+        if ($status -notmatch '^HTTP/1\.\d 200') { throw "Proxy CONNECT failed: $status" }
+
+        # Consume rest of proxy response headers
+        while (($line = $sr.ReadLine()) -and $line -ne '') { }
+
+        # TCP tunnel via proxy success?
+        $info.Tcp = ("Proxy tunnel OK via {0}:{1}" -f $puri.Host, $puri.Port)
+        _p ("TCP   : {0}" -f $info.Tcp)
+
+        # layer TLS on top of established tunnel (SSL over CONNECTed stream)
+        $script:__sslErrors = [System.Net.Security.SslPolicyErrors]::None
+        $ssl = New-Object System.Net.Security.SslStream(
+                $net, $false,
+                { param($s,$cert,$chain,$errors) $script:__sslErrors = $errors; $true } # capture policy errors, allow continue
+              )
+        $ssl.AuthenticateAsClient($targetHost)  # SNI/hostname for certificate validation
+
+        # get TLS dets: negotiated protocol and peer cert/issuer
+        $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $ssl.RemoteCertificate
+        $info.TlsProtocol     = $ssl.SslProtocol
+        $info.TlsCert         = $cert.Subject
+        $info.TlsIssuer       = $cert.Issuer
+        $info.TlsPolicyErrors = $script:__sslErrors
+
+        _p ("TLS   : OK ({0})  Cert: {1}  Issuer: {2}" -f $info.TlsProtocol, $info.TlsCert, $info.TlsIssuer)
+        if ($script:__sslErrors -ne [System.Net.Security.SslPolicyErrors]::None) {
+          _p ("TLS   : Policy errors: {0}" -f $script:__sslErrors) Yellow
+        }
+
+        # clean up (only probe TLS; no HTTP over TLS sent here)
+        $ssl.Close(); $net.Close(); $tcp.Close()
+      }
+      else {
+        # --- DIRECT PATH: connect straight to target host:port without proxy ---
+
+        # TCP connect direct with 3s timeout using Begin/EndConnect
+        $tcp = New-Object System.Net.Sockets.TcpClient
+        $iar = $tcp.BeginConnect($targetHost, $targetPort, $null, $null)
+        if (-not $iar.AsyncWaitHandle.WaitOne(3000)) { $tcp.Close(); throw "TCP connect timeout" }
+        $tcp.EndConnect($iar)
+
+        # did we get direct TCP success
+        $info.Tcp = ("Connected to {0}:{1}" -f $targetHost, $targetPort)
+        _p ("TCP   : {0}" -f $info.Tcp)
+
+        # do TLS handshake directly to origin server
+        $script:__sslErrors = [System.Net.Security.SslPolicyErrors]::None
+        $ssl = New-Object System.Net.Security.SslStream(
+                $tcp.GetStream(), $false,
+                { param($s,$cert,$chain,$errors) $script:__sslErrors = $errors; $true }
+              )
+        $ssl.AuthenticateAsClient($targetHost)
+
+        # get TLS dets as above
+        $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $ssl.RemoteCertificate
+        $info.TlsProtocol     = $ssl.SslProtocol
+        $info.TlsCert         = $cert.Subject
+        $info.TlsIssuer       = $cert.Issuer
+        $info.TlsPolicyErrors = $script:__sslErrors
+
+        _p ("TLS   : OK ({0})  Cert: {1}  Issuer: {2}" -f $info.TlsProtocol, $info.TlsCert, $info.TlsIssuer)
+        if ($script:__sslErrors -ne [System.Net.Security.SslPolicyErrors]::None) {
+          _p ("TLS   : Policy errors: {0}" -f $script:__sslErrors) Yellow
+        }
+
+        # Clean up
+        $ssl.Close(); $tcp.Close()
+      }
+    }
+    catch {
+      # exception in either path: record note and show failure
+      $info.Note = "TLS fail: " + $_.Exception.Message
+      _p ("TCP/TLS: FAILED ({0})" -f $_.Exception.Message) Yellow
+    }
+
+
+  # HEAD probes (use same proxy args if given)
   if ($DIAG_HTTP_PROBE) {
     try {
       $rootUrl = "{0}://{1}/" -f $uri.Scheme,$uri.Host
-      $rootResp = Invoke-WebRequest -Uri $rootUrl -Method Head -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
-      $info.HeadRoot = ("{0} -> {1}" -f $rootUrl,$rootResp.StatusCode)
-    } catch { $info.HeadRoot = ("{0} FAILED, {1}" -f $rootUrl,$_.Exception.Message) }
+      $rootResp = Invoke-WebRequest -Uri $rootUrl -Method Head -UseBasicParsing -TimeoutSec 10 @ProxyArgs -ErrorAction Stop
+      $info.HeadRoot = ("{0} -> {1}" -f $rootUrl,$rootResp.StatusCode); _p ("HTTP  : HEAD {0}" -f $info.HeadRoot)
+    } catch { $info.HeadRoot = ("{0} FAILED ({1})" -f $rootUrl,$_.Exception.Message); _p ("HTTP  : HEAD {0}" -f $info.HeadRoot) Yellow }
     try {
-      $pathResp = Invoke-WebRequest -Uri $Url -Method Head -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
-      $info.HeadPath = ("{0} -> {1}" -f $Url,$pathResp.StatusCode)
-    } catch { $info.HeadPath = ("{0} FAILED, {1}" -f $Url,$_.Exception.Message) }
+      $pathResp = Invoke-WebRequest -Uri $Url -Method Head -UseBasicParsing -TimeoutSec 10 @ProxyArgs -ErrorAction Stop
+      $info.HeadPath = ("{0} -> {1}" -f $Url,$pathResp.StatusCode); _p ("HTTP  : HEAD {0}" -f $info.HeadPath)
+    } catch { $info.HeadPath = ("{0} FAILED ({1})" -f $Url,$_.Exception.Message); _p ("HTTP  : HEAD {0}" -f $info.HeadPath) Yellow }
   }
+
+  _p "------------------------------------" Cyan
   return [pscustomobject]$info
 }
 
-function Get-OAuthToken {
-  # v2 client credentials only, requires .default scope
-  if (-not $scope -or $scope -notmatch '\.default$') {
-    Write-Host "Scope must be api://<resource-app-id>/.default" -ForegroundColor Yellow
-    return $null
+function Get-HeaderValue($headers, [string[]]$names) {
+  if (-not $headers) { return $null }
+  foreach ($name in $names) {
+    foreach ($k in $headers.Keys) {
+      if ($k -and $k.ToString().ToLower() -eq $name.ToLower()) {
+        $v = $headers[$k]
+        if ($v) { return ($v | Select-Object -First 1) }
+      }
+    }
   }
-  $client_id      = $client_id.Trim()
-  $client_secret  = $client_secret.Trim()
-  $scope          = $scope.Trim()
-  $token_endpoint = $token_endpoint.Trim()
+  return $null
+}
 
-  $body = @{
-    client_id     = $client_id
-    client_secret = $client_secret
-    scope         = $scope
-    grant_type    = 'client_credentials'
+# ----------- Build endpoint -----------
+$endpoint = ($api_endpoint.TrimEnd('/')) + "/children_social_care_data/$la_code/children"
+
+# ----------- OAuth -----------
+$token = Get-OAuthToken -TokenUrl $token_endpoint -ClientId $client_id -ClientSecret $client_secret -Scope $scope -ProxyArgs $ProxyArgs
+
+# bail early (and run diags) if token failed
+$headers    = $null
+$code       = $null
+$desc       = $null
+$requestId  = $null
+$swCall     = [System.Diagnostics.Stopwatch]::StartNew()
+$bodyBytes  = $null   # for reporting only
+$payloadLen = 0       # number to print later
+$preview    = ""      # short preview to print later
+
+if (-not $token) {
+  Write-Host "Cannot continue without token." -ForegroundColor Red
+  $swCall.Stop()
+  $code = 401
+  $desc = Describe-Code 401
+  if ($ENABLE_DIAGNOSTICS -and ($DIAG_ON_HTTP_CODES -contains 401)) {
+    $script:DiagData = Get-ConnectivityDiagnostics -Url $endpoint -ProxyArgs $ProxyArgs
+  }
+}
+else {
+    # ---------- Build smoke-test [] ARRAY payload (ordered + better preview) ----------
+    $la_code_str = '{0:D3}' -f [int]$la_code
+    $childId     = "Fake1234$la_code_str"
+
+    $payload = @(
+      [ordered]@{
+        la_child_id   = $childId                       
+        mis_child_id  = "MIS$la_code_str"
+        child_details = [ordered]@{
+          unique_pupil_number = "A123456789012"
+          first_name          = "John"
+          surname             = "Doe"
+          date_of_birth       = "2022-06-14"
+          sex                 = "M"
+          ethnicity           = "WBRI"
+          postcode            = "AB12 3DE"
+          purge               = $false
+        }
+        purge = $false
+      }
+    )
+
+    # JSON for HTTP body
+    $body = ConvertTo-Json -InputObject $payload -Depth 10 -Compress
+
+    # only for console preview (keeps [ordered]@{})
+    $bodyPretty = ConvertTo-Json -InputObject $payload -Depth 10
+
+    # HTTP body UTF-8 (no BOM)
+    $utf8NoBom  = New-Object System.Text.UTF8Encoding($false)
+    $bodyBytes  = $utf8NoBom.GetBytes($body)
+
+    # for output/sanity checks
+    $payloadLen = if ($bodyBytes) { $bodyBytes.Length } else { 0 }
+
+    # head+tail with snip marker or full pretty JSON
+    $PREVIEW_LIMIT = 3000
+    if ($bodyPretty.Length -le $PREVIEW_LIMIT) {
+      $preview = $bodyPretty
+    } else {
+      $preview = $bodyPretty.Substring(0, [Math]::Min(1500, $bodyPretty.Length)) +
+                 "`n... SNIP (preview truncated) ...`n" +
+                 $bodyPretty.Substring([Math]::Max(0, $bodyPretty.Length - 1500))
+    }
+
+    ## DEBUG: show _ids 
+    #Write-Host ("la_child_id (first rec): {0}" -f $payload[0].la_child_id) -ForegroundColor DarkCyan
+    #Write-Host ("mis_child_id (first rec): {0}" -f $payload[0].mis_child_id) -ForegroundColor DarkCyan
+
+
+  # ----------- Headers -----------
+  $headers = @{
+    "Authorization" = "Bearer $token"
+    "SupplierKey"   = $supplier_key
+    "Accept"        = "application/json"
+    "User-Agent"    = "D2I-CSC-Client/0.3"
   }
 
-  $sw = [System.Diagnostics.Stopwatch]::StartNew()
+  # ----------- POST -----------
   try {
-    $response = Invoke-RestMethod -Uri $token_endpoint -Method Post -Body $body -ContentType 'application/x-www-form-urlencoded' -ErrorAction Stop
-    $sw.Stop()
-    Write-Host ("Token fetched in {0:N2}s" -f $sw.Elapsed.TotalSeconds)
-    return $response.access_token
-  } catch {
-    $sw.Stop()
-    Write-Host ("Token request failed after {0:N2}s" -f $sw.Elapsed.TotalSeconds)
+    $resp = Invoke-WebRequest -Uri $endpoint -Method Post -Headers $headers `
+              -ContentType "application/json" `
+              -Body $bodyBytes `
+              -UseBasicParsing -TimeoutSec $timeoutSec `
+              @ProxyArgs `
+              -ErrorAction Stop
+
+    $swCall.Stop()
+    # success path (no exception)
+    $code = $resp.StatusCode
+    $desc = Describe-Code $code
+
+    # run diags even on success IF code in allow-list (e.g., 204)
+    if ($ENABLE_DIAGNOSTICS -and ($DIAG_ON_HTTP_CODES -contains [int]$code)) {
+      $script:DiagData = Get-ConnectivityDiagnostics -Url $endpoint -ProxyArgs $ProxyArgs
+    }
+
+    if ($resp -and $resp.Headers) {
+      $requestId = Get-HeaderValue $resp.Headers @("x-request-id","request-id","x-correlation-id")
+    }
+  }
+  catch {
+    $swCall.Stop()
+    $code = $null; $desc = $null; $errBody = $null
+
     if ($_.Exception.Response) {
+      $code = $_.Exception.Response.StatusCode.value__
+      $desc = Describe-Code $code
+
       try {
-        $sr  = New-Object IO.StreamReader($_.Exception.Response.GetResponseStream())
-        $raw = $sr.ReadToEnd()
-        if ($raw) {
-          try {
-            $j = $raw | ConvertFrom-Json
-            $errParts = @()
-            if ($j.error)            { $errParts += $j.error }
-            if ($j.error_description){ $errParts += $j.error_description }
-            if ($j.correlation_id)   { $errParts += $j.correlation_id }
-            if ($j.error_codes)      { $errParts += ($j.error_codes -join ', ') }
-            if ($errParts.Count -gt 0) { Write-Host ("AAD error, {0}" -f ($errParts -join ' | ')) } else { Write-Host $raw }
-          } catch { Write-Host $raw }
+        $requestId = Get-HeaderValue $_.Exception.Response.Headers @("x-request-id","request-id","x-correlation-id")
+      } catch {}
+
+      Write-Host ("HTTP error: {0} ({1}) ({2:N2}s)" -f $code, $desc, $swCall.Elapsed.TotalSeconds) -ForegroundColor Yellow
+
+      try {
+        $reader  = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+        $errBody = $reader.ReadToEnd()
+        if ($errBody) {
+          $preview = $errBody.Substring(0, [Math]::Min(400, $errBody.Length))
+          Write-Host "Error body preview:" -ForegroundColor DarkGray
+          Write-Host $preview
         }
       } catch {}
-    } else {
-      Write-Host $_.Exception.Message
-    }
-    return $null
-  }
-}
 
-function Token-Probe {
-  # direct probe, same vals, print raw body for clarity
-  $sc = $scope.Trim()
-  if ($sc -notmatch '\.default$') { $sc = "$sc/.default" }
-
-  $probe = @{
-    client_id     = $client_id.Trim()
-    client_secret = $client_secret.Trim()
-    scope         = $sc
-    grant_type    = 'client_credentials'
-  }
-  try {
-    $r = Invoke-RestMethod -Uri $token_endpoint.Trim() -Method Post -Body $probe -ContentType 'application/x-www-form-urlencoded' -ErrorAction Stop
-    Write-Host "Token OK, length, $($r.access_token.Length)"
-    return $true
-  } catch {
-    Write-Host "Token probe failed"
-    if ($_.Exception.Response) {
-      $sr = New-Object IO.StreamReader($_.Exception.Response.GetResponseStream())
-      Write-Host ($sr.ReadToEnd())
-    } else {
-      Write-Host $_.Exception.Message
-    }
-    return $false
-  }
-}
-
-# Sample payloads - from DfE 0.8.0 spec
-$payload_empty = "[]"
-
-$payload_min = @'
-[
-  {
-    "la_child_id": "Child1234",
-    "mis_child_id": "Supplier-Child-1234",
-    "child_details": {
-      "unique_pupil_number": "ABC0123456789",
-      "former_unique_pupil_number": "DEF0123456789",
-      "unique_pupil_number_unknown_reason": "UN1",
-      "first_name": "John",
-      "surname": "Doe",
-      "date_of_birth": "2022-06-14",
-      "expected_date_of_birth": "2022-06-14",
-      "sex": "M",
-      "ethnicity": "WBRI",
-      "disabilities": ["HAND", "VIS"],
-      "postcode": "AB12 3DE",
-      "uasc_flag": true,
-      "uasc_end_date": "2022-06-14",
-      "purge": false
-    },
-    "purge": false
-  }
-]
-'@
-
-$payload_full = @'
-[
-  {
-    "la_child_id": "Child1234",
-    "mis_child_id": "Supplier-Child-1234",
-    "child_details": {
-      "unique_pupil_number": "ABC0123456789",
-      "former_unique_pupil_number": "DEF0123456789",
-      "unique_pupil_number_unknown_reason": "UN1",
-      "first_name": "John",
-      "surname": "Doe",
-      "date_of_birth": "2022-06-14",
-      "expected_date_of_birth": "2022-06-14",
-      "sex": "M",
-      "ethnicity": "WBRI",
-      "disabilities": ["HAND", "VIS"],
-      "postcode": "AB12 3DE",
-      "uasc_flag": true,
-      "uasc_end_date": "2022-06-14",
-      "purge": false
-    },
-    "health_and_wellbeing": {
-      "sdq_assessments": [ { "date": "2022-06-14", "score": 20 } ],
-      "purge": false
-    },
-    "social_care_episodes": [
-      {
-        "social_care_episode_id": "ABC123456",
-        "referral_date": "2022-06-14",
-        "referral_source": "1C",
-        "referral_no_further_action_flag": false,
-        "care_worker_details": [ { "worker_id": "ABC123", "start_date": "2022-06-14", "end_date": "2022-06-14" } ],
-        "child_and_family_assessments": [ { "child_and_family_assessment_id": "ABC123456", "start_date": "2022-06-14", "authorisation_date": "2022-06-14", "factors": ["1C", "4A"], "purge": false } ],
-        "child_in_need_plans": [ { "child_in_need_plan_id": "ABC123456", "start_date": "2022-06-14", "end_date": "2022-06-14", "purge": false } ],
-        "section_47_assessments": [ { "section_47_assessment_id": "ABC123456", "start_date": "2022-06-14", "icpc_required_flag": true, "icpc_date": "2022-06-14", "end_date": "2022-06-14", "purge": false } ],
-        "child_protection_plans": [ { "child_protection_plan_id": "ABC123456", "start_date": "2022-06-14", "end_date": "2022-06-14", "purge": false } ],
-        "child_looked_after_placements": [ { "child_looked_after_placement_id": "ABC123456", "start_date": "2022-06-14", "start_reason": "S", "placement_type": "K1", "postcode": "AB12 3DE", "end_date": "2022-06-14", "end_reason": "E3", "change_reason": "CHILD", "purge": false } ],
-        "adoption": { "initial_decision_date": "2022-06-14", "matched_date": "2022-06-14", "placed_date": "2022-06-14", "purge": false },
-        "care_leavers": { "contact_date": "2022-06-14", "activity": "F2", "accommodation": "D", "purge": false },
-        "closure_date": "2022-06-14",
-        "closure_reason": "RC7",
-        "purge": false
+      if ($ENABLE_DIAGNOSTICS -and ($DIAG_ON_HTTP_CODES -contains [int]$code)) {
+        $script:DiagData = Get-ConnectivityDiagnostics -Url $endpoint -ProxyArgs $ProxyArgs
       }
-    ],
-    "purge": false
-  }
-]
-'@
-
-
-# main Start
-$scriptStartTime      = Get-Date
-$scriptStartTimeStamp = $scriptStartTime.ToString("yyyy-MM-dd HH:mm:ss")
-Write-Host ""
-Write-Host ""
-Write-Host "CSC API staging build connectivity tests, v0.2.0"
-Write-Host "###################################################################"
-Write-Host "###       Script Execution Started, $scriptStartTimeStamp       ###"
-Write-Host "###################################################################"
-Write-Host ""
-# Sanity checks
-$missing = @()
-if (-not $token_endpoint) { $missing += 'token_endpoint' }
-if (-not $client_id)      { $missing += 'client_id' }
-if (-not $client_secret)  { $missing += 'client_secret' }
-if (-not $scope)          { $missing += 'scope' }
-if (-not $api_endpoint)   { $missing += 'api_endpoint' }
-if (-not $la_code)        { $missing += 'la_code' }
-if (-not $supplier_key)   { $missing += 'supplier_key' }
-
-if ($missing.Count -gt 0) {
-  Write-Host ("Missing required vars, {0}" -f ($missing -join ', '))
-  exit 1
-}
-if ($token_endpoint -notmatch '/oauth2/v2\.0/token') {
-  Write-Host "token_endpoint must be AAD v2 path, example, https://login.microsoftonline.com/<tenant-id>/oauth2/v2.0/token"
-  exit 1
-}
-if ($scope -notmatch '\.default$') { $scope = "$scope/.default" }
-
-$endpoint = ($api_endpoint.TrimEnd('/')) + "/children_social_care_data/$la_code/children"
-Write-Host "Token URL, $token_endpoint"
-Write-Host "Scope URI, $scope"
-if ($client_id.Length -ge 8) {
-  #Write-Host "Client ID, $($client_id.Substring(0,[Math]::Min(8,$client_id.Length)))****"
-
-} else {
-  Write-Host "Client ID, ****"
-}
-Write-Host "Endpoint, $endpoint"
-
-
-#Optional token probe
-if ($TOKEN_PROBE_ONLY) {
-  $ok = Token-Probe
-  if ($ok) { exit 0 } else { exit 1 }
-}
-
-
-# choose payload
-# allowed, empty, min, full, default to min
-switch ($SEND_BODY_MODE.ToLower()) {
-  'empty' { $payload = $payload_empty; break }
-  'min'   { $payload = $payload_min; break }
-  'full'  { $payload = $payload_full; break }
-  default { $payload = $payload_min }
-}
-
-# append la_code to la_child_id for all records in payload (min and full)
-# eg, child1234 + 845 becomes child1234845
-# parse json to objects, adjust, then reserialise
-# append la_code to la_child_id for all records, keep json as an array
-try {
-    $laCodeStr  = [string]$la_code                         # ensure string
-    $payloadObj = ConvertFrom-Json -InputObject $payload -ErrorAction Stop
-
-    # force array wrapper even when there is only one record
-    if ($payloadObj -is [pscustomobject]) { $payloadObj = @($payloadObj) }
-
-    foreach ($rec in $payloadObj) {
-        if ($rec.la_child_id) {
-            # optional guard, do not double append if already suffixed
-            if ($rec.la_child_id -notmatch "$([regex]::Escape($laCodeStr))$") {
-                $rec.la_child_id = "$($rec.la_child_id)$laCodeStr"
-                $adjChild_Id = "$($rec.la_child_id)$laCodeStr" # debug only
-            }
-        }
     }
-
-    # serialise as a single json array string, not per item
-    $payload = ConvertTo-Json -InputObject $payloadObj -Depth 50 -Compress
-} catch {
-    Write-Host "warning, could not adjust la_child_id, sending original payload"
-}
-
-
-Write-Host ("payload mode, {0}, bytes, {1}" -f ($SEND_BODY_MODE.ToLower()), ([Text.Encoding]::UTF8.GetByteCount($payload)))
-
-
-
-
-#LA Token
-$token = Get-OAuthToken
-if (-not $token) {
-  Write-Host "Cannot continue without token."
-  if ($ENABLE_DIAGNOSTICS) {
-    Write-Host "Connectivity diagnostics for token endpoint"
-    $script:DiagData = Get-ConnectivityDiagnostics -Url $token_endpoint
-  }
-  exit 401
-}
-
-
-# POST
-$headers = @{
-  'Authorization' = "Bearer $token"
-  'SupplierKey'   = $supplier_key
-  'Accept'        = 'application/json'
-  'Content-Type'  = 'application/json'
-  'User-Agent'    = 'D2I-CSC-Client/0.3'
-}
-
-$code = $null
-$desc = $null
-$requestId = $null
-$errBody = $null
-
-$swCall = [System.Diagnostics.Stopwatch]::StartNew()
-try {
-  $resp = Invoke-RestMethod -Uri $endpoint -Method Post -Headers $headers -Body $payload -ContentType 'application/json; charset=utf-8' -TimeoutSec $timeoutSec -ErrorAction Stop
-  $swCall.Stop()
-  $code = 200
-  $desc = Describe-Code 200
-  Write-Host "POST OK in $([math]::Round($swCall.Elapsed.TotalSeconds,2))s"
-  if ($resp) { Write-Host "Raw API response follows"; $resp | Out-String | Write-Host }
-} catch {
-  $swCall.Stop()
-  if ($_.Exception.Response) {
-    $code = $_.Exception.Response.StatusCode.value__
-    $desc = Describe-Code $code
-    Write-Host ("HTTP error, {0} ({1}) after {2:N2}s" -f $code, $desc, $swCall.Elapsed.TotalSeconds)
-    try {
-      $reader  = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
-      $errBody = $reader.ReadToEnd()
-      if ($errBody) {
-        $preview = $errBody.Substring(0, [Math]::Min(800, $errBody.Length))
-        Write-Host "Error body preview:"
-        Write-Host $preview
+    else {
+      if ($_.Exception -is [System.Net.WebException]) {
+        Write-Host ("WebException.Status: {0}" -f $_.Exception.Status) -ForegroundColor DarkGray
+        $hint = Describe-WebExceptionStatus $_.Exception.Status
+        Write-Host ("Transport hint     : {0}" -f $hint) -ForegroundColor DarkGray
       }
-    } catch {}
-    if ($ENABLE_DIAGNOSTICS -and ($DIAG_ON_HTTP_CODES -contains [int]$code)) {
-      Write-Host "Connectivity diagnostics for API endpoint"
-      $script:DiagData = Get-ConnectivityDiagnostics -Url $endpoint
-    }
-  } else {
-    Write-Host ("Transport error after {0:N2}s, {1}" -f $swCall.Elapsed.TotalSeconds, $_.Exception.Message)
-    if ($ENABLE_DIAGNOSTICS) {
-      $script:DiagData = Get-ConnectivityDiagnostics -Url $endpoint
+      $desc = "Transport/Other error"
+      Write-Host ("Transport error after {0:N2}s: {1}" -f $swCall.Elapsed.TotalSeconds, $_.Exception.Message) -ForegroundColor DarkYellow
+
+      if ($ENABLE_DIAGNOSTICS) {
+        $script:DiagData = Get-ConnectivityDiagnostics -Url $endpoint -ProxyArgs $ProxyArgs
+      }
     }
   }
-}
+}  # end else(token OK)
 
-#output Summary
-$scriptEndTime = Get-Date
-$scriptTotalSeconds = ($scriptEndTime - $scriptStartTime).TotalSeconds
+
+# ----------- BASIC ENV DETS FOR REF -----------
+# Minimal host env details (PS 5.0-safe)
+$runUser   = $env:USERNAME
+$psVersion = $PSVersionTable.PSVersion.ToString()
+
+# Windows version (CIM with WMI fallback)
+$os = $null
+try { $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop } catch {
+  try { $os = Get-WmiObject Win32_OperatingSystem -ErrorAction Stop } catch {}
+}
+$osCaption = if ($os) { $os.Caption } else { "<unknown>" }
+$osVersion = if ($os) { $os.Version } else { "<unknown>" }
+$osBuild   = if ($os) { $os.BuildNumber } else { "<unknown>" }
+
+# ----------- D2I COPY-ME block -----------
+$scriptEndTime       = Get-Date
+$scriptTotalSeconds  = ($scriptEndTime - $scriptStartTime).TotalSeconds
 
 Write-Host ""
-Write-Host ("Fake Child ID sent: {0}" -f ($adjChild_Id -as [string]))
-#Write-Host ("Started, {0}" -f $scriptStartTimeStamp)
-#Write-Host ("Endpoint, {0}" -f $endpoint)
-#Write-Host ("Mode and bytes, {0} , {1}" -f $SEND_BODY_MODE, [Text.Encoding]::UTF8.GetByteCount($payload))
-Write-Host ("HTTP Status, {0}" -f ($code -as [string]))
-Write-Host ("Status Description, {0}" -f ($desc -as [string]))
-#Write-Host ("Total runtime seconds, {0:N2}" -f $scriptTotalSeconds)
+Write-Host "===== COPY LINES BETWEEN THESE MARKERS AND RETURN TO D2I =====" -ForegroundColor Cyan
+Write-Host ("User               : {0}" -f $runUser)
+Write-Host ("PowerShell         : {0}" -f $psVersion)
+Write-Host ("Windows            : {0} (Version {1}, Build {2})" -f $osCaption, $osVersion, $osBuild)
+Write-Host ("Started            : {0}" -f $scriptStartTimeStamp)
+Write-Host ("Endpoint           : {0}" -f $endpoint)
+Write-Host ("Payload Bytes      : {0}" -f $payloadLen)
+Write-Host ("HTTP Status        : {0}" -f ($code -as [string]))
+Write-Host ("Status Description : {0}" -f ($desc   -as [string]))
+$ridOut = if ($requestId) { $requestId } else { "n/a" }
+Write-Host ("Request ID         : {0}" -f $ridOut)
+if ($ProxyArgs -and $ProxyArgs.Proxy) {
+  $pmode = if ($ProxyArgs.ContainsKey('ProxyCredential')) { 'ExplicitCreds' } elseif ($ProxyArgs.ContainsKey('ProxyUseDefaultCredentials')) { 'DefaultCreds' } else { 'NoCredFlags' }
+  Write-Host ("Proxy Used         : {0} ({1})" -f $ProxyArgs.Proxy, $pmode)
+}
+Write-Host ("Total runtime (s)  : {0:N2}" -f $scriptTotalSeconds)
+
+# exit code preview
+$exitCode = if ($code -ge 200 -and $code -lt 300) { 0 } elseif ($code) { [int]$code } else { 1 }
+Write-Host ("Planned Exit Code  : {0}" -f $exitCode)
+Write-Host ("Preview            : {0}" -f $preview)
 
 if ($script:DiagData -and $script:DiagData.Ran) {
-  Write-Host "---- DIAG SUMMARY ----"
-  if ($script:DiagData.Dns)            { Write-Host ("DNS , {0}" -f $script:DiagData.Dns) }
-  if ($script:DiagData.Tcp)            { Write-Host ("TCP , {0}" -f $script:DiagData.Tcp) }
-  if ($script:DiagData.TlsProtocol)    { Write-Host ("TLS , {0}" -f $script:DiagData.TlsProtocol) }
-  if ($script:DiagData.TlsCert)        { Write-Host ("TLS Cert , {0}" -f $script:DiagData.TlsCert) }
-  if ($script:DiagData.TlsIssuer)      { Write-Host ("TLS Issuer , {0}" -f $script:DiagData.TlsIssuer) }
-  if ($script:DiagData.TlsPolicyErrors){ Write-Host ("TLS Policy , {0}" -f $script:DiagData.TlsPolicyErrors) }
-  if ($script:DiagData.HeadRoot)       { Write-Host ("HEAD Root , {0}" -f $script:DiagData.HeadRoot) }
-  if ($script:DiagData.HeadPath)       { Write-Host ("HEAD Endpoint , {0}" -f $script:DiagData.HeadPath) }
-  if ($script:DiagData.Note)           { Write-Host ("Diag Note , {0}" -f $script:DiagData.Note) }
+  Write-Host "---- DIAG SUMMARY ----" -ForegroundColor DarkCyan
+  if ($script:DiagData.Dns)             { Write-Host ("DNS               : {0}" -f $script:DiagData.Dns) }
+  if ($script:DiagData.Tcp)             { Write-Host ("TCP               : {0}" -f $script:DiagData.Tcp) }
+  if ($script:DiagData.TlsProtocol)     { Write-Host ("TLS               : {0}" -f $script:DiagData.TlsProtocol) }
+  if ($script:DiagData.TlsCert)         { Write-Host ("TLS Cert          : {0}" -f $script:DiagData.TlsCert) }
+  if ($script:DiagData.TlsIssuer)       { Write-Host ("TLS Issuer        : {0}" -f $script:DiagData.TlsIssuer) }
+  if ($script:DiagData.TlsPolicyErrors) { Write-Host ("TLS Policy        : {0}" -f $script:DiagData.TlsPolicyErrors) }
+  if ($script:DiagData.ProxyWinHttp)    { Write-Host ("Proxy (WinHTTP)   : {0}" -f $script:DiagData.ProxyWinHttp) }
+  if ($script:DiagData.ProxyDotNet)     { Write-Host ("Proxy (.NET)      : {0} (bypass={1})" -f $script:DiagData.ProxyDotNet, $script:DiagData.ProxyBypass) }
+  if ($script:DiagData.EnvHttpsProxy)   { Write-Host ("Env HTTPS_PROXY   : {0}" -f $script:DiagData.EnvHttpsProxy) }
+  elseif ($script:DiagData.EnvHttpProxy){ Write-Host ("Env HTTP_PROXY    : {0}" -f $script:DiagData.EnvHttpProxy) }
+  if ($script:DiagData.EnvNoProxy)      { Write-Host ("Env NO_PROXY      : {0}" -f $script:DiagData.EnvNoProxy) }
+  if ($script:DiagData.ExplicitProxy)   { Write-Host ("Explicit Proxy    : {0} Mode={1}" -f $script:DiagData.ExplicitProxy, $script:DiagData.ExplicitProxyMode) }
+  if ($script:DiagData.HeadRoot)        { Write-Host ("HEAD Root         : {0}" -f $script:DiagData.HeadRoot) }
+  if ($script:DiagData.HeadPath)        { Write-Host ("HEAD Endpoint     : {0}" -f $script:DiagData.HeadPath) }
+  if ($script:DiagData.Note)            { Write-Host ("Diag Note         : {0}" -f $script:DiagData.Note) }
 }
-
+Write-Host "===== END D2I COPY BLOCK =====" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "### Script Execution Ended, COPY ABOVE OUTPUT AND RETURN TO D2I ###"
-Write-Host "###################################################################"
 
-
-
-$exitCode = if ($code -ge 200 -and $code -lt 300) { 0 } elseif ($code) { [int]$code } else { 1 }
+# CI / calling shell exit
+if ($null -eq $exitCode) { $exitCode = 1 }
 exit $exitCode
-

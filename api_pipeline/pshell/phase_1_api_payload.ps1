@@ -1,8 +1,25 @@
+
+# ----- Proxy defaults for all Invoke-WebRequest / Invoke-RestMethod calls -----
+# These lines implicitly pass -Proxy and either -ProxyUseDefaultCredentials or -ProxyCredential
+# on every web request in this script, without changing each call site.
+$PSDefaultParameterValues = @{}
+if ($Proxy) {
+  $PSDefaultParameterValues['Invoke-WebRequest:Proxy'] = $Proxy
+  $PSDefaultParameterValues['Invoke-RestMethod:Proxy'] = $Proxy
+}
+if ($ProxyUseDefaultCredentials) {
+  $PSDefaultParameterValues['Invoke-WebRequest:ProxyUseDefaultCredentials'] = $true
+  $PSDefaultParameterValues['Invoke-RestMethod:ProxyUseDefaultCredentials'] = $true
+} elseif ($ProxyCredential) {
+  $PSDefaultParameterValues['Invoke-WebRequest:ProxyCredential'] = $ProxyCredential
+  $PSDefaultParameterValues['Invoke-RestMethod:ProxyCredential'] = $ProxyCredential
+}
+# -----------------------------------------------------------------------------
 <#
 Script Name: SSD API
 Description:
 PowerShell script to pull pre-built JSON from SSD (SQL Server), send to API, and update $api_data_staging_table.
-Refresh cadence set outside this script.
+Data refresh cadence set outside this script (SSD refresh).
 
 Key features:
 - Pulls pending JSON from $api_data_staging_table
@@ -19,11 +36,12 @@ Params (via param block):
 - ApiTimeout: per-call timeout (sec)
 
 Config:
-- Set $server, $database, $api_data_staging_table for your env
+- Set $server, $database, $api_data_staging_table for LA env
 - OAuth cfg via $token_endpoint $client_id $client_secret $scope $supplier_key
 
 Notes:
 legacy vars mapped for compat: $usePartialPayload, $internalTesting, $useTestRecord, $batchSize, $timeoutSec
+If both -ProxyUseDefaultCredentials and -ProxyCredential, are passed, script prioritizes -ProxyUseDefaultCredentials
 
 Prereqs:
 - PowerShell 5.1+
@@ -36,13 +54,18 @@ cli examples:
 - powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\phase_1_api_payload.ps1 -Phase full -InternalTest
 - powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\phase_1_api_payload.ps1 -Phase full -UseTestRecord -BatchSize 100 -ApiTimeout 30
 #>
+
+
 [CmdletBinding()]
 param(
   [ValidateSet('full','deltas')] [string]$Phase = 'full',  # pick payload type
   [switch]$InternalTest,                                   # simulate send
   [switch]$UseTestRecord,                                  # use hard-coded fake record
   [ValidateRange(1,100)] [int]$BatchSize = 100,            # per-batch
-  [ValidateRange(5,60)]  [int]$ApiTimeout = 30             # secs
+  [ValidateRange(5,60)]  [int]$ApiTimeout = 30             # secs,
+  [string]$Proxy,
+  [switch]$ProxyUseDefaultCredentials,
+  [PSCredential]$ProxyCredential
 )
 $VERSION = '0.4.0'
 Write-Host ("CSC API staging build: v{0}" -f $VERSION)
@@ -56,7 +79,7 @@ Write-Host ("CSC API staging build: v{0}" -f $VERSION)
 # from https://pp-find-and-use-an-api.education.gov.uk/ (log in)
 
 $la_code         = "000" # Change to your 3 digit LA code
-$api_endpoint = "https://pp-api.education.gov.uk/children-in-social-care-data-receiver-test/1" # 'Base URL' 
+$api_endpoint = "<hidden>" # 'Base URL' 
 
 
 # From the 'Native OAuth Application-flow' block
@@ -337,7 +360,7 @@ function Send-ApiBatch {
   $delay = 5
   while ($retryCount -lt $maxRetries) {
     try {
-      $response = Invoke-RestMethod -Uri $endpoint -Method Post -Headers $headers -Body $FinalJsonPayload -ContentType "application/json" -TimeoutSec $timeout -ErrorAction Stop
+      $response = Invoke-RestMethod -Uri $endpoint -Method Post -Headers $headers -Body $FinalJsonPayload -ContentType "application/json" -TimeoutSec $timeoutSec -ErrorAction Stop
       Write-Host "Raw API response: $response"
       $responseItems = Parse-ApiReply -Raw $response -Expect $batch.Count
       if ($responseItems.Count -ne $batch.Count) {
@@ -728,7 +751,7 @@ $batchSize = $BatchSize
 $totalBatches = [math]::Ceiling($totalRecords / $batchSize)
 $cumulativeDbWriteTime = 0.0 # reset db write stopwatch
 
-# Continue with sending logic
+# Continue send logic
 for ($batchIndex = 0; $batchIndex -lt $totalBatches; $batchIndex++) {
   # Loop through each batch
   $startIndex = $batchIndex * $batchSize
@@ -744,7 +767,7 @@ for ($batchIndex = 0; $batchIndex -lt $totalBatches; $batchIndex++) {
     $record = $JsonArray[$i]
     $pidCheck = $record.person_id
     $jsonCheck = $record.json        
-    # Check record valid: has requ fields, non-null, and structured as we expect
+    # Check record valid: has requ fields, non-null, structured as expected
     $valid = (
       $record -ne $null -and
       $record.PSObject.Properties["person_id"] -and
@@ -755,7 +778,7 @@ for ($batchIndex = 0; $batchIndex -lt $totalBatches; $batchIndex++) {
       $jsonCheck.PSObject.Properties.Count -gt 0
     )
 
-    # valid, add it to the current batch slice, else # record not as expected
+    # valid, add it to current batch slice, else # record not as expected
     if ($valid) { $batchSlice += $record } else { W-Warn ("skip empty or invalid rec. person_id '{0}'" -f $pidCheck) }
   }
 
@@ -766,7 +789,7 @@ for ($batchIndex = 0; $batchIndex -lt $totalBatches; $batchIndex++) {
     # incl. if single record, we need to physically/coerce wrap it within array wrapper [ ] before hitting api
 
   $finalPayload = ConvertTo-CorrectJson -batch $batchSlice
-  ## output the entire payload for verification 
+  ## output entire payload for verification 
   #Write-Host "final payload $($finalPayload)"   # debug
 
   Send-ApiBatch -batch $batchSlice `
