@@ -161,7 +161,7 @@ END
                 JSON_QUERY((
                     SELECT
                         -- Note: id(str)
-                        LEFT(CAST(cine.cine_referral_id AS varchar(36)), 36) AS [social_care_episode_id],
+                        LEFT(CAST(cine.cine_referral_id AS varchar(36)), 36) AS [social_care_episode_id], -- stringify for JSON
                         CONVERT(varchar(10), cine.cine_referral_date, 23) AS [referral_date],
                         LEFT(cine.cine_referral_source_code, 2) AS [referral_source],
 
