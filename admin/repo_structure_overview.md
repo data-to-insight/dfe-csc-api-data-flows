@@ -3,34 +3,34 @@
 ```text
 dfe-csc-api-data-flows/
 ├── api_pipeline/
+│   ├── notebooks/
+│   │   ├── csc_api_pipeline_cli_wrapper.ipynb
+│   │   ├── csc_api_pipeline_fabric_flat.ipynb
+│   │   └── env.example.txt
+│   ├── pshell/
+│   │   ├── phase_1_api_credentials_smoke_test.ps1
+│   │   └── phase_1_api_payload.ps1
+│   ├── scripts/
+│   │   ├── build.sh
+│   │   └── build.yml
 │   ├── .env.example
 │   ├── README.md
 │   ├── __init__.py
 │   ├── __main__.py
 │   ├── api.py
 │   ├── auth.py
-│   ├── build.sh
-│   ├── build.yml
 │   ├── config.py
 │   ├── db.py
-│   ├── dfe_csc_api_testing.ipynb
 │   ├── entry_point.py
 │   ├── main.py
 │   ├── payload.py
 │   ├── requirements.txt
 │   ├── test.py
 │   └── utils.py
-├── api_pipeline_pshell/
-│   └── phase_1_api_payload.ps1
-├── api_sql_raw_json_query/
-│   ├── populate_ssd_api_data_staging.sql
-│   └── populate_ssd_api_data_staging_v1.0 - nested CLA.sql
 ├── build/
 │   ├── bdist.linux-x86_64/
 │   └── lib/
 │       └── api_pipeline/
-│           ├── .env.example
-│           ├── README.md
 │           ├── __init__.py
 │           ├── __main__.py
 │           ├── api.py
@@ -46,32 +46,44 @@ dfe-csc-api-data-flows/
 │   ├── PKG-INFO
 │   ├── SOURCES.txt
 │   ├── dependency_links.txt
+│   ├── entry_points.txt
 │   ├── requires.txt
 │   └── top_level.txt
 ├── dist/
-│   ├── csc_api_pipeline-0.1.3-py3-none-any.whl
-│   └── csc_api_pipeline-0.1.3.tar.gz
+│   ├── csc_api_pipeline-0.2.2-py3-none-any.whl
+│   └── csc_api_pipeline-0.2.2.tar.gz
 ├── docs/
+│   ├── _partials/
+│   │   ├── release_checklist.md
+│   │   ├── release_included_excluded.md
+│   │   ├── release_manifest_packaging.md
+│   │   ├── release_mermaid_overview.md
+│   │   ├── release_versioning.md
+│   │   └── troubleshooting.md
 │   ├── overrides/
 │   │   └── pdf/
 │   │       └── default.html.j2
 │   ├── theme/
 │   │   ├── cover.md
 │   │   └── default_cover.html.j2
+│   ├── PREV-api_python_deployment.md
+│   ├── PREV-configure_api_script.md
+│   ├── admin-actions_workflow_overview.md
+│   ├── admin-cli_interface.md
+│   ├── admin-make_proxy_changes.md
+│   ├── admin-release_process.md
 │   ├── analyst_local_testing.md
 │   ├── api_config.md
 │   ├── api_powershell_deployment.md
 │   ├── api_python_deployment.md
-│   ├── api_python_deployment_prev.md
-│   ├── configure_api_script_prev.md
 │   ├── data_security.md
 │   ├── deploy_ssd_schema.md
 │   ├── feature_backlog.md
-│   ├── gitactions_workflows.md
-│   ├── implementation_roadmap.md
 │   ├── index.md
 │   ├── json_payload_structure.md
 │   ├── release.md
+│   ├── roadmap_implementation.md
+│   ├── roadmap_la_deployment.md
 │   ├── stakeholders.md
 │   ├── system_requirements.md
 │   ├── test_api.md
@@ -79,11 +91,34 @@ dfe-csc-api-data-flows/
 ├── release_bundle/
 │   ├── .env.example
 │   ├── README.md
-│   ├── csc_api_pipeline-0.1.3-py3-none-any.whl
-│   ├── csc_api_pipeline-0.1.3.tar.gz
+│   ├── csc_api_pipeline-0.2.2-py3-none-any.whl
+│   ├── csc_api_pipeline-0.2.2.tar.gz
 │   ├── phase_1_api_payload.ps1
 │   └── populate_ssd_api_data_staging.sql
 ├── site/
+│   ├── PREV-api_python_deployment/
+│   │   └── index.html
+│   ├── PREV-configure_api_script/
+│   │   └── index.html
+│   ├── _partials/
+│   │   ├── release_checklist/
+│   │   │   └── index.html
+│   │   ├── release_included_excluded/
+│   │   │   └── index.html
+│   │   ├── release_manifest_packaging/
+│   │   │   └── index.html
+│   │   ├── release_mermaid_overview/
+│   │   │   └── index.html
+│   │   ├── release_versioning/
+│   │   │   └── index.html
+│   │   └── troubleshooting/
+│   │       └── index.html
+│   ├── admin-actions_workflow_overview/
+│   │   └── index.html
+│   ├── admin-cli_interface/
+│   │   └── index.html
+│   ├── admin-release_process/
+│   │   └── index.html
 │   ├── analyst_local_testing/
 │   │   └── index.html
 │   ├── api_config/
@@ -92,19 +127,11 @@ dfe-csc-api-data-flows/
 │   │   └── index.html
 │   ├── api_python_deployment/
 │   │   └── index.html
-│   ├── api_python_deployment_prev/
-│   │   └── index.html
-│   ├── configure_api_script_prev/
-│   │   └── index.html
 │   ├── data_security/
 │   │   └── index.html
 │   ├── deploy_ssd_schema/
 │   │   └── index.html
 │   ├── feature_backlog/
-│   │   └── index.html
-│   ├── gitactions_workflows/
-│   │   └── index.html
-│   ├── implementation_roadmap/
 │   │   └── index.html
 │   ├── json_payload_structure/
 │   │   └── index.html
@@ -114,6 +141,10 @@ dfe-csc-api-data-flows/
 │   ├── pdf/
 │   │   └── csc_ssd_api_documentation.pdf
 │   ├── release/
+│   │   └── index.html
+│   ├── roadmap_implementation/
+│   │   └── index.html
+│   ├── roadmap_la_deployment/
 │   │   └── index.html
 │   ├── search/
 │   │   └── search_index.json
@@ -133,60 +164,25 @@ dfe-csc-api-data-flows/
 │   ├── index.html
 │   ├── sitemap.xml
 │   └── sitemap.xml.gz
-├── src/
-│   └── csc-api-pipeline/
-│       ├── api_pipeline/
-│       │   ├── .env.example
-│       │   ├── README.md
-│       │   ├── api.py
-│       │   ├── auth.py
-│       │   ├── build.sh
-│       │   ├── build.yml
-│       │   ├── config.py
-│       │   ├── csc_data_flows_api.ipynb
-│       │   ├── db.py
-│       │   ├── main.py
-│       │   ├── payload.py
-│       │   ├── pyproject.toml
-│       │   ├── requirements.txt
-│       │   └── utils.py
-│       ├── docs/
-│       │   ├── overrides/
-│       │   │   └── pdf/
-│       │   │       └── default.html.j2
-│       │   ├── theme/
-│       │   │   ├── cover.md
-│       │   │   └── default_cover.html.j2
-│       │   ├── configure_api_script.md
-│       │   ├── data_security.md
-│       │   ├── deploy_api.md
-│       │   ├── deploy_ssd_schema.md
-│       │   ├── feature_backlog.md
-│       │   ├── implementation_roadmap.md
-│       │   ├── index.md
-│       │   ├── json_payload_structure.md
-│       │   ├── refresh_dev_backlog_page_from_github_api.py
-│       │   ├── stakeholders.md
-│       │   ├── system_requirements.md
-│       │   ├── test_api.md
-│       │   └── troubleshooting_faq.md
-│       ├── .gitignore
-│       ├── LICENSE
-│       ├── README.md
-│       ├── clean.sh
-│       ├── mkdocs.yml
-│       ├── pyproject.toml
-│       ├── pytest.ini
-│       ├── release.sh
-│       ├── requirements.txt
-│       ├── sccm.yml
-│       ├── sccm_graph_static.svg
-│       └── setup.sh
+├── sql_json_query/
+│   ├── dev/
+│   │   ├── 0.1.2-BAK-pre2016 refactor.sql
+│   │   ├── populate_ssd_api_data_staging v0.1.0.sql
+│   │   ├── populate_ssd_api_data_staging.sql
+│   │   ├── populate_ssd_api_data_staging_2012.sql
+│   │   ├── populate_ssd_api_data_staging_balanced.sql
+│   │   └── populate_ssd_api_data_staging_v1.0 - nested CLA.sql
+│   ├── populate_ssd_api_data_staging_2012.sql
+│   ├── populate_ssd_api_data_staging_2016sp1.sql
+│   ├── ssd_cohort.sql
+│   └── ssd_csc_api_schema_checks.sql
+├── .gitattributes
 ├── .gitignore
 ├── LICENSE
 ├── MANIFEST.in
 ├── README.md
 ├── clean.sh
+├── cleanup_runs_keep_release_and_docs.sh
 ├── mkdocs.yml
 ├── pyproject.toml
 ├── pytest.ini
