@@ -6,7 +6,7 @@ include pyproject.toml
 include api_pipeline/README.md
 include api_pipeline/.env.example
 
-# Keep bytecode and junk out of sdist
+# Keep bytecode and junk out of the sdist
 global-exclude *.py[cod] __pycache__/* .DS_Store *.spec
 global-exclude .ipynb_checkpoints/* *.nbconvert.ipynb
 
@@ -17,15 +17,13 @@ prune release_bundle
 prune site
 prune csc_api_pipeline.egg-info
 prune .github
-
-# Prune root-level docs and notebooks only
 prune docs
 prune notebooks
 
-# Dev-only helpers inside package
+# Dev-only helpers inside the package
 prune api_pipeline/scripts
 
-# Include notebooks and PowerShell scripts shipped inside package
+# Include notebooks and PowerShell scripts shipped inside the wheel
 graft api_pipeline/notebooks
 graft api_pipeline/pshell
 

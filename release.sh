@@ -1,6 +1,6 @@
 #!/bin/bash
 # release.sh — CSC API Pipeline Release Script
-# v1.3
+# v1.4
 
 #
 # Automates release process for CSC API Pipeline:
@@ -13,6 +13,7 @@
 # 7) Create release_bundle + release.zip
 # 8) Tag & push to trigger Actions
 #
+
 
 set -e
 
@@ -124,12 +125,16 @@ mkdir -p release_bundle/notebooks
 cp dist/* release_bundle/ || true
 cp README.md api_pipeline/.env.example release_bundle/ || true
 
+# PShell API
 cp api_pipeline/pshell/phase_1_api_payload.ps1 release_bundle/ || true
 cp api_pipeline/pshell/phase_1_api_credentials_smoke_test.ps1 release_bundle/ || true
 
+# SQL files
+# legacy
+cp sql_json_query/populate_ssd_api_data_staging_2012.sql release_bundle/ || true
+# current
 cp sql_json_query/populate_ssd_api_data_staging_2016sp1.sql release_bundle/ || true
 cp sql_json_query/ssd_csc_api_schema_checks.sql release_bundle/ || true
-
 
 # bundle notebooks into .zip also
 cp -R api_pipeline/notebooks/* release_bundle/notebooks/ || true

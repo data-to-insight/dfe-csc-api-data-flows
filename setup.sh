@@ -1,16 +1,21 @@
 #!/bin/bash
 # chmod +x setup.sh
 
-# Install system-level dependencies
+set -e
+
+# System deps for pygraphviz and related
 sudo apt-get update
 sudo apt-get install -y graphviz graphviz-dev pkg-config
 
-# Upgrade pip and install Python requirements
+# Upgrade
 python3 -m pip install --upgrade pip
-pip install -r requirements.txt
 
-# Optionally install pygraphviz for futureproofing
-pip install pygraphviz
+# Install project with selected extras
+# Choose lean or full, depending on Codespace
+pip install -e ".[dev,docs,notebooks]"
 
-# Install Python extension in VSCode
-code --install-extension ms-python.python --force
+# Optional, if need it now
+# pip install pygraphviz
+
+# VS Code Python extension (Codespace usually already has)
+code --install-extension ms-python.python --force || true
