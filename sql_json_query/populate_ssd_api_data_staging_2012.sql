@@ -403,7 +403,7 @@ BEGIN TRY                               -- catch any runtime error, keep control
                                 + '}'
                             FROM ssd_care_leavers clea
                             WHERE clea.clea_person_id = p.pers_person_id
-                            ORDER BY clea.clea_care_lever_latest_contact DESC
+                            ORDER BY clea.clea_care_leaver_latest_contact DESC
                         ), 'null') + ','
 
                         + '"closure_date":'  + CASE WHEN cine.cine_close_date IS NULL THEN 'null' ELSE '"' + CONVERT(varchar(10), cine.cine_close_date, 23) + '"' END + ','
