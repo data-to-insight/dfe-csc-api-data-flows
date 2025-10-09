@@ -41,15 +41,23 @@ if [[ -n $(git status --porcelain) ]]; then
   exit 1
 fi
 
-# --- Full clean
-echo "Full clean..."
-find . -type d -name "__pycache__" -exec rm -rf {} +
-find . -type d -name "*.egg-info" -exec rm -rf {} +
-find . -type f -name "*.pyc" -delete
-rm -rf .pytest_cache/ .coverage .vscode/ .idea/
+# # --- Full clean
+# echo "Full clean..."
+# find . -type d -name "__pycache__" -exec rm -rf {} +
+# find . -type d -name "*.egg-info" -exec rm -rf {} +
+# find . -type f -name "*.pyc" -delete
+# rm -rf .pytest_cache/ .coverage .vscode/ .idea/
 
-echo "Clean old builds..."
-rm -rf build dist *.egg-info release_bundle release.zip
+# echo "Clean old builds..."
+# rm -rf build dist *.egg-info release_bundle release.zip
+
+# --- Full clean, unified
+echo "Full clean via scripts/clean.sh..."
+# preview then apply, then drop old bundles
+bash scripts/clean.sh
+DRY_RUN=false FULL=true REMOVE_IDE=true bash scripts/clean.sh
+rm -rf release_bundle release.zip
+
 
 # --- Version normalisation
 # Users may enter "0.2.0" or "v0.2.0":
@@ -63,7 +71,7 @@ VERSION_PEP440="${RAW_VERSION#v}"   # strip any leading v
 echo "Updating pyproject.toml version to $VERSION_PEP440..."
 CURRENT_PEP440=$(grep -E '^version\s*=\s*"' pyproject.toml | sed -E 's/^version\s*=\s*"([^"]+)".*/\1/')
 if [[ "$CURRENT_PEP440" != "$VERSION_PEP440" ]]; then
-  # On Linux/GNU sed. (macOS would need: sed -i '' ...)
+  # On Linux/GNU sed. (macOS needs: sed -i '' ...)
   sed -i.bak "s/^version = \".*\"/version = \"$VERSION_PEP440\"/" pyproject.toml && rm -f pyproject.toml.bak
   echo "Committing version bump to $VERSION_TAG..."
   git add pyproject.toml
@@ -119,7 +127,9 @@ cp README.md api_pipeline/.env.example release_bundle/ || true
 cp api_pipeline/pshell/phase_1_api_payload.ps1 release_bundle/ || true
 cp api_pipeline/pshell/phase_1_api_credentials_smoke_test.ps1 release_bundle/ || true
 
-cp api_sql_raw_json_query/populate_ssd_api_data_staging.sql release_bundle/ || true
+cp sql_json_query/populate_ssd_api_data_staging_2016sp1.sql release_bundle/ || true
+cp sql_json_query/ssd_csc_api_schema_checks.sql release_bundle/ || true
+
 
 # bundle notebooks into .zip also
 cp -R api_pipeline/notebooks/* release_bundle/notebooks/ || true
