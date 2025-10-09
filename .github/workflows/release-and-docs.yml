@@ -2,23 +2,19 @@ name: Release build (EXE + dists) & MkDocs deploy
 
 on:
   push:
-    branches: [main]           # docs deploys
-    tags: ['v*.*.*']           # release builds
-  workflow_dispatch: {}        # manual trigger
+    branches: [main]
+    tags: ['v*.*.*']
+  workflow_dispatch: {}
 
-# Permissions needed across jobs
 permissions:
-  contents: write              # gh-release needs write
-  pages: write                 # deploy-pages needs this
-  id-token: write              # deploy-pages OIDC
-
+  contents: write
+  pages: write
+  id-token: write
 
 jobs:
-  # ===========================
-  # 1) Release build (Windows)
-  # ===========================
+  # Release build (Windows) on tags
   release-build:
-    if: startsWith(github.ref, 'refs/tags/v')  # only for version tags
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: windows-latest
 
     steps:
@@ -29,30 +25,28 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Install build deps
         run: |
           python -m pip install --upgrade pip
-          pip install .[build]        # uses your pyproject optional-deps: build
-          pip install .               # local install so relative imports resolve
+          python -m pip install build twine pyinstaller
+          pip install .
 
-      - name: Clean previous build (CMD)
-        shell: cmd
+      - name: Clean previous build (PowerShell)
+        shell: pwsh
         run: |
-          rmdir /s /q dist build || echo No previous build folders
-          del /q /f *.spec || echo No .spec file
+          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue dist, build
+          Get-ChildItem -Path . -Filter *.spec -File -Recurse -ErrorAction SilentlyContinue | Remove-Item -Force
 
-      # ---- Build Python dists first (so Twine never sees EXE) ----
+      # Build Python dists first
       - name: Build sdist & wheel
         run: python -m build --sdist --wheel --outdir dist
 
       - name: Check metadata (twine)
-        shell: pwsh
-        run: |
-          pip install twine
-          twine check dist\*.whl dist\*.tar.gz
+        run: twine check dist\*.whl dist\*.tar.gz
 
-      # ---- Now build the EXE ----
+      # Build the Windows EXE
       - name: Build EXE with PyInstaller
         run: pyinstaller api_pipeline\entry_point.py --onefile --name csc_api_pipeline --console
 
@@ -69,16 +63,23 @@ jobs:
           }
           Get-Content -Path dist\SHA256SUMS.txt
 
-      - name: Zip release files
+      - name: Assemble release bundle
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path release_bundle | Out-Null
+          New-Item -ItemType Directory -Path release_bundle\notebooks | Out-Null
           Copy-Item dist\csc_api_pipeline.exe -Destination release_bundle\
           Copy-Item README.md -Destination release_bundle\
           Copy-Item api_pipeline\.env.example -Destination release_bundle\
-          Copy-Item api_pipeline_pshell\phase_1_api_payload.ps1 -Destination release_bundle\
-          Copy-Item api_sql_raw_json_query\populate_ssd_api_data_staging.sql -Destination release_bundle\
-          if (Test-Path notebooks\dfe_csc_api_testing.ipynb) { Copy-Item notebooks\dfe_csc_api_testing.ipynb -Destination release_bundle\ }
+          # PowerShell scripts, new path
+          Copy-Item api_pipeline\pshell\phase_1_api_payload.ps1 -Destination release_bundle\
+          Copy-Item api_pipeline\pshell\phase_1_api_credentials_smoke_test.ps1 -Destination release_bundle\
+          # SQL files, new folder and filenames (legacy and current)
+          Copy-Item sql_json_query\populate_ssd_api_data_staging_2012.sql -Destination release_bundle\
+          Copy-Item sql_json_query\populate_ssd_api_data_staging_2016sp1.sql -Destination release_bundle\
+          Copy-Item sql_json_query\ssd_csc_api_schema_checks.sql -Destination release_bundle\
+          # Notebooks, whole folder under api_pipeline
+          Copy-Item api_pipeline\notebooks\* -Destination release_bundle\notebooks\ -Recurse -Force
           Compress-Archive -Path release_bundle\* -DestinationPath release.zip -Force
 
       - name: Upload Release Artifacts to Git
@@ -90,31 +91,31 @@ jobs:
             dist/*.whl
             dist/*.tar.gz
             dist/SHA256SUMS.txt
-            api_pipeline_pshell/phase_1_api_payload.ps1
-            api_sql_raw_json_query/populate_ssd_api_data_staging.sql
+            api_pipeline/pshell/phase_1_api_payload.ps1
+            api_pipeline/pshell/phase_1_api_credentials_smoke_test.ps1
+            sql_json_query/populate_ssd_api_data_staging_2012.sql
+            sql_json_query/populate_ssd_api_data_staging_2016sp1.sql
+            sql_json_query/ssd_csc_api_schema_checks.sql
             README.md
             api_pipeline/.env.example
           fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ===========================
-  # 2) MkDocs build (Linux)
-  # ===========================
+  # MkDocs build (Linux) on main
   docs-build:
-    if: github.ref == 'refs/heads/main'      # only for pushes to main
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          submodules: false                  # avoid submodule noise
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
@@ -128,9 +129,7 @@ jobs:
         with:
           path: site/
 
-  # ===========================
-  # 3) MkDocs deploy (Pages)
-  # ===========================
+  # MkDocs deploy (Pages)
   pages-deploy:
     if: github.ref == 'refs/heads/main'
     needs: docs-build
@@ -141,12 +140,9 @@ jobs:
     permissions:
       pages: write
       id-token: write
-
-    # Concurrency only for deploy job (does NOT cancel whole workflow)
     concurrency:
       group: pages-${{ github.repository }}
       cancel-in-progress: true
-
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
