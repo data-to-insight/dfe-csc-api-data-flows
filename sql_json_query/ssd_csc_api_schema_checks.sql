@@ -1,11 +1,15 @@
+-- -- SystemC / LLogic only
+-- USE [HDM_Local];
+-- GO
 
-USE [HDM_Local];
-GO
 
 /* View: ssd_development.ssd_vw_csc_api_schema_checks
-   SQL Server 2016+
-   Simplified/example of pre-processing verification checks against v0.8.0 api schema
-   - As an example. Script can be built on further to increase usefulness within LA. 
+   SQL Server 2016+ (not legacy versions)
+   Simplified/example of pre-processing verification checks against DfE v0.8.0 api schema
+   - Supplied as example. Script can be built-on to increase usefulness within individual LAs. 
+
+   When implementing, remember to search/replace on 'ssd_development.' to either remove entirely(replace with '' empty str), 
+   or add LA own schema location. If setting HDM_Local as above, then everything below default creates in this reporting instance. 
 */
 
 CREATE OR ALTER VIEW ssd_development.ssd_vw_csc_api_schema_checks
