@@ -265,6 +265,9 @@ END
                         COALESCE(JSON_QUERY((
                             SELECT
                                 -- Note: id(str)
+                                -- Issue #31
+                                -- There are some open questions around which data to fullfil placement start/end/reason
+                                -- hence combined use of episode+placement detail here. To *review in LA data verification* process(es)
                                 LEFT(CAST(clap.clap_cla_placement_id AS varchar(36)), 36) AS [child_looked_after_placement_id],
                                 CONVERT(varchar(10), clap.clap_cla_placement_start_date, 23) AS [start_date],
                                 LEFT(clae.clae_cla_episode_start_reason, 1) AS [start_reason],
