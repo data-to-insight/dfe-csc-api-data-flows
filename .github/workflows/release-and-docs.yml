@@ -4,7 +4,15 @@ on:
   push:
     branches: [main]
     tags: ['v*.*.*']
-  workflow_dispatch: {}
+  # allow manual runs, and optional UI Release publish
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Tag or branch to build'
+        required: false
+        default: ''
+  release:
+    types: [published]
 
 permissions:
   contents: write
@@ -12,20 +20,27 @@ permissions:
   id-token: write
 
 jobs:
-  # Release build (Windows) on tags
+  # Release build (Windows), runs on tag push, manual run, or Release publish
   release-build:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || github.event_name == 'release'
     runs-on: windows-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # build the correct ref for each trigger type
+          ref: ${{ inputs.ref != '' && inputs.ref
+                  || github.event_name == 'release' && github.event.release.tag_name
+                  || github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
+          cache-dependency-path: |
+            pyproject.toml
 
       - name: Install build deps
         run: |
@@ -63,6 +78,26 @@ jobs:
           }
           Get-Content -Path dist\SHA256SUMS.txt
 
+      - name: Preflight, required files exist
+        shell: pwsh
+        run: |
+          $required = @(
+            "dist\csc_api_pipeline.exe",
+            "README.md",
+            "api_pipeline\.env.example",
+            "api_pipeline\pshell\phase_1_api_payload.ps1",
+            "api_pipeline\pshell\phase_1_api_credentials_smoke_test.ps1",
+            "sql_json_query\populate_ssd_api_data_staging_2012.sql",
+            "sql_json_query\populate_ssd_api_data_staging_2016sp1.sql",
+            "sql_json_query\ssd_csc_api_schema_checks.sql"
+          )
+          $missing = @()
+          foreach ($p in $required) { if (-not (Test-Path $p)) { $missing += $p } }
+          if ($missing.Count -gt 0) {
+            Write-Error ("Missing required files: " + ($missing -join ", "))
+            exit 1
+          }
+
       - name: Assemble release bundle
         shell: pwsh
         run: |
@@ -71,14 +106,14 @@ jobs:
           Copy-Item dist\csc_api_pipeline.exe -Destination release_bundle\
           Copy-Item README.md -Destination release_bundle\
           Copy-Item api_pipeline\.env.example -Destination release_bundle\
-          # PowerShell scripts, new path
+          # PowerShell scripts
           Copy-Item api_pipeline\pshell\phase_1_api_payload.ps1 -Destination release_bundle\
           Copy-Item api_pipeline\pshell\phase_1_api_credentials_smoke_test.ps1 -Destination release_bundle\
-          # SQL files, new folder and filenames (legacy and current)
+          # SQL files, legacy and current
           Copy-Item sql_json_query\populate_ssd_api_data_staging_2012.sql -Destination release_bundle\
           Copy-Item sql_json_query\populate_ssd_api_data_staging_2016sp1.sql -Destination release_bundle\
           Copy-Item sql_json_query\ssd_csc_api_schema_checks.sql -Destination release_bundle\
-          # Notebooks, whole folder under api_pipeline
+          # Notebooks
           Copy-Item api_pipeline\notebooks\* -Destination release_bundle\notebooks\ -Recurse -Force
           Compress-Archive -Path release_bundle\* -DestinationPath release.zip -Force
 
@@ -106,7 +141,9 @@ jobs:
   docs-build:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-
+    concurrency:
+      group: docs-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -116,6 +153,9 @@ jobs:
         with:
           python-version: '3.12'
           cache: 'pip'
+          cache-dependency-path: |
+            pyproject.toml
+            mkdocs.yml
 
       - name: Install dependencies
         run: |
