@@ -118,6 +118,50 @@ else
   echo "Not on Windows — skipping .exe build"
 fi
 
+
+# Preflight, required files exist before bundling
+missing=()
+
+# source files that must exist
+req_paths=(
+  "README.md"
+  "api_pipeline/.env.example"
+  "api_pipeline/pshell/phase_1_api_payload.ps1"
+  "api_pipeline/pshell/phase_1_api_credentials_smoke_test.ps1"
+  "sql_json_query/populate_ssd_api_data_staging_2012.sql"
+  "sql_json_query/populate_ssd_api_data_staging_2016sp1.sql"
+  "sql_json_query/ssd_csc_api_schema_checks.sql"
+  "api_pipeline/notebooks"
+)
+
+for p in "${req_paths[@]}"; do
+  if [ -d "$p" ]; then
+    # dir must exist and contain at least 1 file
+    if ! find "$p" -type f -maxdepth 1 -print -quit | grep -q .; then
+      missing+=("$p (empty directory)")
+    fi
+  else
+    [ -e "$p" ] || missing+=("$p")
+  fi
+done
+
+# built artifacts, require at least 1 wheel and 1 sdist
+if ! compgen -G "dist/*.whl" >/dev/null; then
+  missing+=("dist/*.whl")
+fi
+if ! compgen -G "dist/*.tar.gz" >/dev/null; then
+  missing+=("dist/*.tar.gz")
+fi
+
+if [ ${#missing[@]} -gt 0 ]; then
+  echo "Preflight failed. Missing required items:"
+  for m in "${missing[@]}"; do echo " - $m"; done
+  exit 1
+fi
+
+echo "Preflight passed. All required inputs are present."
+
+
 # --- Bundle for upload (CI also assembles artifacts) 
 echo "Creating release zip..."
 mkdir -p release_bundle
