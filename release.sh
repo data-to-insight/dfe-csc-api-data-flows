@@ -16,6 +16,9 @@
 
 
 set -e
+# read pyproject.toml ver
+get_version(){ grep -E '^version\s*=\s*"' pyproject.toml | sed -E 's/.*"([^"]+)".*/\1/'; }
+
 
 echo "CSC API Pipeline Release Script"
 echo "----------------------------------"
@@ -177,12 +180,20 @@ if [[ $CONFIRM == "y" ]]; then
   echo "Tag $VERSION_TAG pushed. GitHub Actions should build the release."
 else
   echo "Skipped tag push."
-  echo "Note, preview artifacts remain in dist and release.zip reflect the current repository version."
+  CURR_VER="$(get_version)"
+  echo "Preview build complete, no tag created."
+  echo "Artifacts were built as v$CURR_VER, planned tag was $VERSION_TAG."
 fi
+
 
 # --- Summary
 echo "Release bundle contents:"
 ls -lh release_bundle/ || true
 echo
-echo "Release completed: $VERSION_TAG"
+if [[ $CONFIRM == "y" ]]; then
+  echo "Release completed, tag $VERSION_TAG"
+else
+  echo "Preview completed, no tag created, planned tag $VERSION_TAG"
+fi
 echo "Output archive: release.zip"
+
