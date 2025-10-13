@@ -14,8 +14,10 @@
 # 8) Tag & push to trigger Actions
 #
 
+# catch unset vars/force globs(dist/*) to expand as []
+set -euo pipefail
+shopt -s nullglob
 
-set -e
 # read pyproject.toml ver
 get_version(){ grep -E '^version\s*=\s*"' pyproject.toml | sed -E 's/.*"([^"]+)".*/\1/'; }
 
@@ -151,12 +153,69 @@ if [[ $CONFIRM == "y" ]]; then
   CURRENT_PEP440=$(grep -E '^version\s*=\s*"' pyproject.toml | sed -E 's/^version\s*=\s*"([^"]+)".*/\1/')
   if [[ "$CURRENT_PEP440" != "$VERSION_PEP440" ]]; then
     sed -i.bak "s/^version = \".*\"/version = \"$VERSION_PEP440\"/" pyproject.toml && rm -f pyproject.toml.bak
-    echo "Committing version bump to $VERSION_TAG..."
-    git add pyproject.toml
-    git commit -m "Bump version to $VERSION_TAG"
   else
-    echo "pyproject.toml already at $VERSION_PEP440 — no commit needed."
+    echo "pyproject.toml already at $VERSION_PEP440, no change."
   fi
+
+  # --- Update CHANGELOG.md, manual and idempotent
+CHANGELOG="CHANGELOG.md"
+RELEASE_DATE="$(date -u +%Y-%m-%d)"
+VERSION_HEAD="## [$VERSION_PEP440] - $RELEASE_DATE"
+
+# bootstrap file if missing
+if [ ! -f "$CHANGELOG" ]; then
+cat > "$CHANGELOG" <<'EOF'
+# Changelog
+
+## [Unreleased]
+
+EOF
+fi
+
+# only insert if version section not existing
+if ! grep -q "^## \[$VERSION_PEP440\]" "$CHANGELOG"; then
+tmp_chlog="$(mktemp)"
+cat > "$tmp_chlog" <<EOF
+$VERSION_HEAD
+### Added
+- 
+
+### Changed
+- 
+
+### Fixed
+- 
+
+### Removed
+- 
+
+### Security
+- 
+
+EOF
+# insert new section right after Unreleased header
+awk -v RS="\n\n" -v ORS="\n\n" -v add="$(cat "$tmp_chlog")" '
+  NR==1 { print; print add; next } { print }
+' "$CHANGELOG" > "$CHANGELOG.tmp" && mv "$CHANGELOG.tmp" "$CHANGELOG"
+rm -f "$tmp_chlog"
+else
+  echo "CHANGELOG already contains section for $VERSION_PEP440, leaving as is"
+fi
+
+
+  # --- git-cliff generated changelog, commented until switch-over (tbc)
+  # if ! command -v git-cliff >/dev/null 2>&1; then
+  #   echo "git-cliff not found, install it or keep block commented"
+  # fi
+  # git-cliff --tag "$VERSION_TAG" --output CHANGELOG.md --prepend
+
+  # Commit version and changelog combined
+  git add pyproject.toml CHANGELOG.md 2>/dev/null || true
+  git commit -m "chore: release $VERSION_TAG" || echo "Nothing to commit"
+
+  # Rebuild pre_flight_checks.zip for release commit
+  rm -f pre_flight_checks.zip
+  zip -r pre_flight_checks.zip pre_flight_checks
 
   # rebuild clean artifacts with the bumped version, replace preview bundle
   rm -rf dist release_bundle release.zip
@@ -177,7 +236,7 @@ if [[ $CONFIRM == "y" ]]; then
   git tag "$VERSION_TAG" 2>/dev/null || git tag -f "$VERSION_TAG"
   git push origin main
   git push origin "$VERSION_TAG" --force-with-lease
-  echo "Tag $VERSION_TAG pushed. GitHub Actions should build the release."
+  echo "Tag $VERSION_TAG pushed. GitHub Actions should build release."
 else
   echo "Skipped tag push."
   CURR_VER="$(get_version)"
@@ -196,4 +255,5 @@ else
   echo "Preview completed, no tag created, planned tag $VERSION_TAG"
 fi
 echo "Output archive: release.zip"
+echo "Built version: v$(get_version)"
 
