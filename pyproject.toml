@@ -1,6 +1,6 @@
 [project]
 name = "csc_api_pipeline"
-version = "0.2.5"
+version = "0.2.4"
 description = "API payload builder and sender for CSC"
 requires-python = ">=3.10"
 license = "MIT"
@@ -48,11 +48,13 @@ classifiers = [
   "Topic :: Utilities"
 ]
 
-[project.urls]
-Homepage = "https://github.com/data-to-insight/dfe-csc-api-data-flows"
-Documentation = "https://data-to-insight.github.io/dfe-csc-api-data-flows"
-Source = "https://github.com/data-to-insight/dfe-csc-api-data-flows"
-Issues = "https://github.com/data-to-insight/dfe-csc-api-data-flows/issues"
+# nice links for PyPI
+urls = { 
+  "Homepage" = "https://github.com/data-to-insight/dfe-csc-api-data-flows",
+  "Documentation" = "https://data-to-insight.github.io/dfe-csc-api-data-flows",
+  "Source" = "https://github.com/data-to-insight/dfe-csc-api-data-flows",
+  "Issues" = "https://github.com/data-to-insight/dfe-csc-api-data-flows/issues"
+}
 
 
 dependencies = [
