@@ -3,7 +3,7 @@
 # build.sh — OPTIONAL legacy helper script
 #
 # script retained for lightweight, local builds of Py package
-# (PEP 517 `.whl` and `.tar.gz`) but **NOT** required for full release.
+# (PEP 517 `.whl` and `.tar.gz`) but **NOT** required for full release
 #
 # Use `release.sh` instead for full release workflow, which includes:
 # - Version bumping
@@ -12,7 +12,6 @@
 # - Git tagging
 # - Packaging release_bundle and pushing to GitHub
 #
-# delete script if no longer using.
 # Requires: `chmod +x ./build.sh` 
 
 

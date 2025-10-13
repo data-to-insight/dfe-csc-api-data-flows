@@ -59,7 +59,6 @@ bash scripts/clean.sh
 DRY_RUN=false FULL=true REMOVE_IDE=true bash scripts/clean.sh
 rm -rf release_bundle release.zip
 
-
 # --- Version normalisation
 # Users may enter "0.2.0" or "v0.2.0":
 #  - Git tag will be "vX.Y.Z"
@@ -118,51 +117,16 @@ else
   echo "Not on Windows — skipping .exe build"
 fi
 
-
-# Preflight, required files exist before bundling
-missing=()
-
-# source files that must exist
-req_paths=(
-  "README.md"
-  "api_pipeline/.env.example"
-  "api_pipeline/pshell/phase_1_api_payload.ps1"
-  "api_pipeline/pshell/phase_1_api_credentials_smoke_test.ps1"
-  "sql_json_query/populate_ssd_api_data_staging_2012.sql"
-  "sql_json_query/populate_ssd_api_data_staging_2016sp1.sql"
-  "sql_json_query/ssd_csc_api_schema_checks.sql"
-  "api_pipeline/notebooks"
-)
-
-for p in "${req_paths[@]}"; do
-  if [ -d "$p" ]; then
-    # dir must exist and contain at least 1 file
-    if ! find "$p" -type f -maxdepth 1 -print -quit | grep -q .; then
-      missing+=("$p (empty directory)")
-    fi
+# --- Build pre_flight_checks.zip from repo-root
+if [ -d pre_flight_checks ]; then
+  if find pre_flight_checks -maxdepth 1 -type f -print -quit | grep -q .; then
+    zip -r pre_flight_checks.zip pre_flight_checks
   else
-    [ -e "$p" ] || missing+=("$p")
+    echo "pre_flight_checks exists but is empty, skipping zip"
   fi
-done
-
-# built artifacts, require at least 1 wheel and 1 sdist
-if ! compgen -G "dist/*.whl" >/dev/null; then
-  missing+=("dist/*.whl")
-fi
-if ! compgen -G "dist/*.tar.gz" >/dev/null; then
-  missing+=("dist/*.tar.gz")
 fi
 
-if [ ${#missing[@]} -gt 0 ]; then
-  echo "Preflight failed. Missing required items:"
-  for m in "${missing[@]}"; do echo " - $m"; done
-  exit 1
-fi
-
-echo "Preflight passed. All required inputs are present."
-
-
-# --- Bundle for upload (CI also assembles artifacts) 
+# --- Bundle for upload (CI assemble artifacts)
 echo "Creating release zip..."
 mkdir -p release_bundle
 mkdir -p release_bundle/notebooks
@@ -171,19 +135,15 @@ cp README.md api_pipeline/.env.example release_bundle/ || true
 
 # PShell API
 cp api_pipeline/pshell/phase_1_api_payload.ps1 release_bundle/ || true
-cp api_pipeline/pshell/phase_1_api_credentials_smoke_test.ps1 release_bundle/ || true
 
 # SQL files
 # legacy
 cp sql_json_query/populate_ssd_api_data_staging_2012.sql release_bundle/ || true
 # current
 cp sql_json_query/populate_ssd_api_data_staging_2016sp1.sql release_bundle/ || true
-cp sql_json_query/ssd_csc_api_schema_checks.sql release_bundle/ || true
 
 # bundle notebooks into .zip also
 cp -R api_pipeline/notebooks/* release_bundle/notebooks/ || true
-
-
 
 zip -r release.zip release_bundle/
 

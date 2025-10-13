@@ -7,6 +7,10 @@ use HDM_Local; -- Note: this the SystemC/LLogic default
 The following table definitions (and populating) can be run after the main SSD script, OR the following definitions
 can be added into the main SSD - insert locations are marked via the meta tags of:
 
+META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging"}
+META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging_anon"} - temp table for API testing, can be removed post testing
+
+
 -- Script compatibility and defaults
 -- SQL Server 2012 and later (compat 110 plus). 
 -- If you are on SQL Server 2016 SP1 or later, use the separate 2016 plus script which employs native JSON features for simpler payload assembly.
@@ -20,10 +24,6 @@ can be added into the main SSD - insert locations are marked via the meta tags o
 -- XACT_ABORT is ON, auto rolls back on most runtime errors, and TRY CATCH block wraps transaction for clarity.
 -- Optional unique index on (person_id, current_hash) included below as guard rail. Commented by default.
 
-
-
-META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging"}
-META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging_anon"} - temp table for API testing, can be removed post testing
 */
 
 DECLARE @VERSION nvarchar(32) = N'0.1.3';
@@ -344,7 +344,7 @@ BEGIN TRY                               -- catch any runtime error, keep control
                                     + '"child_looked_after_placement_id":' + CASE WHEN clap.clap_cla_placement_id IS NULL THEN 'null' ELSE '"' + LEFT(CONVERT(varchar(36), clap.clap_cla_placement_id),36) + '"' END + ','
                                     + '"start_date":'   + CASE WHEN clap.clap_cla_placement_start_date IS NULL THEN 'null' ELSE '"' + CONVERT(varchar(10), clap.clap_cla_placement_start_date, 23) + '"' END + ','
                                     + '"start_reason":' + CASE WHEN clae.clae_cla_episode_start_reason IS NULL THEN 'null' ELSE '"' +
-                                            REPLACE(REPLACE(REPLACE	REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max), LEFT(clae.clae_cla_episode_start_reason, 1)), N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r')
+                                            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max), LEFT(clae.clae_cla_episode_start_reason, 1)), N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r')
                                             + '"' END + ','
                                     + '"placement_type":' + CASE WHEN clap.clap_cla_placement_type IS NULL THEN 'null' ELSE '"' +
                                             REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(nvarchar(max), LEFT(clap.clap_cla_placement_type, 2)), N'\', N'\\'), N'"', N'\"'), CHAR(8), N'\b'), CHAR(9), N'\t'), CHAR(10), N'\n'), CHAR(13), N'\r')

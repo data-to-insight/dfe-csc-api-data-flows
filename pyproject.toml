@@ -3,69 +3,105 @@ name = "csc_api_pipeline"
 version = "0.2.4"
 description = "API payload builder and sender for CSC"
 requires-python = ">=3.10"
-license = "MIT"  # SPDX 
+license = "MIT"
 readme = { file = "api_pipeline/README.md", content-type = "text/markdown" }
+
+keywords = [
+  "SQL Server",
+  "T-SQL",
+  "ODBC",
+  "pyodbc",
+  "ETL",
+  "data pipelines",
+  "children's social care",
+  "DfE CSC API",
+  "Standard Safeguarding Dataset",
+  "SSD schema"
+]
+
+classifiers = [
+  "Development Status :: 4 - Beta",                  # tbc: 5 - Production/Stable 
+  "Intended Audience :: CSC Performance",
+  "Intended Audience :: Data Transformation",
+  "Intended Audience :: System Administrators",
+  "Intended Audience :: LA Developers",
+  "License :: OSI Approved :: MIT License",
+  "Natural Language :: English",
+
+  "Environment :: Console",
+  "Framework :: Jupyter",
+
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: SQL",
+
+  "Topic :: Database",
+  "Topic :: Database :: Front-Ends",
+  "Topic :: Database :: Database Engines/Servers",
+  "Topic :: Utilities"
+]
+
+# nice links for PyPI
+urls = { 
+  "Homepage" = "https://github.com/data-to-insight/dfe-csc-api-data-flows",
+  "Documentation" = "https://data-to-insight.github.io/dfe-csc-api-data-flows",
+  "Source" = "https://github.com/data-to-insight/dfe-csc-api-data-flows",
+  "Issues" = "https://github.com/data-to-insight/dfe-csc-api-data-flows/issues"
+}
+
+
 dependencies = [
   "requests>=2.31,<3",
   "pyodbc>=5,<6",
   "python-dotenv>=1.0,<2"
 ]
 
-
 [project.optional-dependencies]
-dev = [
-  "memory-profiler>=0.61,<1"
-]
-test = [
-  "pytest>=8,<9",
-  "pytest-mock>=3,<4"
-]
+dev = ["memory-profiler>=0.61,<1"]
+test = ["pytest>=8,<9", "pytest-mock>=3,<4"]
 docs = [
   "mkdocs>=1.6,<2",
   "mkdocs-material>=9.5,<10",
   "mkdocs-awesome-pages-plugin>=2.9,<3",
   "mkdocs-mermaid2-plugin>=1.2,<2",
-  # Towards PDF render:
   "mkdocs-with-pdf>=0.9,<1",
   "weasyprint>=65,<66"
 ]
-build = [
-  "build>=1,<2",
-  # Towards local .exe build:
-  "pyinstaller>=6,<7"
-]
-notebooks = [
-  "jupyterlab>=4,<5",
-  "ipykernel>=6,<7"
-  # For later use in notebook
-  # "pandas>=2.2,<3",
-  # "matplotlib>=3.8,<4",
-  # "seaborn>=0.13,<0.14"
-]
+build = ["build>=1,<2", "pyinstaller>=6,<7"]
+notebooks = ["jupyterlab>=4,<5", "ipykernel>=6,<7"]
+
+[project.scripts]
+d2i-csc-api = "api_pipeline.entry_point:cli"
+csc-api-pipeline = "api_pipeline.entry_point:cli"
 
 [build-system]
 requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
+
 [tool.setuptools]
 include-package-data = true
+# ensure license text rides inside wheel
+license-files = ["LICENSE*", "LICENSE"]
 
 [tool.setuptools.packages.find]
 include = ["api_pipeline*"]
+# keep any internal helpers like api_pipeline/scripts out of wheel package list
+exclude = ["api_pipeline.scripts*"]
 
-# Include notebooks and PowerShell scripts inside the wheel
+# ship notebooks and PShell files inside wheel
 [tool.setuptools.package-data]
 api_pipeline = [
-  "notebooks/**",
+  "notebooks/**/*",
   "pshell/*.ps1"
 ]
 
-
-[project.scripts]
-csc-api = "api_pipeline.entry_point:cli"
-csc-api-pipeline = "api_pipeline.entry_point:cli"
-
-# wheel exclusions (see MANIFEST for dist exclusions)
+# explicit excludes from wheel payload inside package tree
 [tool.setuptools.exclude-package-data]
 api_pipeline = ["*.env.example", "README.md"]
-
-
