@@ -48,13 +48,11 @@ classifiers = [
   "Topic :: Utilities"
 ]
 
-# nice links for PyPI
-urls = { 
-  "Homepage" = "https://github.com/data-to-insight/dfe-csc-api-data-flows",
-  "Documentation" = "https://data-to-insight.github.io/dfe-csc-api-data-flows",
-  "Source" = "https://github.com/data-to-insight/dfe-csc-api-data-flows",
-  "Issues" = "https://github.com/data-to-insight/dfe-csc-api-data-flows/issues"
-}
+[project.urls]
+Homepage = "https://github.com/data-to-insight/dfe-csc-api-data-flows"
+Documentation = "https://data-to-insight.github.io/dfe-csc-api-data-flows"
+Source = "https://github.com/data-to-insight/dfe-csc-api-data-flows"
+Issues = "https://github.com/data-to-insight/dfe-csc-api-data-flows/issues"
 
 
 dependencies = [
