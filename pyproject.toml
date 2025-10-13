@@ -3,7 +3,7 @@ name = "csc_api_pipeline"
 version = "0.2.4"
 description = "API payload builder and sender for CSC"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
+license = "MIT"
 license-files = ["LICENSE*"]
 readme = { file = "api_pipeline/README.md", content-type = "text/markdown" }
 
@@ -95,3 +95,4 @@ api_pipeline = [
 
 [tool.setuptools.exclude-package-data]
 api_pipeline = ["*.env.example", "README.md"]
+
