@@ -53,7 +53,7 @@ fi
 # rm -rf build dist *.egg-info release_bundle release.zip
 
 # --- Full clean, unified
-echo "Full clean via scripts/clean.sh..."
+echo "Full clean via admin/admin_bash/clean.sh..."
 # preview then apply, then drop old bundles
 bash scripts/clean.sh
 DRY_RUN=false FULL=true REMOVE_IDE=true bash scripts/clean.sh
