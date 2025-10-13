@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 #chmod +x admin/dev-loc_counter.py
 
+# admin/dev-loc_counter.py /workspaces/dfe-csc-api-data-flows/
+
 """
 loc_counter.py
 Counts lines across a project, split by Python, Bash, PowerShell, SQL, YAML, and non-code Markdown lines.
