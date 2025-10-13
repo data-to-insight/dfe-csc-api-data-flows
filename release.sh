@@ -55,8 +55,8 @@ fi
 # --- Full clean, unified
 echo "Full clean via admin/admin_bash/clean.sh..."
 # preview then apply, then drop old bundles
-bash scripts/clean.sh
-DRY_RUN=false FULL=true REMOVE_IDE=true bash scripts/clean.sh
+bash admin/admin_bash/clean.sh
+DRY_RUN=false FULL=true REMOVE_IDE=true bash admin/admin_bash/clean.sh
 rm -rf release_bundle release.zip
 
 # --- Version normalisation
