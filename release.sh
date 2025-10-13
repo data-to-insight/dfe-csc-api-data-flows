@@ -36,6 +36,12 @@ echo "Last release tag: $LAST_TAG"
 read -p "Enter new version tag [default: $NEXT_TAG]: " VERSION
 VERSION="${VERSION:-$NEXT_TAG}"
 
+# --- validate it, fall back to computed default
+if [[ ! "$VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "No valid semver entered, using $NEXT_TAG"
+  VERSION="$NEXT_TAG"
+fi
+
 # --- Working tree got to be clean
 if [[ -n $(git status --porcelain) ]]; then
   echo "Uncommitted changes found. Please commit or stash before releasing."
@@ -48,7 +54,7 @@ fi
 # find . -type d -name "*.egg-info" -exec rm -rf {} +
 # find . -type f -name "*.pyc" -delete
 # rm -rf .pytest_cache/ .coverage .vscode/ .idea/
-
+#
 # echo "Clean old builds..."
 # rm -rf build dist *.egg-info release_bundle release.zip
 
@@ -66,19 +72,6 @@ rm -rf release_bundle release.zip
 RAW_VERSION="$VERSION"
 VERSION_TAG="v${RAW_VERSION#v}"     # ensure leading v
 VERSION_PEP440="${RAW_VERSION#v}"   # strip any leading v
-
-# --- Bump pyproject.toml only if needed
-echo "Updating pyproject.toml version to $VERSION_PEP440..."
-CURRENT_PEP440=$(grep -E '^version\s*=\s*"' pyproject.toml | sed -E 's/^version\s*=\s*"([^"]+)".*/\1/')
-if [[ "$CURRENT_PEP440" != "$VERSION_PEP440" ]]; then
-  # On Linux/GNU sed. (macOS needs: sed -i '' ...)
-  sed -i.bak "s/^version = \".*\"/version = \"$VERSION_PEP440\"/" pyproject.toml && rm -f pyproject.toml.bak
-  echo "Committing version bump to $VERSION_TAG..."
-  git add pyproject.toml
-  git commit -m "Bump version to $VERSION_TAG"
-else
-  echo "pyproject.toml already at $VERSION_PEP440 — no commit needed."
-fi
 
 # --- Build package (sdist + wheel)
 echo "Installing build tooling..."
@@ -150,6 +143,33 @@ zip -r release.zip release_bundle/
 # --- Tag and push release
 read -p "Push Git tag $VERSION_TAG and trigger release? (y/n): " CONFIRM
 if [[ $CONFIRM == "y" ]]; then
+  # --- After confirm, bump version and rebuild to match the tag
+  echo "Updating pyproject.toml version to $VERSION_PEP440..."
+  CURRENT_PEP440=$(grep -E '^version\s*=\s*"' pyproject.toml | sed -E 's/^version\s*=\s*"([^"]+)".*/\1/')
+  if [[ "$CURRENT_PEP440" != "$VERSION_PEP440" ]]; then
+    sed -i.bak "s/^version = \".*\"/version = \"$VERSION_PEP440\"/" pyproject.toml && rm -f pyproject.toml.bak
+    echo "Committing version bump to $VERSION_TAG..."
+    git add pyproject.toml
+    git commit -m "Bump version to $VERSION_TAG"
+  else
+    echo "pyproject.toml already at $VERSION_PEP440 — no commit needed."
+  fi
+
+  # rebuild clean artifacts with the bumped version, replace preview bundle
+  rm -rf dist release_bundle release.zip
+  python -m build --sdist --wheel --outdir dist
+  twine check dist/*
+
+  mkdir -p release_bundle
+  mkdir -p release_bundle/notebooks
+  cp dist/* release_bundle/ || true
+  cp README.md api_pipeline/.env.example release_bundle/ || true
+  cp api_pipeline/pshell/phase_1_api_payload.ps1 release_bundle/ || true
+  cp sql_json_query/populate_ssd_api_data_staging_2012.sql release_bundle/ || true
+  cp sql_json_query/populate_ssd_api_data_staging_2016sp1.sql release_bundle/ || true
+  cp -R api_pipeline/notebooks/* release_bundle/notebooks/ || true
+  zip -r release.zip release_bundle/
+
   # Create or update tag to current HEAD
   git tag "$VERSION_TAG" 2>/dev/null || git tag -f "$VERSION_TAG"
   git push origin main
@@ -157,6 +177,7 @@ if [[ $CONFIRM == "y" ]]; then
   echo "Tag $VERSION_TAG pushed. GitHub Actions should build the release."
 else
   echo "Skipped tag push."
+  echo "Note, preview artifacts remain in dist and release.zip reflect the current repository version."
 fi
 
 # --- Summary
