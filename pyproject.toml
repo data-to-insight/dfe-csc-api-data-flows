@@ -3,7 +3,8 @@ name = "csc_api_pipeline"
 version = "0.2.4"
 description = "API payload builder and sender for CSC"
 requires-python = ">=3.10"
-license = "MIT"
+license = { file = "LICENSE" }
+license-files = ["LICENSE*"]
 readme = { file = "api_pipeline/README.md", content-type = "text/markdown" }
 
 keywords = [
@@ -20,12 +21,10 @@ keywords = [
 ]
 
 classifiers = [
-  "Development Status :: 4 - Beta",                  # tbc: 5 - Production/Stable 
-  "Intended Audience :: CSC Performance",
-  "Intended Audience :: Data Transformation",
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Information Technology",
   "Intended Audience :: System Administrators",
-  "Intended Audience :: LA Developers",
-  "License :: OSI Approved :: MIT License",
+  "Intended Audience :: Developers",
   "Natural Language :: English",
 
   "Environment :: Console",
@@ -44,7 +43,6 @@ classifiers = [
 
   "Topic :: Database",
   "Topic :: Database :: Front-Ends",
-  "Topic :: Database :: Database Engines/Servers",
   "Topic :: Utilities"
 ]
 
@@ -74,7 +72,6 @@ Documentation = "https://data-to-insight.github.io/dfe-csc-api-data-flows"
 Source = "https://github.com/data-to-insight/dfe-csc-api-data-flows"
 Issues = "https://github.com/data-to-insight/dfe-csc-api-data-flows/issues"
 
-
 [project.scripts]
 d2i-csc-api = "api_pipeline.entry_point:cli"
 csc-api-pipeline = "api_pipeline.entry_point:cli"
@@ -85,21 +82,16 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 include-package-data = true
-# ensure license text rides inside wheel
-license-files = ["LICENSE*", "LICENSE"]
 
 [tool.setuptools.packages.find]
 include = ["api_pipeline*"]
-# keep any internal helpers like api_pipeline/scripts out of wheel package list
 exclude = ["api_pipeline.scripts*"]
 
-# ship notebooks and PShell files inside wheel
 [tool.setuptools.package-data]
 api_pipeline = [
   "notebooks/**/*",
   "pshell/*.ps1"
 ]
 
-# explicit excludes from wheel payload inside package tree
 [tool.setuptools.exclude-package-data]
 api_pipeline = ["*.env.example", "README.md"]
