@@ -1,16 +1,20 @@
-# Pkg metadata and docs for PyPI
+# Core metadata and docs for PyPI
 include LICENSE
 include README.md
-include MANIFEST.in
 include pyproject.toml
 include api_pipeline/README.md
 include api_pipeline/.env.example
 
-# Keep bytecode and junk out of the sdist
-global-exclude *.py[cod] __pycache__/* .DS_Store *.spec
-global-exclude .ipynb_checkpoints/* *.nbconvert.ipynb
+# General hygiene (keep bytecode and junk out of the sdist)
+global-exclude *.py[cod]
+global-exclude __pycache__/*
+global-exclude .DS_Store
+global-exclude *.spec
+global-exclude .ipynb_checkpoints/*
+global-exclude *.nbconvert.ipynb
+global-exclude .env
 
-# Prune build outputs and CI artefacts
+# Prune build outputs and CI artefacts (repo level)
 prune build
 prune dist
 prune release_bundle
@@ -19,11 +23,13 @@ prune csc_api_pipeline.egg-info
 prune .github
 prune docs
 prune notebooks
+prune scripts          # root scripts helper folder, not shipped
+prune pre_flight_checks
 
-# Dev-only helpers inside the package
+# Dev only helpers inside the package
 prune api_pipeline/scripts
 
-# Include notebooks and PowerShell scripts shipped inside the wheel
+# Package data to ship inside wheel and sdist
 graft api_pipeline/notebooks
 graft api_pipeline/pshell
 
@@ -31,7 +37,7 @@ graft api_pipeline/pshell
 recursive-include sql_json_query *.sql
 prune sql_json_query/dev
 
-# Root-level dev files not needed in sdist
+# Root level dev files not needed in sdist
 exclude mkdocs.yml
 exclude requirements.txt
 exclude pytest.ini

@@ -1,0 +1,3 @@
+# ensure dir not included Git auto generated Source code archive
+
+* export-ignore

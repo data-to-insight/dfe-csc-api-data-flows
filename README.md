@@ -10,22 +10,30 @@
 ![SSD%20Compatible](https://img.shields.io/badge/SSD-Compatible-success)
 ![Automation](https://img.shields.io/badge/Automation-Enabled-informational)
 
-A Python-based tool for submitting structured social care JSON payloads to the DfE Children’s Social Care (CSC) API. Designed to run locally, as a Windows `.exe` or via scheduled job (as part of LA overnight batches).
+A Python and equivellent Powershell(non-delta payloads only) tools for submitting agreed structured JSON payloads to the DfE Children’s Social Care (CSC) API endpoint. Expected to run as scheduled job (as part of LAs existing overnight batches). However release files also offer scope for LA deployment|project teams to fully end-to-end test locally, with only minimal privilleges. 
 
 ---
 
 ## Features
 
-- Extracts data from a SQL Server staging table
+- Extracts data from a SQL Server SSD staging table
 - Generates full or partial JSON payloads based on change detection
 - Authenticates via OAuth2 client credentials flow
 - Submits payloads to an API endpoint with retry and backoff logic
 - Logs responses and updates submission state in SQL
 - Offers `.exe` packaging for offline deployment via PyInstaller
 - Includes CLI tools for test and verification modes
-- Publishes technical documentation using MkDocs with Mermaid and PDF export (via GitHub Actions)
+- Project published help and how-to technical documentation
 
 ---
+
+## Supported platforms and databases
+
+- Python 3.10, 3.11, 3.12
+- Windows and Linux, ODBC required
+- Microsoft SQL Server 2012, and 2016 SP1 compatible
+- Aligns with the Standard Safeguarding Dataset, SSD schema
+
 
 ## Installation
 
@@ -59,6 +67,14 @@ DEBUG=true
 ```
 
 ---
+## Pre flight checks
+
+A separate archive, `pre_flight_checks.zip`, contains:
+- `phase_1_api_credentials_smoke_test.ps1`
+- `ssd_csc_api_schema_checks.sql`
+
+Download, extract, run the smoke test first, then run schema checks against your deployed SSD schema.
+
 
 ## Run API Pipeline
 
@@ -68,7 +84,7 @@ DEBUG=true
 python -m api_pipeline run
 ```
 
-### As an executable (packaged `.exe`):
+### As executable (packaged `.exe`):
 
 ```bash
 csc_api_pipeline.exe
@@ -78,9 +94,9 @@ csc_api_pipeline.exe
 > The executable bundles Python and all required libraries, but it still requires the **Microsoft ODBC Driver for SQL Server** to be installed on your machine. We expect most LA colleagues will have this by default. But if not:   
 > Download and install **ODBC Driver 18 for SQL Server** from the official Microsoft site:  
 > <https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server>  
-> Without this driver, the `.exe` will be unable to connect to your database.
+> Without this driver, the `.exe` won't be able to connect to your database.
 >
-> **Configuration:** Place your `.env` file (based on `.env.example`) in the same folder where you run the `.exe`. The tool will read from the current working directory.
+> **Configuration:** Place your `.env` file (based on `.env.example`) in the same folder where you run the `.exe`. The tool will read from current working directory.
 
 
 ---
@@ -95,7 +111,16 @@ python -m api_pipeline test-db-connection
 python -m api_pipeline test-schema
 ```
 
-From the executable:
+Using the installed CLI (after pip install):
+
+```bash
+d2i-csc-api run
+d2i-csc-api test-endpoint
+d2i-csc-api test-db-connection
+d2i-csc-api test-schema
+```
+
+From the Windows executable:
 
 ```bash
 csc_api_pipeline.exe test-endpoint
@@ -106,6 +131,7 @@ csc_api_pipeline.exe test-schema
 ## CLI Help
 
 ```bash
+d2i-csc-api --help
 csc_api_pipeline.exe --help
 ```
 
@@ -115,6 +141,7 @@ Returns:
 CSC API Pipeline CLI
 
 Usage:
+  d2i-csc-api [command]
   csc_api_pipeline.exe [command]
 
 Commands:
@@ -124,6 +151,8 @@ Commands:
   test-schema     Validate required table structure/schema
 ```
 
+On Windows user installs, ensure your Python scripts directory is on PATH (e.g. %APPDATA%\Python\Python310\Scripts), or call inside a virtual env.
+
 ---
 
 ## Verifying Executable Contents
@@ -132,7 +161,7 @@ To help confirm that downloaded `.exe` is safe and built from the provided Pytho
 
 ### Check the SHA256 Hash
 
-Each file on [GitHub Releases page](https://github.com/data-to-insight/dfe-csc-api_data_flows/releases) includes a `sha256:` hash. After downloading, you can verify file integrity with:
+Each file on [GitHub Releases page](https://github.com/data-to-insight/dfe-csc-api-data-flows/releases) includes a `sha256:` hash. After downloading, you can verify file integrity with:
 
 #### On Windows PowerShell:
 
@@ -153,19 +182,19 @@ Compare this output to hash shown next to `.exe` in the release.
 If needed, you can rebuild the `.exe` yourself from source:
 
 ```bash
-git clone https://github.com/data-to-insight/dfe_csc_api_data_flows.git
+git clone https://github.com/data-to-insight/dfe-csc-api-data-flows.git
 cd dfe_csc_api_data_flows
 pip install -r requirements.txt
 pyinstaller api_pipeline/entry_point.py --onefile --name csc_api_pipeline
 ```
 
-Then compare hash of the new `dist/csc_api_pipeline.exe` with the downloaded one.
+Then compare hash of the new `dist/csc_api_pipeline.exe` with downloaded one.
 
 This ensures full transparency of the release process.
 
 ---
 
-## Documentation
+## (D2I Dev only)Documentation
 
 Documentation is maintained under `docs/` and built via MkDocs
 
@@ -299,7 +328,7 @@ Trigger workflows via pushing a `vX.Y.Z` tag or publishing a Release in GitHub U
 
 ## Badges
 
-![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![Python](https://img.shields.io/badge/python-3.10%E2%80%933.12-blue)
 ![Build](https://github.com/data-to-insight/dfe_csc_api_data_flows/actions/workflows/gh-pages.yml/badge.svg)
 ![License](https://img.shields.io/github/license/data-to-insight/dfe-csc-api-data-flows)
 

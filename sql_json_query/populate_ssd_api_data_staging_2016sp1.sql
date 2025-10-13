@@ -33,7 +33,7 @@ RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 -- D2I offers a <simplified> validation VIEW towards your local data verification checks
 -- This offers pre-process comparison between your data and the DfE API payload schema 
 -- File: ssd_vw_csc_api_schema_checks.sql (SQL Server 2016+)
--- https://github.com/data-to-insight/dfe-csc-api-data-flows/tree/main/sql_json_query/
+-- dfe-csc-api-data-flows/pre_flight_checks/ssd_vw_csc_api_schema_checks.sql
 -- -- 
 
 
