@@ -5,12 +5,12 @@
 
 """
 loc_counter.py
-Counts lines across a project, split by Python, Bash, PowerShell, SQL, YAML, and non-code Markdown lines.
+Counts lines over the project, split by Python, Bash, PowerShell, SQL, YAML, and non-code Markdown lines
 Markdown count excludes fenced code blocks by default.
 Jupyter notebooks are parsed, code cells contribute to Python, markdown cells contribute to Markdown non-code.
-The unique file count accounts for files only once, per bucket file counts are still shown per category.
+The unique file count accounts for files only once, per bucket file counts still shown per category.
 
-Usage examples
+Use e.gs
   python loc_counter.py                      # scan current folder
   python loc_counter.py /path/to/repo        # scan specific root
   python loc_counter.py -e .git venv site    # exclude common folders
