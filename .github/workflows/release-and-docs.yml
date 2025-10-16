@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     tags: ['v*.*.*']
-  # allow manual runs, and optional UI Release publish
+  # manual + UI Release publish
   workflow_dispatch:
     inputs:
       ref:
@@ -29,7 +29,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # build the correct ref for each trigger type
+          # build correct ref for each trigger type
           ref: ${{ inputs.ref != '' && inputs.ref
                   || github.event_name == 'release' && github.event.release.tag_name
                   || github.ref }}
@@ -61,7 +61,7 @@ jobs:
       - name: Check metadata (twine)
         run: twine check dist\*.whl dist\*.tar.gz
 
-      # Build the Windows EXE
+      # Build Windows EXE
       - name: Build EXE with PyInstaller
         run: pyinstaller api_pipeline\entry_point.py --onefile --name csc_api_pipeline --console
 
@@ -106,33 +106,57 @@ jobs:
           Copy-Item dist\csc_api_pipeline.exe -Destination release_bundle\
           Copy-Item README.md -Destination release_bundle\
           Copy-Item api_pipeline\.env.example -Destination release_bundle\
-          # PowerShell scripts (note: pre-flight location-destination)
+          # PowerShell scripts 
           Copy-Item api_pipeline\pshell\phase_1_api_payload.ps1 -Destination release_bundle\
-          Copy-Item pre_flight_checks\phase_1_api_credentials_smoke_test.ps1 -Destination release_bundle\
-          # SQL files, legacy and current (note: pre-flight location-destination)
+          # SQL files, legacy and current 
           Copy-Item sql_json_query\populate_ssd_api_data_staging_2012.sql -Destination release_bundle\
           Copy-Item sql_json_query\populate_ssd_api_data_staging_2016sp1.sql -Destination release_bundle\
-          Copy-Item pre_flight_checks\ssd_vw_csc_api_schema_checks.sql -Destination release_bundle\
           # Notebooks
           Copy-Item api_pipeline\notebooks\* -Destination release_bundle\notebooks\ -Recurse -Force
           Compress-Archive -Path release_bundle\* -DestinationPath release.zip -Force
+
+      - name: Package pre_flight_checks.zip
+        shell: pwsh
+        run: |
+          if (-not (Test-Path pre_flight_checks)) {
+            Write-Error "pre_flight_checks folder not found"
+            exit 1
+          }
+          if (-not (Get-ChildItem pre_flight_checks -File -ErrorAction SilentlyContinue)) {
+            Write-Error "pre_flight_checks is empty"
+            exit 1
+          }
+          Compress-Archive -Path pre_flight_checks\* -DestinationPath pre_flight_checks.zip -Force
+
+
+      - name: Show assets to be uploaded
+        shell: pwsh
+        run: |
+          Write-Host "Zips in repo root and bundle:"
+          Get-ChildItem -Path . -Filter *.zip -File | Format-Table Length, Name
+          Write-Host "Python dists:"
+          Get-ChildItem -Path dist -File | Format-Table Length, Name
+
+        # # parked from published assets list
+        # api_pipeline/pshell/phase_1_api_payload.ps1
+        # pre_flight_checks/phase_1_api_credentials_smoke_test.ps1
+        # sql_json_query/populate_ssd_api_data_staging_2012.sql
+        # sql_json_query/populate_ssd_api_data_staging_2016sp1.sql
+        # pre_flight_checks/ssd_vw_csc_api_schema_checks.sql
+        # README.md
+        # api_pipeline/.env.example
 
       - name: Upload Release Artifacts to Git
         uses: softprops/action-gh-release@v2
         with:
           files: |
+            pre_flight_checks.zip
             dist/csc_api_pipeline.exe
             release.zip
             dist/*.whl
             dist/*.tar.gz
             dist/SHA256SUMS.txt
-            api_pipeline/pshell/phase_1_api_payload.ps1
-            pre_flight_checks/phase_1_api_credentials_smoke_test.ps1
-            sql_json_query/populate_ssd_api_data_staging_2012.sql
-            sql_json_query/populate_ssd_api_data_staging_2016sp1.sql
-            pre_flight_checks/ssd_vw_csc_api_schema_checks.sql
-            README.md
-            api_pipeline/.env.example
+
           fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
