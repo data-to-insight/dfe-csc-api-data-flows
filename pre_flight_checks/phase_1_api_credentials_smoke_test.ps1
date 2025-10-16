@@ -78,7 +78,7 @@ param(
 
 $timeoutSec = $ApiTimeout
 
-$VERSION = '0.3.0'
+$VERSION = '0.4.3' # bumped from 3.0 to align with main script
 Write-Host ("CSC API staging build: v{0}" -f $VERSION)
 
 # ----------- LA DfE Config START -----------
