@@ -1,86 +1,96 @@
 <#
 .SYNOPSIS
-  SSD --> CSC API batch sender (full or deltas) with optional proxy and DB auth modes
+  SSD -> CSC API batch sender (full or deltas) with optional proxy and DB auth modes
 
 .DESCRIPTION
   Pulls pending JSON payloads from SQL Server ($api_data_staging_table), batches and POSTs to CSC endpoint
-  Supports full or deltas(phase 2) payloads, retry with exponential backoff, and optional hard-coded test record
-  Proxy settings (if supplied) are applied to all HTTP calls. Db auth can be Windows Integrated or SQL auth
+  Supports full or deltas payloads, retry with exponential backoff, and optional hard-coded test record
+  Proxy can be passed with -Proxy or taken from $la_proxy when not supplied, and is applied to token and POST
+  .NET DefaultWebProxy is aligned so underlying HTTP clients follow same proxy and credential rules
+  DB auth can be Windows Integrated or SQL auth
 
 .PARAMETER Phase
-  Payload mode: 'full' or 'deltas'. 'deltas' prepares/uses partial_json_payload before sending
+  Payload mode: 'full' or 'deltas'. 'deltas' prepares and uses partial_json_payload before sending
 
 .PARAMETER InternalTest
-  Dry-run; skip real POSTs
+  Dry run; skip real POST
 
 .PARAMETER UseTestRecord
-  Sends single hard-coded fake/Sim record (for connectivity/tests)
+  Sends single hard-coded fake record for connectivity tests and skips DB update
 
 .PARAMETER BatchSize
-  Max records per POST
+  Max records per POST (DfE default is 100)
 
 .PARAMETER ApiTimeout
-  Per-request HTTP timeout in secs
+  Per request HTTP timeout in seconds
 
 .PARAMETER Proxy
   Proxy URI, e.g. http://proxy.myLA.local:8080
+  If omitted and $la_proxy is set, that value used
 
 .PARAMETER ProxyUseDefaultCredentials
-  Use current Windows logon for proxy auth
+  Use current Windows logon for proxy auth when using -Proxy or $la_proxy
 
 .PARAMETER ProxyCredential
-  PSCredential to authenticate to proxy (ignored if -ProxyUseDefaultCredentials is present)
+  PSCredential for proxy auth. Ignored if -ProxyUseDefaultCredentials is present
 
 .PARAMETER UseIntegratedSecurityDbConnection
-  When set, use Windows Integrated Security for SQL. When not set, use SQL auth via -DbUser/-DbPassword
-  (or DB_USER/DB_PASSWORD environment variables)
+  Use Windows Integrated Security for SQL. When not used, SQL auth is taken from -DbUser/-DbPassword
+  or DB_USER/DB_PASSWORD environment variables
 
 .PARAMETER DbUser
-  SQL login (used when -UseIntegratedSecurityDbConnection is NOT set)
+  SQL login used when not using Windows Integrated Security
 
 .PARAMETER DbPassword
-  SQL password (used when -UseIntegratedSecurityDbConnection is NOT set)
+  SQL password used when not using Windows Integrated Security
 
 .NOTES
-  Version: 0.4.2
   Requires: PowerShell 5.1+
-  Retries: up to 3 with exponential backoff (non-retriable: 204, 400, 413)
-  Legacy mappings remain for compatibility: $usePartialPayload, $internalTesting, $useTestRecord, $batchSize, $timeoutSec
-  If both -ProxyUseDefaultCredentials and -ProxyCredential are provided, default credentials take precedence
+  TLS: script forces TLS 1.2
+  Retries: up to 3 with exponential backoff (not retried: 204, 400, 413)
+  Legacy mappings retained: $usePartialPayload, $internalTesting, $useTestRecord, $batchSize, $timeoutSec
+  Proxy defaults: if -Proxy not provided and $la_proxy is set, that proxy is used; if no proxy creds flags are passed, defaults to current Windows logon
 
 .EXAMPLE
-  # # Smallest: use built-in hard-coded record, actually POST to API
-powershell -NoProfile -File .\phase_1_api_payload.ps1 -UseTestRecord -Phase full -BatchSize 1
+  # Smallest: use built-in hard-coded record and POST to API
+  powershell -NoProfile -File .\phase_1_api_payload.ps1 -UseTestRecord -Phase full -BatchSize 1
 
-# With LA proxy using your Windows creds
-powershell -NoProfile -File .\phase_1_api_payload.ps1 -UseTestRecord `
-  -Proxy 'http://proxy.myLA.local:8080' -ProxyUseDefaultCredentials
+.EXAMPLE
+  # With LA proxy using Windows creds
+  powershell -NoProfile -File .\phase_1_api_payload.ps1 -UseTestRecord `
+    -Proxy 'http://proxy.myLA.local:8080' -ProxyUseDefaultCredentials
 
-# With explicit proxy creds
-powershell -NoProfile -File .\phase_1_api_payload.ps1 -UseTestRecord `
-  -Proxy 'http://proxy.myLA.local:8080' -ProxyUseDefaultCredentials:$false `
-  -ProxyCredential (Get-Credential)
+.EXAMPLE
+  # With explicit proxy creds
+  powershell -NoProfile -File .\phase_1_api_payload.ps1 -UseTestRecord `
+    -Proxy 'http://proxy.myLA.local:8080' -ProxyUseDefaultCredentials:$false `
+    -ProxyCredential (Get-Credential)
 
 .EXAMPLE
   # Full send, Windows auth to SQL (no proxy)
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\phase_1_api_payload.ps1 -Phase full -UseIntegratedSecurityDbConnection
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\phase_1_api_payload.ps1 `
+    -Phase full -UseIntegratedSecurityDbConnection
 
 .EXAMPLE
-  # Deltas, SQL auth to DB using env vars, using LA proxy with default creds
+  # Deltas, SQL auth to DB using env vars, with LA proxy and default creds
   $env:DB_USER = "svc_csc"; $env:DB_PASSWORD = "P@ssw0rd!"
   powershell -NoProfile -ExecutionPolicy Bypass -File .\phase_1_api_payload.ps1 `
     -Phase deltas -Proxy http://proxy.myLA.local:8080 -ProxyUseDefaultCredentials
 
 .EXAMPLE
   # Full send with explicit proxy credential and custom timeout
-  $pcred = Get-Credential  # enter DOMAIN\user for proxy
+  $pcred = Get-Credential
   powershell -NoProfile -ExecutionPolicy Bypass -File .\phase_1_api_payload.ps1 `
     -Phase full -Proxy http://proxy.myLA.local:8080 -ProxyCredential $pcred -ApiTimeout 45
 
 .EXAMPLE
   # Dry run with hard-coded test record
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\phase_1_api_payload.ps1 -Phase full -UseTestRecord -InternalTest
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\phase_1_api_payload.ps1 `
+    -Phase full -UseTestRecord -InternalTest
+
+# Save as UTF-8 with BOM in VS Code if non ASCII symbols present
 #>
+
 [CmdletBinding()]
 param(
   [ValidateSet('full','deltas')] [string]$Phase = 'full',  # payload type
@@ -160,7 +170,7 @@ if ($Proxy) {
 }
 # -----------------------------------------------------------------------------
 
-$VERSION = '0.4.3'
+$VERSION = '0.4.4'
 Write-Host ("CSC API staging build: v{0}" -f $VERSION)
 
 # ----------- LA DfE Config START -----------
@@ -252,7 +262,7 @@ try {
     }
     [System.Net.WebRequest]::DefaultWebProxy = $wp
   } else {
-    # No explicit proxy — keep machine-wide defaults but ensure NTLM with current user if creds empty
+    # No explicit proxy - keep machine-wide defaults but ensure NTLM with current user if creds empty
     $def = [System.Net.WebRequest]::DefaultWebProxy
     if ($def -and -not $def.Credentials) {
       $def.Credentials = [System.Net.CredentialCache]::DefaultCredentials
@@ -520,7 +530,7 @@ function Send-ApiBatch {
           $CumulativeDbWriteTime.Value += $dbSw.Elapsed.TotalSeconds
         } else {
           # if we're only using fake hard-coded record, dont attempt db hit
-          W-Info "UseTestRecord set — skipping DB update."
+          W-Info "UseTestRecord set - skipping DB update."
         }
 
       }
