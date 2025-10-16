@@ -86,7 +86,7 @@ jobs:
             "README.md",
             "api_pipeline\.env.example",
             "api_pipeline\pshell\phase_1_api_payload.ps1",
-            "api_pipeline\pshell\phase_1_api_credentials_smoke_test.ps1",
+            "pre_flight_checks\phase_1_api_credentials_smoke_test.ps1",
             "sql_json_query\populate_ssd_api_data_staging_2012.sql",
             "sql_json_query\populate_ssd_api_data_staging_2016sp1.sql",
             "pre_flight_checks\ssd_vw_csc_api_schema_checks.sql"
