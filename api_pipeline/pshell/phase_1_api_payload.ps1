@@ -111,8 +111,8 @@ if (-not $PSBoundParameters.ContainsKey('UseTestRecord'))                     { 
 
 ## Quick matrix for HTTP proxy flag use as kinda messy:
 ## Proxy=$null, ProxyUseDefaultCredentials=$true --> System proxy + default creds (or direct if none)
-## Proxy='http://p:8080', ProxyUseDefaultCredentials=$true --> That proxy + default creds
-## Proxy='http://p:8080', ProxyUseDefaultCredentials=$false, ProxyCredential=...--> That proxy + supplied creds
+## Proxy='http://proxy.myLA.local:8080', ProxyUseDefaultCredentials=$true --> That proxy + default creds
+## Proxy='http://proxy.myLA.local:8080', ProxyUseDefaultCredentials=$false, ProxyCredential=...--> That proxy + supplied creds
 ## So: null + true = use whatever proxy machine already has, and auth with my Windows creds if needed
 if (-not $PSBoundParameters.ContainsKey('Proxy'))                             { $Proxy = $null }       # e.g. 'http://proxy.myLA.local:8080' but $null==not forcing specific proxy URI/web cmdlets use OS/.NET system proxy(WinINET/WinHTTP/PAC) if one configured; otherwise go direct
 if (-not $PSBoundParameters.ContainsKey('ProxyUseDefaultCredentials'))        { $ProxyUseDefaultCredentials = $false } # cmdlets will send current users Win creds to proxy when challenged
@@ -160,26 +160,30 @@ if ($Proxy) {
 }
 # -----------------------------------------------------------------------------
 
-$VERSION = '0.4.2'
+$VERSION = '0.4.3'
 Write-Host ("CSC API staging build: v{0}" -f $VERSION)
 
-# ----------- LA Config START -----------
+# ----------- LA DfE Config START -----------
+# REQUIRED, replace the details in quotes below with your LA's credentials as supplied by DfE
+# from https://pp-find-and-use-an-api.education.gov.uk/ (once logged in), transfer the following details into the quotes:
 
-# Replace details in quotes below with your LA's credentials as supplied by DfE
-# from https://pp-find-and-use-an-api.education.gov.uk/ (log in)
-
-$la_code         = "000" # Change to your 3 digit LA code
-$api_endpoint   = "https://pp-api.education.gov.uk/children-in-social-care-data-receiver-test/1" 
-
+$api_endpoint = "https://pp-api.education.gov.uk/children-in-social-care-data-receiver-test/1" # 'Base URL' - Shouldn't need to change
 
 # From the 'Native OAuth Application-flow' block
-$client_id       = "OAUTH_CLIENT_ID_CODE" # 'OAuth Client ID'
-$client_secret   = "NATIVE_OAUTH_PRIMARY_KEY_CODE"  # 'Native OAuth Application-flow' - 'Primary key' or 'Secondary key'
-$scope           = "OAUTH_SCOPE_LINK" # 'OAuth Scope'
-$token_endpoint  = "OAUTH_TOKEN_ENDPOINT" # From the 'Native OAuth Application-flow' block - 'OAuth token endpoint'
+$client_id       = "OAUTH_CLIENT_ID_CODE"                # 'OAuth Client ID'
+$client_secret   = "NATIVE_OAUTH_PRIMARY_KEY_CODE"       # 'Native OAuth Application-flow' - 'Primary key' or 'Secondary key'
+$scope           = "OAUTH_SCOPE_LINK"                    # 'OAuth Scope'
+$token_endpoint  = "OAUTH_TOKEN_ENDPOINT"                # From the 'Native OAuth Application-flow' block - 'OAuth token endpoint'
 
 # From 'subscription key' block
-$supplier_key    = "SUBSCRIPTION_PRIMARY_KEY_CODE" # From the 'subscription key' block - 'Primary key' or 'Secondary key'
+$supplier_key    = "SUBSCRIPTION_PRIMARY_KEY_CODE"       # From the 'subscription key' block - 'Primary key' or 'Secondary key'
+# ----------- LA DfE Config END -----------
+
+
+# ----------- LA Internal Config START -----------
+$la_code         = "000" # Change to your 3 digit LA code(within quotes)
+$la_proxy = $null # LA default proxy ($null or '' disables, or http://proxy.myLA.local:8080)
+# ----------- LA Internal Config END -----------
 
 
 # Internal settings
@@ -221,6 +225,42 @@ $api_data_staging_table = "ssd_api_data_staging_anon"  # live: ssd_api_data_stag
 
 # tls
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+# ---- Proxy auto-defaults + align .NET default proxy ---- 
+# uses # $la_proxy optional set in config above
+
+# Default proxy IF caller did not pass -Proxy (lets you keep a friendly $la_proxy up top)
+if (-not $PSBoundParameters.ContainsKey('Proxy') -or [string]::IsNullOrWhiteSpace($Proxy)) {
+  if ($la_proxy) { $Proxy = $la_proxy } # Pass -Proxy at run time to override anything set in $la_proxy
+}
+
+# Default to current Windows logon for NTLM IF caller did not choose a creds mode
+if ($Proxy -and -not $PSBoundParameters.ContainsKey('ProxyUseDefaultCredentials') -and -not $PSBoundParameters.ContainsKey('ProxyCredential')) {
+  $ProxyUseDefaultCredentials = $true
+}
+
+# Align .NET's DefaultWebProxy so HTTP calls not passing -Proxy still use same settings
+try {
+  if ($Proxy) {
+    # Use explicit proxy (or default above) for all .NET web requests also
+    $wp = New-Object System.Net.WebProxy($Proxy, $true)  # $true = bypass local
+    if ($ProxyUseDefaultCredentials) {
+      $wp.Credentials = [System.Net.CredentialCache]::DefaultCredentials
+    } elseif ($ProxyCredential) {
+      # IMPORTANT: convert PSCredential to NetworkCredential for WebProxy
+      $wp.Credentials = $ProxyCredential.GetNetworkCredential()
+    }
+    [System.Net.WebRequest]::DefaultWebProxy = $wp
+  } else {
+    # No explicit proxy — keep machine-wide defaults but ensure NTLM with current user if creds empty
+    $def = [System.Net.WebRequest]::DefaultWebProxy
+    if ($def -and -not $def.Credentials) {
+      $def.Credentials = [System.Net.CredentialCache]::DefaultCredentials
+    }
+  }
+} catch { }
+# -----------------------------------------------------------------------------------------------
+
 
 # log helpers
 function W-Info($m){ Write-Host $m -ForegroundColor Gray }
