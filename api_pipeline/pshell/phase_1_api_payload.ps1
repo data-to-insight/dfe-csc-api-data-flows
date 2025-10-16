@@ -649,33 +649,35 @@ AND LTRIM(RTRIM(json_payload)) `<>` '';
 }
 
 function Get-HardcodedTestRecord {
-  # test api process with hard-coded minimal single fake record
-  $jsonString = @'
-    {
-      "la_child_id": "Fake1234",
-      "mis_child_id": "MISFake1234",
-      "child_details": {
-        "unique_pupil_number": "X5GLGl9mWSNjM",
-        "former_unique_pupil_number": "DEF0123456789",
-        "unique_pupil_number_unknown_reason": "UN1",
-        "first_name": "John",
-        "surname": "Doe",
-        "date_of_birth": "2022-06-14",
-        "expected_date_of_birth": "2022-06-14",
-        "sex": "M",
-        "ethnicity": "WBRI",
-        "disabilities": ["HAND", "VIS"],
-        "postcode": "AB12 3DE",
-        "uasc_flag": true,
-        "uasc_end_date": "2022-06-14",
-        "purge": false
-      },
-      "purge": false
+  # test api process with single minimal fake record
+  # la_code is zero-padded then used to suffix IDs so each LA is unique
+  $la_code_str = ('{0:D3}' -f [int]$la_code)
+  $childId     = "Fake1234$la_code_str"
+  $misId       = "MIS$la_code_str"
+
+  # minimal payload
+  $payload = [ordered]@{
+    la_child_id  = $childId
+    mis_child_id = $misId
+    child_details = [ordered]@{
+      unique_pupil_number = "A123456789012"
+      first_name          = "John"
+      surname             = "Doe"
+      date_of_birth       = "2022-06-14"
+      sex                 = "M"
+      ethnicity           = "WBRI"
+      postcode            = "AB12 3DE"
+      purge               = $false
     }
-'@
-  $parsedJson = $jsonString | ConvertFrom-Json -ErrorAction Stop
-  W-Info ("test rec keys: {0}" -f ($parsedJson.PSObject.Properties.Name -join ', '))
-  return ,@([PSCustomObject]@{ person_id = "f96f473f1feb4d6da3379d06670844fd"; json = $parsedJson })
+    purge = $false
+  }
+
+  # normalise to PSCustomObject
+  $jsonObj = ($payload | ConvertTo-Json -Depth 10 -Compress) | ConvertFrom-Json -ErrorAction Stop
+
+  W-Info ("test rec keys: {0}" -f ($jsonObj.PSObject.Properties.Name -join ', '))
+  # return array of {person_id,json} 
+  ,@([PSCustomObject]@{ person_id = $childId; json = $jsonObj })
 }
 
 function ConvertTo-CorrectJson {
