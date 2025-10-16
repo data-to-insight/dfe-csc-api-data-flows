@@ -40,24 +40,24 @@
   # Use explicit proxy with current Windows credentials
   powershell.exe -NoProfile -ExecutionPolicy Bypass `
     -File .\phase_1_api_credentials_smoke_test.ps1 `
-    -Proxy http://proxy.myorg.local:8080 -ProxyUseDefaultCredentials
+    -Proxy http://proxy.myLA.local:8080 -ProxyUseDefaultCredentials
 
   # Use explicit proxy with interactive credentials (prompts once)
   powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
     "& { $cred = Get-Credential; `
          .\phase_1_api_credentials_smoke_test.ps1 `
-           -Proxy http://proxy.myorg.local:8080 -ProxyCredential $cred }"
+           -Proxy http://proxy.myLA.local:8080 -ProxyCredential $cred }"
 
   # Use explicit proxy with non-interactive credentials
   powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
     "& { $sec = ConvertTo-SecureString 'P@ssw0rd!' -AsPlainText -Force; `
          $cred = New-Object System.Management.Automation.PSCredential('MYDOMAIN\jdoe',$sec); `
          .\phase_1_api_credentials_smoke_test.ps1 `
-           -Proxy http://proxy.myorg.local:8080 -ProxyCredential $cred }"
+           -Proxy http://proxy.myLA.local:8080 -ProxyCredential $cred }"
 
   # PowerShell 7+ (pwsh) example with proxy + custom timeout
   pwsh -NoProfile -File ./phase_1_api_credentials_smoke_test.ps1 `
-    -Proxy http://proxy.myorg.local:8080 -ProxyUseDefaultCredentials -ApiTimeout 45
+    -Proxy http://proxy.myLA.local:8080 -ProxyUseDefaultCredentials -ApiTimeout 45
 
   # Tip: If your org sets system/WinINET proxy (PAC or manual), script also
   # detects via .NET DefaultWebProxy for diagnostics. Passing -Proxy makes 
@@ -81,7 +81,7 @@ $timeoutSec = $ApiTimeout
 $VERSION = '0.3.0'
 Write-Host ("CSC API staging build: v{0}" -f $VERSION)
 
-# ----------- LA Config START -----------
+# ----------- LA DfE Config START -----------
 # REQUIRED, replace the details in quotes below with your LA's credentials as supplied by DfE
 # from https://pp-find-and-use-an-api.education.gov.uk/ (once logged in), transfer the following details into the quotes:
 
@@ -95,9 +95,15 @@ $token_endpoint  = "OAUTH_TOKEN_ENDPOINT"                # From the 'Native OAut
 
 # From 'subscription key' block
 $supplier_key    = "SUBSCRIPTION_PRIMARY_KEY_CODE"       # From the 'subscription key' block - 'Primary key' or 'Secondary key'
+# ----------- LA DfE Config END -----------
 
+
+# ----------- LA Internal Config START -----------
 $la_code         = "000" # Change to your 3 digit LA code(within quotes)
-# ----------- LA Config END -----------
+$la_proxy = $null # LA default proxy ($null or '' disables)
+# ----------- LA Internal Config END -----------
+
+
 
 
 # ----------- Config OVERIDE -----------
@@ -124,19 +130,55 @@ Write-Host "### Script Execution Started: $scriptStartTimeStamp ###" -Foreground
 Write-Host "#####################################################" -ForegroundColor Gray
 
 # PS5 TLS
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-[System.Net.ServicePointManager]::Expect100Continue = $false
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 # force TLS 1.2 for AAD and API
+[System.Net.ServicePointManager]::Expect100Continue = $false # avoid extra round trip on POST
 
-# ----------- Build a proxy splat (used everywhere) -----------
-# If -Proxy is supplied but no creds flags provided, default to -ProxyUseDefaultCredentials.
+
+# ---- Proxy auto-defaults + align .NET default proxy ---- 
+
+# Default proxy IF caller did not pass -Proxy
+if (-not $PSBoundParameters.ContainsKey('Proxy') -or [string]::IsNullOrWhiteSpace($Proxy)) {
+  if ($la_proxy) { $Proxy = $la_proxy } # Pass -Proxy at run time to override anything set in $la_proxy
+}
+# Default to current Windows logon for NTLM IF caller didnt choose a creds mode
+if ($Proxy -and -not $PSBoundParameters.ContainsKey('ProxyUseDefaultCredentials') -and -not $PSBoundParameters.ContainsKey('ProxyCredential')) {
+  $ProxyUseDefaultCredentials = $true
+}
+
+# Align .NET's DefaultWebProxy so any HTTP calls not passing -Proxy still use same settings
+try {
+  if ($Proxy) {
+    # Use explicit proxy (or default above) for all .NET web requests also
+    $wp = New-Object System.Net.WebProxy($Proxy, $true)
+    if ($ProxyUseDefaultCredentials) {
+      $wp.Credentials = [System.Net.CredentialCache]::DefaultCredentials
+    } elseif ($ProxyCredential) {
+      # IMPORTANT: convert PSCredential to NetworkCredential for WebProxy
+      $wp.Credentials = $ProxyCredential.GetNetworkCredential()
+    }
+    [System.Net.WebRequest]::DefaultWebProxy = $wp
+  } else {
+    # No explicit proxy- keep machine-wide defaults but force NTLM with current user IF creds are empty
+    $def = [System.Net.WebRequest]::DefaultWebProxy
+    if ($def -and -not $def.Credentials) {
+      $def.Credentials = [System.Net.CredentialCache]::DefaultCredentials
+    }
+  }
+} catch { }
+# -----------------------------------------------------------------------------------------------
+
+
+
+# ----------- Build proxy splat -----------
+# If -Proxy supplied but no creds flags, default to -ProxyUseDefaultCredentials.
 $ProxyArgs = @{}
-if ($PSBoundParameters.ContainsKey('Proxy') -and $Proxy) {
+if ($Proxy) {
   $ProxyArgs['Proxy'] = $Proxy
 
   if ($ProxyCredential) {
     $ProxyArgs['ProxyCredential'] = $ProxyCredential
   } elseif ($ProxyUseDefaultCredentials -or -not $PSBoundParameters.ContainsKey('ProxyUseDefaultCredentials')) {
-    # default to machine creds when no explicit choice was made
+    # default to machine creds when no explicit choice made
     $ProxyArgs['ProxyUseDefaultCredentials'] = $true
   }
   Write-Host ("Proxy enabled: {0}  (DefaultCreds={1}, ExplicitCreds={2})" -f `
@@ -144,6 +186,7 @@ if ($PSBoundParameters.ContainsKey('Proxy') -and $Proxy) {
 } else {
   Write-Host "Proxy disabled (no -Proxy provided)." -ForegroundColor DarkGray
 }
+
 
 # ----------- Utils -----------
 function Describe-Code([int]$c) {
