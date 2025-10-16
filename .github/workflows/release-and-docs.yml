@@ -65,8 +65,19 @@ jobs:
       - name: Build EXE with PyInstaller
         run: pyinstaller api_pipeline\entry_point.py --onefile --name csc_api_pipeline --console
 
-      - name: Smoke test EXE (--help)
-        run: dist\csc_api_pipeline.exe --help
+      - name: CLI smoke test EXE on Git runner with --help
+        shell: pwsh
+        run: |
+          $p = 'dist\csc_api_pipeline.exe'
+          if (-not (Test-Path $p)) { Write-Error "exe not found at $p"; exit 1 }
+          $out = & $p --help 2>&1
+          $code = $LASTEXITCODE
+          Write-Host $out
+          if ($code -ne 0) { Write-Error "non zero exit $code"; exit $code }
+          if ($out -notmatch '(Usage|CSC API Pipeline|Commands:)' ) {
+            Write-Error "help text missing expected markers"
+            exit 1
+          }
 
       - name: Generate SHA256 checksums
         shell: pwsh
@@ -98,12 +109,14 @@ jobs:
             exit 1
           }
 
+      # # parked assets from release bundle
+      # Copy-Item dist\csc_api_pipeline.exe -Destination release_bundle\
       - name: Assemble release bundle
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path release_bundle | Out-Null
           New-Item -ItemType Directory -Path release_bundle\notebooks | Out-Null
-          Copy-Item dist\csc_api_pipeline.exe -Destination release_bundle\
+
           Copy-Item README.md -Destination release_bundle\
           Copy-Item api_pipeline\.env.example -Destination release_bundle\
           # PowerShell scripts 
