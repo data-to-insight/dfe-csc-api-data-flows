@@ -1,53 +1,61 @@
 <#
 .SYNOPSIS
-  CSC API smoke test, AAD v2 client credentials, token and POST sender
+  CSC API smoke test using AAD v2 client credentials to fetch token then POST minimal JSON payload
 
 .DESCRIPTION
-  Single token call (AAD v2 client credentials) and one POST of a minimal
-  JSON payload to CSC endpoint. Plug your LA values into labelled
-  Config block. Prints AAD errors when token fails plus connectivity diagnostics
+  Runs one token request and one POST of a small array payload to the CSC endpoint
+  Plug LA values into the Config block
+  If -Proxy is not supplied and $la_proxy is set, that proxy is used
+  Proxy is applied to token and POST calls and .NET DefaultWebProxy is aligned so underlying HTTP honours same settings
+  Prints HTTP status, request id, short payload preview and optional connectivity diagnostics
 
 .PARAMETER ApiTimeout
-  Per-call timeout in seconds for both token request and POST (default 30, 5–120)
+  Per call timeout in seconds for token request and POST (default 30, range 5-120)
 
 .PARAMETER Proxy
-  Optional HTTP proxy URL (e.g. http://proxy.myorg.local:8080). Applied to both
-  token and POST calls
+  Optional HTTP proxy URL (e.g. http://proxy.myLA.local:8080)
+  If omitted and $la_proxy is set, that value is used
 
 .PARAMETER ProxyUseDefaultCredentials
-  If specified, use current Windows logon (default credentials) for proxy auth
+  Use current Windows logon for proxy authentication
+  Defaults to true when a proxy is used and no credential flags are provided
 
 .PARAMETER ProxyCredential
-  Optional PSCredential for proxy auth. If provided, overrides
-  -ProxyUseDefaultCredentials.
+  Optional PSCredential for proxy authentication
+  Overrides -ProxyUseDefaultCredentials when provided
 
 .NOTES
-  File   : phase_1_api_credentials_smoke_test.ps1
-  Author : D2I
-  Date   : 08/10/2025
+  File    : phase_1_api_credentials_smoke_test.ps1
+  Author  : D2I
+  Date    : 16/10/2025
+  TLS     : script forces TLS 1.2
+  Proxy   : if -Proxy not provided and $la_proxy is set, it is used; if no creds flags passed, defaults to Windows logon
+  Encoding: save as UTF-8 with BOM if you see non ASCII characters
 
-.EXAMPLES
-  Guidance if running this as CLI
-
+.EXAMPLE
   # Direct (no proxy), default timeout
   powershell.exe -NoProfile -ExecutionPolicy Bypass `
     -File .\phase_1_api_credentials_smoke_test.ps1
 
+.EXAMPLE
   # Direct with custom timeout (60s)
   powershell.exe -NoProfile -ExecutionPolicy Bypass `
     -File .\phase_1_api_credentials_smoke_test.ps1 -ApiTimeout 60
 
+.EXAMPLE
   # Use explicit proxy with current Windows credentials
   powershell.exe -NoProfile -ExecutionPolicy Bypass `
     -File .\phase_1_api_credentials_smoke_test.ps1 `
     -Proxy http://proxy.myLA.local:8080 -ProxyUseDefaultCredentials
 
+.EXAMPLE
   # Use explicit proxy with interactive credentials (prompts once)
   powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
     "& { $cred = Get-Credential; `
          .\phase_1_api_credentials_smoke_test.ps1 `
            -Proxy http://proxy.myLA.local:8080 -ProxyCredential $cred }"
 
+.EXAMPLE
   # Use explicit proxy with non-interactive credentials
   powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
     "& { $sec = ConvertTo-SecureString 'P@ssw0rd!' -AsPlainText -Force; `
@@ -55,16 +63,15 @@
          .\phase_1_api_credentials_smoke_test.ps1 `
            -Proxy http://proxy.myLA.local:8080 -ProxyCredential $cred }"
 
-  # PowerShell 7+ (pwsh) example with proxy + custom timeout
+.EXAMPLE
+  # PowerShell 7+ (pwsh) with proxy and custom timeout
   pwsh -NoProfile -File ./phase_1_api_credentials_smoke_test.ps1 `
     -Proxy http://proxy.myLA.local:8080 -ProxyUseDefaultCredentials -ApiTimeout 45
 
-  # Tip: If your org sets system/WinINET proxy (PAC or manual), script also
-  # detects via .NET DefaultWebProxy for diagnostics. Passing -Proxy makes 
-  # proxy explicit for both token and POST calls.
-
-  # LA feedback welcomed! 
+# If your org sets a system proxy (PAC or manual), the script records .NET DefaultWebProxy in diagnostics
+# Passing -Proxy makes proxy explicit for both token and POST calls
 #>
+
 
 [CmdletBinding()]
 param(
@@ -78,7 +85,7 @@ param(
 
 $timeoutSec = $ApiTimeout
 
-$VERSION = '0.4.3' # bumped from 3.0 to align with main script
+$VERSION = '0.4.4' # bumped from 3.0 to align with main script
 Write-Host ("CSC API staging build: v{0}" -f $VERSION)
 
 # ----------- LA DfE Config START -----------
@@ -196,17 +203,18 @@ function Describe-Code([int]$c) {
     401 { "Invalid token (401 Unauthorised)" }
     403 { "Forbidden / access disallowed (403)" }
     405 { "Method not allowed (405)" }
-    408 { "Request timeout (408) — network/WAF/proxy" }
+    408 { "Request timeout (408) - network/WAF/proxy" }
     413 { "Payload too large (413)" }
     415 { "Unsupported media type (415)" }
     429 { "Rate limited (429)" }
     500 { "Internal server error (500)" }
-    502 { "Bad gateway (502) — upstream proxy/gateway" }
+    502 { "Bad gateway (502) - upstream proxy/gateway" }
     503 { "Service unavailable (503)" }
-    504 { "Gateway timeout (504) — upstream path issue" }
+    504 { "Gateway timeout (504) - upstream path issue" }
     default { try { ([System.Net.HttpStatusCode]$c).ToString() } catch { "Other/Unexpected ($c)" } }
   }
 }
+
 
 function Describe-WebExceptionStatus($status) {
   switch ($status) {
@@ -229,10 +237,14 @@ function Get-OAuthToken {
     [string]$TokenUrl, [string]$ClientId, [string]$ClientSecret, [string]$Scope,
     [hashtable]$ProxyArgs
   )
-  $form = "client_id=$([uri]::EscapeDataString($ClientId))" +
-          "&client_secret=$([uri]::EscapeDataString($ClientSecret))" +
-          "&scope=$([uri]::EscapeDataString($Scope))" +
-          "&grant_type=client_credentials"
+
+  # PowerShell form-encode hashtable
+  $form = @{
+    client_id     = $ClientId
+    client_secret = $ClientSecret
+    scope         = $Scope
+    grant_type    = 'client_credentials'
+  }
 
   $sw = [System.Diagnostics.Stopwatch]::StartNew()
   try {
@@ -303,7 +315,10 @@ function Get-ConnectivityDiagnostics {
     $winhttp = (netsh winhttp show proxy) 2>$null
     if ($winhttp) {
       $line = ($winhttp -split "`r?`n" | Select-String -Pattern 'Direct access|Proxy Server').Line
-      if ($line) { $info.ProxyWinHttp = ($line -join " | "); _p ("Proxy : {0}" -f $info.ProxyWinHttp) }
+      if ($line) {
+        $info.ProxyWinHttp = ($line -join " | ")
+        _p ("Proxy : {0}" -f $info.ProxyWinHttp)
+      }
     }
   } catch {}
 
