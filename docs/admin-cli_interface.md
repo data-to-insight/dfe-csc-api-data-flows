@@ -1,6 +1,6 @@
 
 
-# Admin – CLI Interface
+# D2I Admin - CLI Interface
 
 !!! info "Scope & Audience"
     This page documents the **command‑line interface (CLI)** for the `api_pipeline` package and the bundled `.exe`.  

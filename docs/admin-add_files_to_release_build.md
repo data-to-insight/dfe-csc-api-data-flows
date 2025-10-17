@@ -1,4 +1,5 @@
-# Release change checklist, adding or renaming shipped files
+# D2I Admin - Release change checklist
+## adding or renaming shipped files
 
 This guide describes how to include **new files** in your release outputs, and what to change when you **rename or move** files that are already shipped. It covers, in order, the **wheel**, **sdist**, **release.zip**, and the **CI workflows**. UK spelling, minimal ceremony, forward‑looking.
 
