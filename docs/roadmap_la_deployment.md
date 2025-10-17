@@ -37,7 +37,7 @@ Last updated: 18/09/25
 **Entry criteria**  
 ✅ Access, permissions, tech stack and approvals confirmed/agreement initiated  
 ✅ Target DB for SSD schema and credentials agreed  
-✅ Your LA is welcome to download, review scripts and test deploy the SSD before the project even starts
+✅ Your LA is welcome to download, review scripts and test deploy the SSD before the project even starts  
 ✅ Server deployment window pencilled with IT/Server team
 
 ---
