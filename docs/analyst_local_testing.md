@@ -12,9 +12,9 @@ This page is a concise run‑sheet for analysts to validate connectivity and the
 
 ---
 
-## Notebook Route
+## Jupyter Notebook route
 
-### Zero‑install “Folder‑only” Notebook Run
+### Zero‑install 'Folder‑only' Notebook run
 
 If you’re **less comfortable with `pip`/environments**, you can do a simple, contained, folder‑only run that many analysts find easier:
 

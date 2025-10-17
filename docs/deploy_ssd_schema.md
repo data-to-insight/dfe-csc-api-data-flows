@@ -7,8 +7,8 @@ Ensure that the [minimum system requirements](system_requirements.md) are alread
 ## SSD : Overview
 
 A more complete overview of the SSD schema is available [SSD documentation](https://data-to-insight.github.io/ssd-data-model), note that **we are in the process of porting to a [new SSD front-end and site](https://data-to-insight.github.io/ssd-data-model-next/)** that some might find easier to navigate.
-The SSD is deployed using 1+ SQL scripts, which create and populate a new schema of approx 45 tables within your existing CMS database. The script(s) require no elevated privilledges, is non-destructive and can be run against the database by anyone with SELECT/CREATE permissions.   
-This new schema acts as a standardised middleware between your CMS and other possible services or common LA reporting; including the potential for the DfE API into the Private Dashboard. 
+DEpending on your CMS type, the SSD is deployed using 1+ SQL scripts; which create and populate a new schema of approx 45 tables within sight of your existing CMS database. The script(s) require no elevated priviledges, are non-destructive and can be run against the database by anyone with SELECT/CREATE permissions.   
+This new SSD schema acts as a standardised middleware between your CMS and other possible services or common LA reporting; including the potential for the DfE API feeding into the Private Dashboard. 
 
 ---
 
@@ -18,7 +18,7 @@ This new schema acts as a standardised middleware between your CMS and other pos
 
  - SSD deployment script(s) are supplied for your CMS type from the [SSD distribution repo] (https://github.com/data-to-insight/ssd-data-model/tree/main/deployment_extracts). Depending on CMS type, the SSD deployment may/may not require localised configuration. 
  - Deployment can use any SQL client with connection to your CMS DB reporting instance e.g. SQL Server Management Studio|Azure Data Studio.
- - If anything fails during the SSD setup, it should be recorded and returned to D2I for support and the needed bespoke script configuration.
+ - If anything fails during the SSD setup, it should be [logged with D2I][((https://github.com/data-to-insight/dfe-csc-api-data-flows/issues) for support and any potential bespoke script configuration.
  - See below for initial deployment steps for your particular CMS type. 
 
 **Deploy ssd_api_data_staging table**:
@@ -30,6 +30,7 @@ This new schema acts as a standardised middleware between your CMS and other pos
 ## Log SSD/API support tickets  
 
  - **Phase1 & Phase 2 LAs/deployment teams should [Log deployment bugs, required changes or running issues via](https://github.com/data-to-insight/dfe-csc-api-data-flows/issues) - the basic/free Github account may be required for this**  
+
  - **LA colleagues are also encouraged to send the project your [general feedback, or your deployment requirements](https://forms.gle/rHTs5qJn8t6h6tQF8)**  
 
 ---
