@@ -1,7 +1,6 @@
-# CSC API Pipeline – Release Process Guide
+# D2I Admin - CSC API Pipeline - Release Process Guide
 
-Infos regarding the build and release process for CSC API Pipeline project, including the needed process for prepping a new release  
-so that anyone in D2I team can manage releases. 
+Infos for the D2I team regarding the build and release process for CSC API Pipeline project, including the needed process for prepping a new release so that anyone in D2I team can manage releases. 
 
 ---
 

@@ -1,15 +1,15 @@
 
-# Enable Proxy Support in PowerShell API Scripts (PS 5.1)
+# D2I Admin - Proxy Support in PowerShell API Scripts (PS 5.1)
 
-How to/notes towards adding **optional** corporate proxy support to both **main** and **smoke-test** CSC API scripts.
+How to/notes towards adding **optional** LA proxy support to both **main** and **smoke-test** CSC API scripts.
 
-Keeps behaviour unchanged when no proxy is supplied, but lets LAs that require an explicit proxy (proxy auth) pass those details. Most likely i will be implementing this, but in the short term these notes provided in case LAs need them directly. 
+Keeps behaviour unchanged when no proxy is supplied, but lets LAs that require an explicit proxy (proxy auth) pass those details.  
 
 ---
 
 ## Why this may be needed 
 
-- **Explicit proxies with auth**: Many organisations require outbound HTTPS to go via a proxy (often NTLM/Kerberos). Without `-Proxy` + creds you can hit `407` or timeouts before token/API call.
+- **Explicit proxies with auth**: Many LAs require outbound HTTPS to go via a proxy (often NTLM/Kerberos). Without `-Proxy` + creds you can hit `407` or timeouts before token/API call.
 - **Transparent/WPAD/allowlists**: Other environments do one of:
   - *Transparent proxying* — no client config needed
   - *WPAD/PAC or machine WinHTTP proxy* — .NET/PowerShell already knows proxy
@@ -42,7 +42,7 @@ param(
   [int]$ApiTimeout = 30,
 
   # proxy (optional)
-  [string]$Proxy,                    # e.g. http://proxy.company.local:8080
+  [string]$Proxy,                    # e.g. http://proxy.myLA.local:8080
   [switch]$ProxyUseDefaultCreds,     # use current logon creds
   [pscredential]$ProxyCredential     # or pass explicit creds
 )
@@ -208,7 +208,7 @@ Send-ApiBatch -batch $batchSlice `
 ### Use proxy with current Windows logon (NTLM/Kerberos)
 ```powershell
 .\phase_1_api_payload.ps1 -Phase full `
-  -Proxy "http://proxy.company.local:8080" `
+  -Proxy "http://proxy.myLA.local:8080" `
   -ProxyUseDefaultCreds
 ```
 
@@ -216,7 +216,7 @@ Send-ApiBatch -batch $batchSlice `
 ```powershell
 $cred = Get-Credential  # DOMAIN\user + password
 .\phase_1_api_payload.ps1 -Phase deltas `
-  -Proxy "http://proxy.company.local:8080" `
+  -Proxy "http://proxy.myLA.local:8080" `
   -ProxyCredential $cred
 ```
 
