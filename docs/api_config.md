@@ -1,4 +1,4 @@
-# API Configuration (Shared Reference)
+# API Configuration
 
 Use this page as the single source of truth for configuration, regardless of whether running **PowerShell** or **Python** implementations.
 
@@ -64,7 +64,7 @@ $supplierKey   = "..."            # If required
 
 ## Table/Schema Expectations
 
-Your SSD deployment should include the **staging** table that the API pipeline reads and updates:
+Your SSD deployment should include the **api_data_staging** table that the API pipeline reads and updates. The SQL to deploy and populate this table is within the release files bundle:
 
 - `ssd_api_data_staging` (live)  
 - `ssd_api_data_staging_anon` (safe development/testing copy)
