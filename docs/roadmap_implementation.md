@@ -1,4 +1,4 @@
-# D2I DEV (non-prod workbench)
+# D2I Admin - DEV (non-prod workbench)
 
 ## D2I Development Plan Overview
 
