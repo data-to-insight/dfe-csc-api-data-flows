@@ -48,7 +48,7 @@ nav:
       - Implementation Roadmap: roadmap_implementation.md
       # - Feature Backlog: feature_backlog.md
 
-  - 🟧 Admin:
+  - 🟧 D2I Admin:
       - Release Process: admin-release_process.md
       - Actions Workflows: admin-actions_workflow_overview.md
       - CLI Interface: admin-cli_interface.md
