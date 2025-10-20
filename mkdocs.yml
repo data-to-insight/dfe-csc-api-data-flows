@@ -1,6 +1,5 @@
 site_name: "CSC SSD API Dataflow"
 site_url: "https://data-to-insight.github.io/csc_api_data_collection/"
-site_author: " "  
 
 theme:
   name: material # installed themes are: material, mkdocs, readthedocs
@@ -44,7 +43,7 @@ nav:
 
   # - Stakeholders: stakeholders.md
 
-  - 🟧 Development:
+  - 🟧 D2I Development:
       - Implementation Roadmap: roadmap_implementation.md
       # - Feature Backlog: feature_backlog.md
 
