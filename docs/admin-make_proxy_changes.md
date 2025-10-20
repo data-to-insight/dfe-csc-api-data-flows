@@ -1,11 +1,9 @@
 
-# D2I Admin - Proxy Support in PowerShell API Scripts (PS 5.1)
-
-# Proxy Support in PowerShell API Scripts (PS 5.1)
+# D2I Admin - Proxy Support PowerShell API Scripts
 
 How to/notes towards adding **optional** LA proxy support to both **main** and **smoke-test** CSC API scripts.
 
-Keeps behaviour unchanged when no proxy is supplied, but lets LAs that require an explicit proxy (proxy auth) pass those details
+Behaviour unchanged when no proxy is supplied, but lets LAs that require an explicit proxy (proxy auth) pass the needed details
 
 ---
 
@@ -20,7 +18,7 @@ Keeps behaviour unchanged when no proxy is supplied, but lets LAs that require a
 
 ---
 
-## What to add (summary)
+## What to add
 
 1. **Parameters**: `-Proxy`, `-ProxyUseDefaultCredentials`, `-ProxyCredential`
 2. **Optional site default**: `$la_proxy = 'http://proxy.myLA.local:8080'` which is used only if caller does not pass `-Proxy`
@@ -33,8 +31,6 @@ Everything is **optional**; if you do not pass a proxy, script behaves as before
 > Tip: do not set both `-ProxyUseDefaultCredentials` and `-ProxyCredential` at the same time
 
 ---
-
-## Update all API POST calls
 
 ### Smoke-test script (single POST)
 
@@ -66,7 +62,15 @@ $cred = Get-Credential  # DOMAIN\user + password
   -ProxyCredential $cred
 ```
 
-### Use optional site default
+
+
+### No proxy
+
+```powershell
+.\phase_1_api_payload.ps1 -Phase full
+```
+
+### Use optional proxy
 
 Add your LA proxy once near the top of the script
 
@@ -75,12 +79,6 @@ $la_proxy = 'http://proxy.myLA.local:8080'
 ```
 
 CLI passing `-Proxy` overrides in script defined `$la_proxy`
-
-### No proxy
-
-```powershell
-.\phase_1_api_payload.ps1 -Phase full
-```
 
 ---
 
