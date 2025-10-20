@@ -29,7 +29,7 @@ _*Processes may require LA access to Python/Anaconda in order to run the Py base
 
 ### Scrambling Process
 
-#### 1. System IDs
+#### System IDs
 
 For all unique identifiers (e.g., person IDs, unique pupil numbers, care worker IDs), we apply a secure encoding("hashing") function:
 
@@ -37,9 +37,9 @@ For all unique identifiers (e.g., person IDs, unique pupil numbers, care worker 
 
 - Additional detail:  
   - The resultant hashes are truncated appropriately to fit specific data field requirements(api compliance).
-  - Since hashing is deterministic, it allows cross-referencing(instances of care worker for example are maintained(but hashed)) without compromising individual identities.
+  - Since hashing is deterministic, it allows natural/expected/realistic cross-referencing within the payload(instances of care worker for example are maintained(but hashed)) without compromising individual identities.
 
-#### 2. Randomisation of Demographic Information
+#### Randomisation of Data
 
 Personal attributes such as names, ethnicities, and postcodes are completely replaced with randomly generated equivalents:
 
@@ -50,7 +50,7 @@ Personal attributes such as names, ethnicities, and postcodes are completely rep
 - We ensure all date fields (e.g., birthdates, appointment dates, case start/end dates) are randomised.
 - Relative time intervals (e.g., event sequences) are preserved to maintain usability.
 
-#### 3. Structured Records
+#### Structured Records
 
 For structured records like care episodes, worker details, and assessments:
 
@@ -58,7 +58,7 @@ For structured records like care episodes, worker details, and assessments:
 - Dates are adjusted in a way that preserves chronological order but removes specificity.
 - Categorical values (e.g., referral sources, closure reasons) are mapped to DfE equivalent random|anonymised alternatives.
 
-#### 4. Validation & Integrity Checks
+#### Validation & Integrity Checks
 
 During D2I pre-deployment testing, we add an additional safety/failsafe check, to further ensure anonymisation:
 
