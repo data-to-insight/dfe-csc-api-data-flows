@@ -449,8 +449,16 @@ BEGIN
 END
 
 
--- 
-select * from ssd_api_data_staging;
-select * from ssd_api_data_staging_anon;
+ 
+-- Verification|sanity checks
+-- Check table populated
+select TOP (5) * from ssd_api_data_staging;
+select TOP (5) * from ssd_api_data_staging_anon; -- should be blank at this point
 
-
+-- -- Get some rows that def have have the extended/full payload (if available)
+-- SELECT TOP (5)
+--     person_id,
+--     LEN(json_payload)        AS payload_chars,
+--     json_payload  AS preview
+-- FROM ssd_api_data_staging
+-- ORDER BY DATALENGTH(json_payload) DESC, id DESC;

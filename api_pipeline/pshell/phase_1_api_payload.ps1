@@ -177,7 +177,7 @@ Write-Host ("CSC API staging build: v{0}" -f $VERSION)
 # REQUIRED, replace the details in quotes below with your LA's credentials as supplied by DfE
 # from https://pp-find-and-use-an-api.education.gov.uk/ (once logged in), transfer the following details into the quotes:
 
-$api_endpoint = "https://pp-api.education.gov.uk/children-in-social-care-data-receiver-test/1" # 'Base URL' - Shouldn't need to change
+$api_endpoint = "https://pp-api.education.gov.uk/children-in-social-care-data-receiver-test/1" # 'Base URL' - (only change if moving from TEST to Pre-production(PP)/Production etc)
 
 # From the 'Native OAuth Application-flow' block
 $client_id       = "OAUTH_CLIENT_ID_CODE"                # 'OAuth Client ID'
