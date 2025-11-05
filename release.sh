@@ -139,6 +139,8 @@ cp api_pipeline/pshell/api_payload_sender.ps1 release_bundle/ || true
 cp sql_json_query/populate_ssd_api_data_staging_2012.sql release_bundle/ || true
 # current
 cp sql_json_query/populate_ssd_api_data_staging_2016sp1.sql release_bundle/ || true
+# postgres
+cp sql_json_query/populate_ssd_api_data_staging_postgres.sql release_bundle/ || true
 
 # bundle notebooks into .zip also
 cp -R api_pipeline/notebooks/* release_bundle/notebooks/ || true
@@ -229,6 +231,7 @@ fi
   cp api_pipeline/pshell/api_payload_sender.ps1 release_bundle/ || true
   cp sql_json_query/populate_ssd_api_data_staging_2012.sql release_bundle/ || true
   cp sql_json_query/populate_ssd_api_data_staging_2016sp1.sql release_bundle/ || true
+  cp sql_json_query/populate_ssd_api_data_staging_postgres.sql release_bundle/ || true
   cp -R api_pipeline/notebooks/* release_bundle/notebooks/ || true
   zip -r release.zip release_bundle/
 
