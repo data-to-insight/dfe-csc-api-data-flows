@@ -170,7 +170,7 @@ $logFile            = "C:\Users\d2i\Documents\api_temp_log.json"
 # defaults to make manual runs easier, these do not override CLI values 
 if (-not $PSBoundParameters.ContainsKey('Phase'))                             { $Phase  = 'full' } # 'full' or 'deltas'
 if (-not $PSBoundParameters.ContainsKey('InternalTest'))                      { $InternalTest = $false } # true=no external calls
-if (-not $PSBoundParameters.ContainsKey('UseTestRecord'))                     { $UseTestRecord = $false } # false switches to payload data being pulled from db
+if (-not $PSBoundParameters.ContainsKey('UseTestRecord'))                     { $UseTestRecord = $true } # false switches to payload data being pulled from db
 if (-not $PSBoundParameters.ContainsKey('Proxy'))                             { $Proxy = $null } # e.g. 'http://proxy.myLA.local:8080' but $null==not forcing specific proxy URI/web cmdlets use OS/.NET system proxy(WinINET/WinHTTP/PAC) if one configured; otherwise go direct
 if (-not $PSBoundParameters.ContainsKey('ProxyUseDefaultCredentials'))        { $ProxyUseDefaultCredentials = $false } # cmdlets will send current users Win creds to proxy when challenged
 if (-not $PSBoundParameters.ContainsKey('ApiTimeout'))                        { $ApiTimeout = 20 } # seconds (HTTP tuning)
