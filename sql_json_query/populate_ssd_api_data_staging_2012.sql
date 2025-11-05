@@ -4,7 +4,7 @@
 use HDM_Local; -- Note: this the SystemC/LLogic default
 
 /* Note for: Daily Data Flows Early Adopters
-The following table definitions (and populating) can be run after the main SSD script, OR the following definitions
+The following table definitions (and populating) can only be run after the main SSD script, OR the following definitions
 can be added into the main SSD - insert locations are marked via the meta tags of:
 
 META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging"}
