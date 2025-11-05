@@ -33,6 +33,6 @@ api_sql_raw_json_query/dev/  export-ignore
 
 # NOTE: do NOT mark these paths with export-ignore:
 #   api_pipeline/**                               - keep package source
-#   api_pipeline_pshell/phase_1_api_payload.ps1   - keep helper
-#   api_sql_raw_json_query/populate_ssd_api_data_staging.sql  - keep helper
+#   api_pipeline_pshell/api_payload_sender.ps1   - keep helper
+#   api_sql_raw_json_query/populate_ssd_api_data_staging_*.sql  - keep helper
 #   LICENSE, README.md, pyproject.toml, MANIFEST.in          - keep root essentials
