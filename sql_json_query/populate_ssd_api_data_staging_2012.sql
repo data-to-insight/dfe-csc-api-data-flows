@@ -460,14 +460,16 @@ END CATCH
 
 
 
+-- -- Optional
 -- CREATE UNIQUE INDEX UX_ssd_api_person_hash
 -- ON ssd_api_data_staging(person_id, current_hash);
 
 
 
+
 -- META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging_anon"}
 -- =============================================================================
--- Description: Table for TEST|ANON API payload and logging. 
+-- Description: Table for TEST|ANON API payload and logging 
 -- This table is non-live and solely for the pre-live data/api testing. It can be 
 -- depreciated/removed at any point by the LA; we'd expect this to be once 
 -- the toggle to LIVE sends are initiated to DfE. 
@@ -495,12 +497,270 @@ BEGIN
 
 END
 
+
+GO
+-- Wipe existing rows
+DELETE FROM ssd_api_data_staging_anon;
+-- reset identity to 0 so next insert is 1
+-- DBCC CHECKIDENT ('ssd_api_data_staging_anon', RESEED, 0);
+GO
+
+
+SET NOCOUNT ON;
+
+
+--------------------------------------------------------------------------------
+-- Record 1: Pending
+--------------------------------------------------------------------------------
+DECLARE @p1 NVARCHAR(MAX) = N'{
+  "la_child_id": "Child2234",
+  "mis_child_id": "Supplier-Child-2234",
+  "purge": false,
+  "child_details": {
+    "unique_pupil_number": "JKL0123456789",
+    "former_unique_pupil_number": "MNO0123456789",
+    "date_of_birth": "2004-09-23",
+    "sex": "F",
+    "ethnicity": "B2",
+    "postcode": "BN147ES",
+    "purge": false
+  },
+  "health_and_wellbeing": { "purge": false },
+  "social_care_episodes": [
+    {
+      "social_care_episode_id": "13423",
+      "referral_date": "2005-02-11",
+      "referral_source": "10",
+      "care_worker_details": [
+        { "worker_id": "X3323345", "start_date": "2024-01-11" },
+        { "worker_id": "Y2234567", "start_date": "2022-01-22" },
+        { "worker_id": "Z2235432", "start_date": "2022-09-20", "end_date": "2024-10-21" },
+        { "worker_id": "X2234852", "start_date": "2020-04-12" }
+      ],
+      "child_and_family_assessments": [
+        {
+          "child_and_family_assessment_id": "BCD123456",
+          "start_date": "2022-06-14",
+          "authorisation_date": "2022-06-14",
+          "factors": ["1C", "4A"],
+          "purge": false
+        }
+      ],
+      "child_looked_after_placements": [
+        {
+          "child_looked_after_placement_id": "BCD123456",
+          "start_date": "2011-02-10",
+          "start_reason": "S",
+          "end_date": "2021-11-11",
+          "end_reason": "E17",
+          "placement_type": "U4",
+          "postcode": "BN14 7ES",
+          "change_reason": "SSD_PH",
+          "purge": false
+        }
+      ],
+      "care_leavers": {
+        "contact_date": "2024-08-11",
+        "activity": "F2",
+        "accommodation": "Z",
+        "purge": false
+      },
+      "purge": false
+    }
+  ]
+}';
+
+INSERT INTO ssd_api_data_staging_anon
+(
+    person_id,
+    previous_json_payload,
+    json_payload,
+    partial_json_payload,
+    previous_hash,
+    current_hash,
+    row_state,
+    last_updated,
+    submission_status,
+    api_response,
+    submission_timestamp
+)
+VALUES
+(
+    N'C001',
+    NULL,
+    @p1,
+    NULL,
+    NULL,
+    HASHBYTES('SHA2_256', CAST(@p1 AS NVARCHAR(4000))),
+    N'New',
+    GETDATE(),
+    N'Pending',
+    NULL,
+    GETDATE()
+);
+
+--------------------------------------------------------------------------------
+-- Record 2: Error
+--------------------------------------------------------------------------------
+DECLARE @p2 NVARCHAR(MAX) = N'{
+  "la_child_id": "Child3234",
+  "mis_child_id": "Supplier-Child-3234",
+  "purge": false,
+  "child_details": {
+    "unique_pupil_number": "PQR0123456789",
+    "former_unique_pupil_number": "STU0123456789",
+    "date_of_birth": "2005-10-10",
+    "sex": "M",
+    "ethnicity": "C3",
+    "postcode": "BN147ES",
+    "purge": false
+  },
+  "health_and_wellbeing": { "purge": false },
+  "social_care_episodes": [
+    {
+      "social_care_episode_id": "23423",
+      "referral_date": "2006-03-01",
+      "referral_source": "20",
+      "care_worker_details": [
+        { "worker_id": "X4323345", "start_date": "2023-01-11" },
+        { "worker_id": "Y3234567", "start_date": "2022-02-22" }
+      ],
+      "child_and_family_assessments": [
+        {
+          "child_and_family_assessment_id": "CDE123456",
+          "start_date": "2021-06-14",
+          "authorisation_date": "2021-06-14",
+          "factors": ["1C"],
+          "purge": false
+        }
+      ],
+      "child_looked_after_placements": [],
+      "care_leavers": {
+        "contact_date": "2024-09-11",
+        "activity": "E2",
+        "accommodation": "A",
+        "purge": false
+      },
+      "purge": false
+    }
+  ]
+}';
+
+INSERT INTO ssd_api_data_staging_anon
+(
+    person_id,
+    previous_json_payload,
+    json_payload,
+    partial_json_payload,
+    previous_hash,
+    current_hash,
+    row_state,
+    last_updated,
+    submission_status,
+    api_response,
+    submission_timestamp
+)
+VALUES
+(
+    N'C002',
+    NULL,
+    @p2,
+    NULL,
+    NULL,
+    HASHBYTES('SHA2_256', CAST(@p2 AS NVARCHAR(4000))),
+    N'New',
+    GETDATE(),
+    N'Error',
+    N'HTTP 400: Validation failed - missing expected field',
+    GETDATE()
+);
+
+--------------------------------------------------------------------------------
+-- Record 3: Sent (with previous payload + hash)
+--------------------------------------------------------------------------------
+DECLARE @prev3 NVARCHAR(MAX) = N'{
+  "la_child_id": "Child4234",
+  "mis_child_id": "Supplier-Child-4234",
+  "purge": false
+}';
+
+DECLARE @p3 NVARCHAR(MAX) = N'{
+  "la_child_id": "Child4234",
+  "mis_child_id": "Supplier-Child-4234",
+  "purge": false,
+  "child_details": {
+    "unique_pupil_number": "VWX0123456789",
+    "former_unique_pupil_number": "YZA0123456789",
+    "date_of_birth": "2006-05-05",
+    "sex": "M",
+    "ethnicity": "D4",
+    "postcode": "BN147ES",
+    "purge": false
+  },
+  "health_and_wellbeing": { "purge": false },
+  "social_care_episodes": [
+    {
+      "social_care_episode_id": "33423",
+      "referral_date": "2007-01-15",
+      "referral_source": "30",
+      "care_worker_details": [
+        { "worker_id": "X5323345", "start_date": "2024-01-11" }
+      ],
+      "child_and_family_assessments": [],
+      "child_looked_after_placements": [],
+      "care_leavers": {
+        "contact_date": "2024-07-11",
+        "activity": "H2",
+        "accommodation": "B",
+        "purge": false
+      },
+      "purge": false
+    }
+  ]
+}';
+
+INSERT INTO ssd_api_data_staging_anon
+(
+    person_id,
+    previous_json_payload,
+    json_payload,
+    partial_json_payload,
+    previous_hash,
+    current_hash,
+    row_state,
+    last_updated,
+    submission_status,
+    api_response,
+    submission_timestamp
+)
+VALUES
+(
+    N'C003',
+    @prev3,
+    @p3,
+    NULL,
+    HASHBYTES('SHA2_256', CAST(@prev3 AS NVARCHAR(4000))),
+    HASHBYTES('SHA2_256', CAST(@p3 AS NVARCHAR(4000))),
+    N'Unchanged',
+    GETDATE(),
+    N'Sent',
+    N'HTTP 201: Created',
+    GETDATE()
+);
+
+SET NOCOUNT OFF;
+
+ 
+
 -- Verification|sanity checks
--- Check table populated
+-- Check table(s) populated
 select TOP (5) * from ssd_api_data_staging;
 select TOP (5) * from ssd_api_data_staging_anon; -- should be blank at this point
 
--- -- Get some rows that def have have the extended/full payload (if available)
+
+
+
+-- -- Get sample of LIVE rows that def have have an extended/full payload (if available)
 -- SELECT TOP (5)
 --     person_id,
 --     LEN(json_payload)        AS payload_chars,
