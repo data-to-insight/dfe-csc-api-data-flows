@@ -15,19 +15,30 @@ Last updated: 18/09/25
 **Suggested project team preparation by role**  
 **Analyst/Lead**  
 > - Register with and obtain DfE API credentials via [education.gov.uk/find-an-api](https://pp-find-and-use-an-api.education.gov.uk/find-an-api)  
- - Agree a safe _team accessible_ location for the DfE API credentials (in case login user is unavailable!)
+ - Agree a safe _team accessible_ location to save the DfE API credentials
  - Confirm you have read access to source CMS reporting views/tables  
- - *Confirm you have write access|permission to run `CREATE TABLE` on a reporting instance(development or existing data team reporting instance is ideal. Does not have to be on/near Live)  
- - Confirm you have access to use PowerShell 5.1+ locally (is PowerShell installed?), and ideally local Anaconda/Python 
- - Download the SSD scripts for your CMS type and review/experiment with running queries. You're welcome to reach out to D2I at any point for support on this.  [data-to-insight.github.io/ssd-data-model - SSD Deployment](https://data-to-insight.github.io/ssd-data-model-next/)
+ - Obtain write access|permission to run `CREATE TABLE` on reporting instance(dev or existing data team reporting instance is ideal)  
+ - Obtain access to use PowerShell 5.1+ locally, and thinking towards having local Anaconda or Miniconda or Python access
+ - Download SSD SQL scripts for your CMS type and review/experiment with running queries. Colleagues are welcome to reach out to D2I for support.  [data-to-insight.github.io/ssd-data-model - SSD Deployment](https://data-to-insight.github.io/ssd-data-model-next/)
+> <details>
+> <summary><em>Stage 0 - Tech Stack Headlines</em></summary>
+> <ul>
+>   <li>Browser access to download the files from Github</li>
+>   <li>Registered for DfE (TEST) API subscription</li>
+>   <li>CMS Db reporting read access</li>
+>   <li>Working towards obtaining CMS Db write access to deploy SSD SQL on a test or reporting Db</li>
+>   <li>Working towards obtaining access to PowerShell v5.1+</li>
+> </ul>
+> </details>
+
 
 **IT/DBA**  
-> - Ensure ability to schedule additional Db|server job (SQL(SSD needs a nightly refresh) & Python or Exe(API)), outbound HTTPS calls to DfE API endpoint. 
-- Support if needed the project team **analyst/lead** in running the D2I end-to-end API connectivity Powershell test script to ensure external API calls to the DfE can be made from your LA. This script sends nothing, but pings the DfE and confirms response codes. D2I can support. 
-- Support to make Powershell or Anaconda/Python available to the project analyst/deployment team so they can test locally before moving the data refresh and api to server overnight list. 
+> - Ensure capability and capacity to schedule additional Db|server job(SSD SQL needs a nightly refresh) & Python or EXE(API)), outbound HTTPS calls to DfE API endpoint. 
+- Support to make Powershell or Anaconda or Miniconda or Python available to the project analyst/deployment team so they can test locally before IT/Infastructure move the SSD data refresh and API to a server overnight job. 
 - *Agree environment: Where can your LA deploy SSD schema(within sight of CMS data), optional: file/log locations. 
 
-**IT/server team** 
+**IT/server team**
+- Support if needed the project team **analyst/lead** in running the D2I end-to-end API connectivity Powershell test script to ensure external API calls to the DfE can be made from your LA. This script sends nothing, but pings the DfE and confirms response codes. D2I can support. 
 > - Book some time within week 3/4 of the timeline to review and port jobs to server overnights
  - Raise awareness that a feedback loop between involved team(s) and either DfE project team or D2I direct might be needed during this
 
@@ -58,7 +69,7 @@ Last updated: 18/09/25
 ✅ SSD schema is manually deployed by analyst/other  
 ✅ Staging table(s) manually deployed by analyst/other  
 ✅ API test script is run to confirm connectivity is possible/whitelisted from your LA to DfE
-✅ API *priority* tables are at least populating (data might not yet be verified)  
+✅ API *priority* tables are at least populating (data might not yet be verified at this point)  
 
 ---
 
