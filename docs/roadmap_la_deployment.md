@@ -22,7 +22,7 @@ Last updated: 18/09/25
  - Download SSD SQL scripts for your CMS type and review/experiment with running queries. Colleagues are welcome to reach out to D2I for support.  [data-to-insight.github.io/ssd-data-model - SSD Deployment](https://data-to-insight.github.io/ssd-data-model-next/)
 
 > <details>
-> <summary><em>Stage 0 - Tech Stack Headlines</em></summary>
+> <summary><em>Stage 0 - CSC Analyst/Data Lead Tech Stack Headlines</em></summary>
 > <ul>
 >   <li>Browser access to download the files from Github</li>
 >   <li>Registered for DfE (TEST) API subscription</li>
