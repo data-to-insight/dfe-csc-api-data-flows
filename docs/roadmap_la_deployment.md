@@ -22,7 +22,7 @@ Last updated: 18/09/25
  - Download the SSD scripts for your CMS type and review/experiment with running queries. You're welcome to reach out to D2I at any point for support on this.  [data-to-insight.github.io/ssd-data-model - SSD Deployment](https://data-to-insight.github.io/ssd-data-model-next/)
 
 **IT/DBA**  
-> - Ensure ability to schedule additional server job (SQL(SSD needs a nightly refresh) & Python or Exe(API)), outbound HTTPS calls to DfE API endpoint. 
+> - Ensure ability to schedule additional Db|server job (SQL(SSD needs a nightly refresh) & Python or Exe(API)), outbound HTTPS calls to DfE API endpoint. 
 - Support if needed the project team **analyst/lead** in running the D2I end-to-end API connectivity Powershell test script to ensure external API calls to the DfE can be made from your LA. This script sends nothing, but pings the DfE and confirms response codes. D2I can support. 
 - Support to make Powershell or Anaconda/Python available to the project analyst/deployment team so they can test locally before moving the data refresh and api to server overnight list. 
 - *Agree environment: Where can your LA deploy SSD schema(within sight of CMS data), optional: file/log locations. 
@@ -31,14 +31,17 @@ Last updated: 18/09/25
 > - Book some time within week 3/4 of the timeline to review and port jobs to server overnights
  - Raise awareness that a feedback loop between involved team(s) and either DfE project team or D2I direct might be needed during this
 
-**DPO**
+**DPO / Information or IT Security Team**
 > - Early enagement/involvement/agreement of your DPO to these project plans
+ - Your IT or security team will need to be aware that you|your team will be running both a Powershell script(the API Sender) and SQL. We can configure the Powershell so it does not initially do external calls, but ultimately this is required. IT teams are welcome to [access and download](https://github.com/data-to-insight/dfe-csc-api-data-flows/tree/main/api_pipeline) all the files themselves for review before the project timeline starts.  
+
 
 **Entry criteria**  
 ✅ Access, permissions, tech stack and approvals confirmed/agreement initiated  
 ✅ Target DB for SSD schema and credentials agreed  
 ✅ Your LA is welcome to download, review scripts and test deploy the SSD before the project even starts  
-✅ Server deployment window pencilled with IT/Server team
+✅ Prefer to run the SQL in a test/reporting environment? Absolutely fine, you can deploy anywhere that's ready
+✅ Server/Db jobs deployment window pencilled with IT/Server team
 
 ---
 
