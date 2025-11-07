@@ -13,13 +13,14 @@ Last updated: 18/09/25
 
 ### **Stage 0 - Project Prep - Roles and Access (Week 0)**
 **Suggested project team preparation by role**  
-**Analyst/Lead**  
+**CSC Analyst/Data Lead**  
 > - Register with and obtain DfE API credentials via [education.gov.uk/find-an-api](https://pp-find-and-use-an-api.education.gov.uk/find-an-api)  
  - Agree a safe _team accessible_ location to save the DfE API credentials
  - Confirm you have read access to source CMS reporting views/tables  
  - Obtain write access|permission to run `CREATE TABLE` on reporting instance(dev or existing data team reporting instance is ideal)  
  - Obtain access to use PowerShell 5.1+ locally, and thinking towards having local Anaconda or Miniconda or Python access
  - Download SSD SQL scripts for your CMS type and review/experiment with running queries. Colleagues are welcome to reach out to D2I for support.  [data-to-insight.github.io/ssd-data-model - SSD Deployment](https://data-to-insight.github.io/ssd-data-model-next/)
+
 > <details>
 > <summary><em>Stage 0 - Tech Stack Headlines</em></summary>
 > <ul>
@@ -51,7 +52,7 @@ Last updated: 18/09/25
 ✅ Access, permissions, tech stack and approvals confirmed/agreement initiated  
 ✅ Target DB for SSD schema and credentials agreed  
 ✅ Your LA is welcome to download, review scripts and test deploy the SSD before the project even starts  
-✅ Prefer to run the SQL in a test/reporting environment? Absolutely fine, you can deploy anywhere that's ready
+✅ Prefer to run the SQL in a test/reporting environment? Absolutely fine, you can deploy anywhere that's ready  
 ✅ Server/Db jobs deployment window pencilled with IT/Server team
 
 ---
@@ -68,7 +69,7 @@ Last updated: 18/09/25
 **Exit criteria**  
 ✅ SSD schema is manually deployed by analyst/other  
 ✅ Staging table(s) manually deployed by analyst/other  
-✅ API test script is run to confirm connectivity is possible/whitelisted from your LA to DfE
+✅ API test script is run to confirm connectivity is possible/whitelisted from your LA to DfE  
 ✅ API *priority* tables are at least populating (data might not yet be verified at this point)  
 
 ---
@@ -83,7 +84,7 @@ Last updated: 18/09/25
 **Exit criteria**  
 ✅ Creating/inserting 1+ dummy records as fake payload  
 ✅ End-to-end POST works from Analyst machine (=='local testing' with data from staging table)
-✅ Review and get aquanted with the API response codes and DfE UUIDs logging
+✅ Review and get aquanted with the API response codes and DfE UUIDs logging  
 ✅ Error paths handled and recorded  
 
 ---
