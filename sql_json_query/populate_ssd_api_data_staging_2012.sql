@@ -112,12 +112,12 @@ BEGIN TRY                               -- catch any runtime error, keep control
             SELECT
                 '[' + STUFF((
                     SELECT ',' + '{'
-                        + '"date":'  + CASE 
+                        + '"sdq_date":'  + CASE 
                                         WHEN csdq.csdq_sdq_completed_date IS NULL 
                                             THEN 'null' 
                                         ELSE '"' + CONVERT(varchar(10), csdq.csdq_sdq_completed_date, 23) + '"' 
                                     END + ','
-                        + '"score":' + CONVERT(varchar(20), TRY_CONVERT(int, csdq.csdq_sdq_score))
+                        + '"sdq_score":' + CONVERT(varchar(20), TRY_CONVERT(int, csdq.csdq_sdq_score))
                         + '}'
                     FROM ssd_sdq_scores csdq
                     WHERE csdq.csdq_person_id = p.pers_person_id

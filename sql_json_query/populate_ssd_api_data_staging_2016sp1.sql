@@ -140,8 +140,8 @@ END
                     SELECT
                         COALESCE(JSON_QUERY((
                             SELECT
-                                CONVERT(varchar(10), csdq.csdq_sdq_completed_date, 23) AS [date],
-                                TRY_CONVERT(int, csdq.csdq_sdq_score) AS [score] -- is (decimal(10,2) required
+                                CONVERT(varchar(10), csdq.csdq_sdq_completed_date, 23) AS [sdq_date],
+                                TRY_CONVERT(int, csdq.csdq_sdq_score) AS [sdq_score] -- is (decimal(10,2) required
                             FROM ssd_sdq_scores csdq
                             WHERE csdq.csdq_person_id = p.pers_person_id
                             AND csdq.csdq_sdq_completed_date IS NOT NULL
