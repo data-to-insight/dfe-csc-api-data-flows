@@ -144,7 +144,7 @@ IsCareLeaver16to25 AS (
     JOIN ssd_person p ON p.pers_person_id = clea.clea_person_id
     WHERE clea.clea_care_leaver_latest_contact BETWEEN @window_start AND @window_end
       AND (
-            (p.pers_dob IS NOT NULL AND DATEDIFF(year, p.pers_dob, @run_date) BETWEEN 16 AND 25)
+            (p.pers_dob IS NOT NULL AND DATEDIFF(year, p.pers_dob, @run_date) BETWEEN 16 AND 25) -- year boundary, not bday precise
          OR (p.pers_dob IS NULL AND p.pers_expected_dob IS NOT NULL)  -- rare, kept as guard
       )
 ),
