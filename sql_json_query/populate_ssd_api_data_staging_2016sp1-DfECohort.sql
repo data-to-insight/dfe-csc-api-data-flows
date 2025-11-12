@@ -30,10 +30,9 @@ RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 
 
 -- Data pre/smoke test validator(s) (optional) --
--- D2I offers a <simplified> validation VIEW towards your local data verification checks
--- This offers pre-process comparison between your data and the DfE API payload schema 
--- File: ssd_vw_csc_api_schema_checks.sql (SQL Server 2016+)
--- dfe-csc-api-data-flows/pre_flight_checks/ssd_vw_csc_api_schema_checks.sql
+-- D2I offers a seperate <simplified> validation VIEW towards your local data verification checks,
+-- this offers some pre-process comparison between your data and the DfE API payload schema 
+-- File: (SQL 2016+)https://github.com/data-to-insight/dfe-csc-api-data-flows/tree/main/pre_flight_checks/ssd_vw_csc_api_schema_checks.sql
 -- -- 
 
 
@@ -121,7 +120,7 @@ HasCPPlan AS (
       AND (cppl.cppl_cp_plan_end_date IS NULL OR cppl.cppl_cp_plan_end_date >= @window_start)
 ),
 HasLAC AS (
-    -- A) LAC episode linked to a CIN episode that overlaps the window
+    -- A) LAC episode linked to CIN episode that overlaps the window
     SELECT DISTINCT clae.clae_person_id AS person_id
     FROM ssd_cla_episodes clae
     JOIN ssd_cin_episodes cine
@@ -156,7 +155,7 @@ IsDisabled AS (
     WHERE NULLIF(LTRIM(RTRIM(d.disa_disability_code)), '') IS NOT NULL
 ),
 SpecInclusion AS (
-    /* Union of buckets from written spec (CIN definition) */
+    /* Union of the groupings from spec (CIN definition) */
     SELECT person_id FROM ActiveReferral
     UNION SELECT person_id FROM WaitingAssessment
     UNION SELECT person_id FROM HasCINPlan
@@ -173,7 +172,6 @@ RawPayloads AS (
             SELECT
                 -- Note: ids (str)
                 LEFT(CAST(p.pers_person_id AS varchar(36)), 36) AS [la_child_id],
-                LEFT(CAST(ISNULL(p.pers_common_child_id, 'SSD_PH_CCI') AS varchar(36)), 36) AS [mis_child_id],
                 CAST(0 AS bit) AS [purge],
 
                 -- Child details
@@ -182,7 +180,7 @@ RawPayloads AS (
                         p.pers_forename AS [first_name],
                         p.pers_surname  AS [surname],
 
-                        -- UPNs (13 numeric, else null)
+                        -- UPNs (13 alphanumeric, else null)
                         (SELECT TOP 1 CASE
                                         WHEN LEN(li.link_identifier_value) = 13
                                          AND TRY_CONVERT(bigint, li.link_identifier_value) IS NOT NULL
@@ -221,7 +219,7 @@ RawPayloads AS (
                         ) AS [disabilities],
 
 
-                        -- Postcode (max 8)
+                        -- Postcode (no space)
                         (SELECT TOP 1 LEFT(a.addr_address_postcode, 8)
                            FROM ssd_address a
                           WHERE a.addr_person_id = p.pers_person_id
@@ -257,7 +255,6 @@ RawPayloads AS (
                                     FROM ssd_sdq_scores csdq
                                     WHERE csdq.csdq_person_id = p.pers_person_id
                                     AND csdq.csdq_sdq_completed_date IS NOT NULL
-                                    AND csdq.csdq_sdq_completed_date > '1900-01-01'
                                     AND csdq.csdq_sdq_completed_date BETWEEN @window_start AND @window_end
                                     AND TRY_CONVERT(int, csdq.csdq_sdq_score) IS NOT NULL
                                 )
@@ -268,7 +265,6 @@ RawPayloads AS (
                                     FROM ssd_sdq_scores csdq
                                     WHERE csdq.csdq_person_id = p.pers_person_id
                                     AND csdq.csdq_sdq_completed_date IS NOT NULL
-                                    AND csdq.csdq_sdq_completed_date > '1900-01-01'
                                     AND csdq.csdq_sdq_completed_date BETWEEN @window_start AND @window_end
                                     AND TRY_CONVERT(int, csdq.csdq_sdq_score) IS NOT NULL
                                     ORDER BY csdq.csdq_sdq_completed_date DESC
@@ -502,7 +498,7 @@ RawPayloads AS (
                         ) AS [child_looked_after_placements],
 
 
-                        -- Adoption (single object; fine to leave as-is)
+                        -- Adoption (single object)
                         JSON_QUERY((
                             SELECT TOP 1
                                 CONVERT(varchar(10), perm.perm_adm_decision_date, 23) AS [initial_decision_date],
@@ -527,7 +523,7 @@ RawPayloads AS (
                              FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
                         )) AS [adoption],
 
-                        -- Care leavers (single object; fine to leave as-is)
+                        -- Care leavers (single object)
                         JSON_QUERY((
                             SELECT TOP 1
                                 CONVERT(varchar(10), clea.clea_care_leaver_latest_contact, 23) AS [contact_date],
@@ -554,10 +550,10 @@ RawPayloads AS (
             FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
         ) AS json_payload
 
-    -- keep only records who (a) pass age/unborn gate and (b) match at least one spec bucket
+    -- keep only records who (a) pass age/unborn gate and (b) match at least one api spec groups
     FROM ssd_person p
-    JOIN EligibleBySpec elig ON elig.pers_person_id = p.pers_person_id
-    JOIN SpecInclusion  si   ON si.person_id        = p.pers_person_id
+    JOIN EligibleBySpec elig ON elig.pers_person_id = p.pers_person_id -- either unborn, or 26th bday falls on or after @window_start (deceased not filtered)
+    JOIN SpecInclusion  si   ON si.person_id        = p.pers_person_id -- appearing in ActiveReferral, WaitingAssessment, CIN plan, CP plan, LAC, Care leavers 16 to 25, Disabled
 
     /* Disabilities array producer */
     OUTER APPLY (
