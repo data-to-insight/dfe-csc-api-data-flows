@@ -120,7 +120,7 @@ END
                                 SELECT 1
                                   FROM ssd_immigration_status s
                                  WHERE s.immi_person_id = p.pers_person_id
-                                   AND (s.immi_immigration_status = 'UASC' OR s.immi_immigration_status LIKE '%UASC%')
+                                   AND ISNULL(s.immi_immigration_status, '') COLLATE Latin1_General_CI_AI LIKE '%UASC%'
                             ) THEN CAST(1 AS bit)
                             ELSE CAST(0 AS bit)
                         END AS [uasc_flag],
