@@ -39,6 +39,14 @@ RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 
 -- IF OBJECT_ID('ssd_api_data_staging', 'U') IS NOT NULL DROP TABLE ssd_api_data_staging;
 IF OBJECT_ID(N'ssd_api_data_staging', N'U') IS NULL
+
+IF OBJECT_ID('ssd_api_data_staging') IS NOT NULL
+BEGIN
+    IF EXISTS (SELECT 1 FROM ssd_api_data_staging)
+        TRUNCATE TABLE ssd_api_data_staging;
+END
+-- META-ELEMENT: {"type": "create_table"}
+ELSE
 BEGIN
     CREATE TABLE ssd_api_data_staging (
         id INT IDENTITY(1,1) PRIMARY KEY,           
@@ -58,7 +66,7 @@ BEGIN
 END
 
 
--- === Spec window (dynamic: 24 months back → FY start on 1 April) ===
+-- === Spec window (dynamic: 24 months back --> FY start on 1 April) ===
 DECLARE @run_date      date = CONVERT(date, GETDATE());
 DECLARE @months_back   int  = 24;
 DECLARE @fy_start_month int = 4;  -- April
@@ -225,7 +233,7 @@ RawPayloads AS (
                                 SELECT 1
                                   FROM ssd_immigration_status s
                                  WHERE s.immi_person_id = p.pers_person_id
-                                   AND (s.immi_immigration_status = 'UASC' OR s.immi_immigration_status LIKE '%UASC%')
+                                   AND ISNULL(s.immi_immigration_status, '') COLLATE Latin1_General_CI_AI LIKE '%UASC%'
                             ) THEN CAST(1 AS bit)
                             ELSE CAST(0 AS bit)
                         END AS [uasc_flag],

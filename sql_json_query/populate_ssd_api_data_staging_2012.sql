@@ -206,7 +206,7 @@ BEGIN TRY                               -- catch any runtime error, keep control
                         SELECT 1
                         FROM ssd_immigration_status immi
                         WHERE immi.immi_person_id = p.pers_person_id
-                          AND (immi.immi_immigration_status = 'UASC' OR immi.immi_immigration_status LIKE '%UASC%')
+                          AND ISNULL(s.immi_immigration_status, '') COLLATE Latin1_General_CI_AI LIKE '%UASC%'
                      )
                      THEN 'true' ELSE 'false' END + ','
             + '"uasc_end_date":' +
