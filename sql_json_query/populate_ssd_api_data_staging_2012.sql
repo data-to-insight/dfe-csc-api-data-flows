@@ -75,7 +75,7 @@ BEGIN TRY                               -- catch any runtime error, keep control
           sce.episodes_array_json,
           '{'
           + '"la_child_id":' + CASE WHEN CONVERT(nvarchar(36), p.pers_person_id) IS NULL THEN 'null' ELSE '"' + LEFT(CONVERT(nvarchar(36), p.pers_person_id),36) + '"' END + ','
-          + '"mis_child_id":' + CASE WHEN ISNULL(p.pers_common_child_id, 'SSD_PH_CCI') IS NULL THEN 'null' ELSE '"' + LEFT(ISNULL(p.pers_common_child_id, 'SSD_PH_CCI'),36) + '"' END + ','
+          + '"mis_child_id":' + CASE WHEN ISNULL(p.pers_single_unique_id, 'SSD_SUI') IS NULL THEN 'null' ELSE '"' + LEFT(ISNULL(p.pers_single_unique_id, 'SSD_SUI'),36) + '"' END + ','
           + '"purge":false,'
           + '"child_details":' + cd.child_details_json + ','
           + '"health_and_wellbeing":{'
@@ -123,7 +123,7 @@ BEGIN TRY                               -- catch any runtime error, keep control
                     WHERE csdq.csdq_person_id = p.pers_person_id
                     AND csdq.csdq_sdq_completed_date IS NOT NULL
                     AND csdq.csdq_sdq_completed_date > '19000101'
-                    AND TRY_CONVERT(int, csdq.csdq_sdq_score) IS NOT NULL   -- keep only numeric scores
+                    AND TRY_CONVERT(int, csdq.csdq_sdq_score) IS NOT NULL   -- keep only numerically viable scores
                     ORDER BY csdq.csdq_sdq_completed_date DESC
                     FOR XML PATH(''), TYPE
                 ).value('.', 'nvarchar(max)'), 1, 1, '') + ']'

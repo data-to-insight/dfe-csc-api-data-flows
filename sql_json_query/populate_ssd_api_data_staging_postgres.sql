@@ -86,7 +86,7 @@ WITH raw AS (
       'la_child_id',
         NULLIF(p.pers_person_id::TEXT, ''),
       'mis_child_id',
-        COALESCE(NULLIF(p.pers_common_child_id, ''), 'SSD_PH_CCI'),
+        COALESCE(NULLIF(p.pers_single_unique_id, ''), 'SSD_SUI'),
       'purge', false,
 
       'child_details', jsonb_build_object(
