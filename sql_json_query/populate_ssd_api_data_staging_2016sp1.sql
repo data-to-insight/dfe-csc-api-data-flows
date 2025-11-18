@@ -66,7 +66,7 @@ END
             SELECT
                 -- Note: ids (str)
                 LEFT(CAST(p.pers_person_id AS varchar(36)), 36) AS [la_child_id],
-                LEFT(CAST(ISNULL(p.pers_common_child_id, 'SSD_PH_CCI') AS varchar(36)), 36) AS [mis_child_id],
+                LEFT(CAST(ISNULL(p.pers_single_unique_id, 'SSD_SUI') AS varchar(36)), 36) AS [mis_child_id],
                 CAST(0 AS bit) AS [purge],
 
                 -- Child details
@@ -105,7 +105,7 @@ END
 
                         LEFT(p.pers_ethnicity, 4) AS [ethnicity],
 
-                        -- Disabilities array, input from builder
+                        -- Disabilities array, input from builder below
                         COALESCE(JSON_QUERY(disab.disabilities), JSON_QUERY('[]')) AS [disabilities],
 
                         -- Postcode (max 8)
