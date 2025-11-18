@@ -55,6 +55,10 @@ Last updated: 18/09/25
 ✅ Prefer to run the SQL in a test/reporting environment? Absolutely fine, you can deploy anywhere that's ready  
 ✅ Server/Db jobs deployment window pencilled with IT/Server team
 
+
+--- 
+LA tech|install|deployment problems at any stage can be logged via the [D2I/EA support ticket board](https://github.com/data-to-insight/dfe-csc-api-data-flows/issues), or flagged within the DfE Chat|Project Teams channel as directed by the DfE project team. 
+
 ---
 
 ### **Stage 1 - Deploy SSD and Staging (Week 1)**
