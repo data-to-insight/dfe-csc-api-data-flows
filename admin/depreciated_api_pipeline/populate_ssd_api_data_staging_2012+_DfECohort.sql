@@ -32,7 +32,7 @@ can be appended into the main SSD and run as one - insert locations within the S
 
 
 
-DECLARE @VERSION nvarchar(32) = N'0.2.4';
+DECLARE @VERSION nvarchar(32) = N'0.2.3';
 RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 
 
@@ -253,6 +253,25 @@ RawPayloads AS (
                     FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
                 )) AS [child_details],
 
+
+                -- -- Health and wellbeing (45..46) (per child not episode)
+                -- -- Returns: object with sdq_assessments array
+                -- JSON_QUERY((
+                --     SELECT
+                --         (
+                --             SELECT
+                --                 CONVERT(varchar(10), csdq.csdq_sdq_completed_date, 23) AS [date],   -- 45
+                --                 TRY_CONVERT(int, csdq.csdq_sdq_score) AS [score]                    -- 46
+                --             FROM ssd_sdq_scores csdq
+                --             WHERE csdq.csdq_person_id = p.pers_person_id
+                --               AND csdq.csdq_sdq_score IS NOT NULL
+                --               AND csdq.csdq_sdq_completed_date BETWEEN @window_start AND @window_end
+                --             ORDER BY csdq.csdq_sdq_completed_date DESC
+                --             FOR JSON PATH
+                --         ) AS [sdq_assessments],
+                --         CAST(0 AS bit) AS [purge]
+                --     FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
+                -- )) AS [health_and_wellbeing],
               
                 -- Health and wellbeing (45..46) (per child not episode)
                 -- Returns: object with sdq_assessments array
