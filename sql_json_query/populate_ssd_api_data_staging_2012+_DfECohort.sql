@@ -32,8 +32,15 @@ can be appended into the main SSD and run as one - insert locations within the S
 
 
 
-DECLARE @VERSION nvarchar(32) = N'0.2.2';
+DECLARE @VERSION nvarchar(32) = N'0.2.3';
 RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
+
+
+-- -- Apply when d2i tbl structual changes have been newly applied
+-- -- 2012+ safe drops 
+-- IF OBJECT_ID(N'ssd_api_data_staging_anon', N'U') IS NOT NULL DROP TABLE ssd_api_data_staging_anon;
+-- IF OBJECT_ID(N'ssd_api_data_staging', N'U') IS NOT NULL DROP TABLE ssd_api_data_staging;
+-- GO
 
 
 -- META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging"}
@@ -46,8 +53,8 @@ RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 -- IF OBJECT_ID('ssd_api_data_staging', 'U') IS NOT NULL DROP TABLE ssd_api_data_staging;
 IF OBJECT_ID('ssd_api_data_staging') IS NOT NULL
 BEGIN
-    IF EXISTS (SELECT 1 FROM ssd_api_data_staging)
-        TRUNCATE TABLE ssd_api_data_staging;
+    IF EXISTS (SELECT 1 FROM ssd_api_data_staging)  
+        TRUNCATE TABLE ssd_api_data_staging;        -- clear existing if any rows
 END
 -- META-ELEMENT: {"type": "create_table"}
 ELSE
@@ -480,7 +487,7 @@ RawPayloads AS (
 
 
                         -- Care worker details (53..55)
-                        -- Returns: array (or []])
+                        -- Returns: array (or [])
                         JSON_QUERY((
                             SELECT
                                 LEFT(CAST(pr.prof_staff_id AS varchar(12)), 12) AS [worker_id],                             -- 53
@@ -591,7 +598,7 @@ WHERE prev.current_hash IS NULL             -- first time we’ve ever seen this
 -- =============================================================================
 -- Description: Table for TEST|ANON API payload and logging 
 -- This table is non-live and solely for the pre-live data/api testing. It can be 
--- depreciated/removed at any point by the LA; we'd expect this to be once 
+-- depreciated/removed at any point by the LA; we'd expect this to be after 
 -- the toggle to LIVE sends are initiated to DfE. 
 -- Author: D2I
 -- =============================================================================
