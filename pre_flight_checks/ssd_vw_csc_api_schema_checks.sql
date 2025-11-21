@@ -4,8 +4,9 @@
 
 
 /* View: ssd_development.ssd_vw_csc_api_schema_checks
+
    SQL Server 2016+ (not legacy versions)
-   Simplified/example of pre-processing verification checks against DfE v0.8.0 api schema
+   Simplified NON-COMPREHENSIVE pre-processing verification checks against DfE v0.9.0 API schema
    - Supplied as example. Script can be built-on to increase usefulness within individual LAs. 
 
    When implementing, remember to search/replace on 'ssd_development.' to either remove entirely(replace with '' empty str), 
@@ -18,7 +19,8 @@ WITH
 Persons AS (
     SELECT DISTINCT
            CAST(p.pers_person_id AS varchar(128))           AS person_id,
-           CAST(ISNULL(p.pers_common_child_id,'SSD_PH_CCI') AS varchar(128)) AS mis_child_id
+           CAST(ISNULL(p.pers_single_unique_id,'SSD_SUI') AS varchar(128)) AS mis_child_id,
+           p.pers_upn_unknown
     FROM ssd_development.ssd_person p
 ),
 Episodes AS (
@@ -65,12 +67,18 @@ EpisodeReasons AS (
            e.clae_cla_episode_ceased_reason                  AS end_reason
     FROM ssd_development.ssd_cla_episodes e
 ),
+CareLeavers AS (
+    SELECT DISTINCT
+           clea_care_leaver_activity      AS activity_code,
+           clea_care_leaver_accommodation AS accommodation_code
+    FROM ssd_development.ssd_care_leavers
+),
 UPNs AS (
     SELECT DISTINCT
-           CAST(li.link_person_id AS varchar(128)) AS person_id,
-           li.link_identifier_value                AS upn
-    FROM ssd_development.ssd_linked_identifiers li
-    WHERE li.link_identifier_type = 'Unique Pupil Number'
+           CAST(p.pers_person_id AS varchar(128)) AS person_id,
+           p.pers_upn                             AS upn
+    FROM ssd_development.ssd_person p
+    WHERE p.pers_upn IS NOT NULL
 )
 SELECT
     check_child_id,
@@ -250,12 +258,121 @@ FROM (
            '' AS example_key
     FROM Placements
 
-    -- UPN if exists
+       -- UPN unknown reason code, when value exists
     UNION ALL
-    SELECT 'unique_pupil_number format', 'person', '13 numeric digits',
-           SUM(CASE WHEN upn IS NOT NULL AND NOT (LEN(upn) = 13 AND TRY_CONVERT(bigint, upn) IS NOT NULL) THEN 1 ELSE 0 END),
-           MAX(CASE WHEN upn IS NOT NULL AND NOT (LEN(upn) = 13 AND TRY_CONVERT(bigint, upn) IS NOT NULL) THEN upn ELSE '' END),
-           MAX(CASE WHEN upn IS NOT NULL AND NOT (LEN(upn) = 13 AND TRY_CONVERT(bigint, upn) IS NOT NULL) THEN person_id ELSE '' END)
+    SELECT 'upn_unknown code', 'person', 'IN (UN1..UN10)',
+           SUM(
+               CASE
+                   WHEN pers_upn_unknown IS NOT NULL
+                        AND pers_upn_unknown NOT IN (
+                            'UN1','UN2','UN3','UN4','UN5',
+                            'UN6','UN7','UN8','UN9','UN10'
+                        )
+                   THEN 1
+                   ELSE 0
+               END
+           ) AS violations,
+           MAX(
+               CASE
+                   WHEN pers_upn_unknown IS NOT NULL
+                        AND pers_upn_unknown NOT IN (
+                            'UN1','UN2','UN3','UN4','UN5',
+                            'UN6','UN7','UN8','UN9','UN10'
+                        )
+                   THEN pers_upn_unknown
+                   ELSE ''
+               END
+           ) AS example_value,
+           MAX(
+               CASE
+                   WHEN pers_upn_unknown IS NOT NULL
+                        AND pers_upn_unknown NOT IN (
+                            'UN1','UN2','UN3','UN4','UN5',
+                            'UN6','UN7','UN8','UN9','UN10'
+                        )
+                   THEN person_id
+                   ELSE ''
+               END
+           ) AS example_key
+    FROM Persons
+
+    UNION ALL
+    SELECT 'care_leaver_activity code', 'care_leaver', 'IN (F1,P1,F2,P2,F4,P4,F5,P5,G4,G5,G6)',
+           SUM(
+               CASE
+                   WHEN activity_code IS NOT NULL
+                        AND activity_code NOT IN (
+                            'F1','P1','F2','P2','F4','P4','F5','P5','G4','G5','G6'
+                        )
+                   THEN 1
+                   ELSE 0
+               END
+           ) AS violations,
+           MAX(
+               CASE
+                   WHEN activity_code IS NOT NULL
+                        AND activity_code NOT IN (
+                            'F1','P1','F2','P2','F4','P4','F5','P5','G4','G5','G6'
+                        )
+                   THEN activity_code
+                   ELSE ''
+               END
+           ) AS example_value,
+           '' AS example_key
+    FROM CareLeavers
+
+    UNION ALL
+    SELECT 'care_leaver_accommodation code', 'care_leaver', 'IN (B,C,D,E,G,H,K,R,S,T,U,V)',
+           SUM(
+               CASE
+                   WHEN accommodation_code IS NOT NULL
+                        AND accommodation_code NOT IN (
+                            'B','C','D','E','G','H','K','R','S','T','U','V'
+                        )
+                   THEN 1
+                   ELSE 0
+               END
+           ) AS violations,
+           MAX(
+               CASE
+                   WHEN accommodation_code IS NOT NULL
+                        AND accommodation_code NOT IN (
+                            'B','C','D','E','G','H','K','R','S','T','U','V'
+                        )
+                   THEN accommodation_code
+                   ELSE ''
+               END
+           ) AS example_value,
+           '' AS example_key
+    FROM CareLeavers
+
+        -- UPN if exists
+    UNION ALL
+    SELECT 'unique_pupil_number format', 'person', '13 alphanumeric characters',
+           SUM(
+               CASE
+                   WHEN upn IS NOT NULL
+                        AND NOT (LEN(upn) = 13 AND upn NOT LIKE '%[^0-9A-Za-z]%')
+                   THEN 1
+                   ELSE 0
+               END
+           ) AS violations,
+           MAX(
+               CASE
+                   WHEN upn IS NOT NULL
+                        AND NOT (LEN(upn) = 13 AND upn NOT LIKE '%[^0-9A-Za-z]%')
+                   THEN upn
+                   ELSE ''
+               END
+           ) AS example_value,
+           MAX(
+               CASE
+                   WHEN upn IS NOT NULL
+                        AND NOT (LEN(upn) = 13 AND upn NOT LIKE '%[^0-9A-Za-z]%')
+                   THEN person_id
+                   ELSE ''
+               END
+           ) AS example_key
     FROM UPNs
 ) x;
 GO
