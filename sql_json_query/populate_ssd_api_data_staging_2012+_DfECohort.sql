@@ -72,7 +72,7 @@ END
 
 -- === Spec window (dynamic: 24 months back --> FY start on 1 April) ===
 DECLARE @run_date      date = CONVERT(date, GETDATE());
-DECLARE @months_back   int  = 36;
+DECLARE @months_back   int  = 24;
 DECLARE @fy_start_month int = 4;  -- April
 
 DECLARE @anchor date = DATEADD(month, -@months_back, @run_date);
