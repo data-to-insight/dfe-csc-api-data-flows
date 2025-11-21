@@ -18,7 +18,7 @@ META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging"}
 META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging_anon"} - temp table for API testing, can be removed post testing
 */
 
-DECLARE @VERSION nvarchar(32) = N'0.2.1';
+DECLARE @VERSION nvarchar(32) = N'0.2.0';
 RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 
 
@@ -37,6 +37,8 @@ RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 
 
 -- IF OBJECT_ID('ssd_api_data_staging', 'U') IS NOT NULL DROP TABLE ssd_api_data_staging;
+IF OBJECT_ID(N'ssd_api_data_staging', N'U') IS NULL
+
 IF OBJECT_ID('ssd_api_data_staging') IS NOT NULL
 BEGIN
     IF EXISTS (SELECT 1 FROM ssd_api_data_staging)
@@ -167,109 +169,157 @@ RawPayloads AS (
     SELECT
         p.pers_person_id AS person_id,
         (
-            -- DfE payload starts 
             SELECT
-                -- (Spec attribute numbers 2..55 commented)
-                LEFT(CAST(p.pers_person_id AS varchar(36)), 36) AS [la_child_id],                   -- 2 :str(id)
+                -- Note: ids (str)
+                LEFT(CAST(p.pers_person_id AS varchar(36)), 36) AS [la_child_id],
                 LEFT(CAST(ISNULL(p.pers_common_child_id, 'SSD_SUI') AS varchar(36)), 36) AS [mis_child_id],
                 CAST(0 AS bit) AS [purge],
 
-                -- Child details (Attributes 3..15)
+                -- Child details
                 JSON_QUERY((
                     SELECT
+                        p.pers_forename AS [first_name],
+                        p.pers_surname  AS [surname],
+
+                        -- UPNs (13 alphanumeric, else null)
                         (SELECT TOP 1 CASE
                                         WHEN LEN(li.link_identifier_value) = 13
-                                        AND TRY_CONVERT(bigint, li.link_identifier_value) IS NOT NULL
+                                         AND TRY_CONVERT(bigint, li.link_identifier_value) IS NOT NULL
                                         THEN li.link_identifier_value
-                                    END
-                        FROM ssd_linked_identifiers li
-                        WHERE li.link_person_id     = p.pers_person_id
+                                      END
+                           FROM ssd_linked_identifiers li
+                          WHERE li.link_person_id = p.pers_person_id
                             AND li.link_identifier_type = 'Unique Pupil Number'
-                        ORDER BY li.link_valid_from_date DESC) AS [unique_pupil_number],            -- 3
+                          ORDER BY li.link_valid_from_date DESC) AS [unique_pupil_number],
 
-                        
                         (SELECT TOP 1 CASE
                                         WHEN LEN(li2.link_identifier_value) = 13
-                                        AND TRY_CONVERT(bigint, li2.link_identifier_value) IS NOT NULL
+                                         AND TRY_CONVERT(bigint, li2.link_identifier_value) IS NOT NULL
                                         THEN li2.link_identifier_value
-                                    END
-                        FROM ssd_linked_identifiers li2
-                        WHERE li2.link_person_id     = p.pers_person_id
+                                      END
+                           FROM ssd_linked_identifiers li2
+                          WHERE li2.link_person_id = p.pers_person_id
                             AND li2.link_identifier_type = 'Former Unique Pupil Number'
-                        ORDER BY li2.link_valid_from_date DESC) AS [former_unique_pupil_number],    -- 4
+                          ORDER BY li2.link_valid_from_date DESC) AS [former_unique_pupil_number],
 
-                        LEFT(p.pers_upn_unknown, 3) AS [unique_pupil_number_unknown_reason],        -- 5
-                        p.pers_forename AS [first_name],                                            -- 6
-                        p.pers_surname AS [surname],                                                -- 7
-                        CONVERT(varchar(10), p.pers_dob, 23) AS [date_of_birth],                    -- 8
-                        CONVERT(varchar(10), p.pers_expected_dob, 23) AS [expected_date_of_birth],  -- 9
+                        LEFT(p.pers_upn_unknown, 3) AS [unique_pupil_number_unknown_reason],
 
-                        
-                        CASE WHEN p.pers_sex IN ('M','F') THEN p.pers_sex ELSE 'U' END  AS [sex],   -- 10
+                        CONVERT(varchar(10), p.pers_dob, 23) AS [date_of_birth],
+                        CONVERT(varchar(10), p.pers_expected_dob, 23) AS [expected_date_of_birth],
 
-                        
-                        LEFT(p.pers_ethnicity, 4) AS [ethnicity],                                   -- 11
+                        CASE WHEN p.pers_sex IN ('M','F') THEN p.pers_sex ELSE 'U' END AS [sex],
 
-                        
-                        JSON_QUERY(CASE WHEN disab.disabilities IS NOT NULL
-                                        THEN disab.disabilities
-                                        ELSE '[]'
-                                END) AS [disabilities],                                             -- 12
+                        LEFT(p.pers_ethnicity, 4) AS [ethnicity],
 
-                        -- trim and de-space
-                        (SELECT TOP 1 LEFT(REPLACE(LTRIM(RTRIM(a.addr_address_postcode)),' ',''), 8) 
-                        FROM ssd_address a
-                        WHERE a.addr_person_id = p.pers_person_id
-                        ORDER BY a.addr_address_start_date DESC) AS [postcode],                     -- 13
+                        -- Disabilities array (avoid COALESCE on JSON)
+                        JSON_QUERY(
+                            CASE WHEN disab.disabilities IS NOT NULL
+                                THEN disab.disabilities
+                                ELSE '[]'
+                            END
+                        ) AS [disabilities],
 
-                        
-                        CASE WHEN EXISTS (
+
+                        -- Postcode (no space)
+                        (SELECT TOP 1 LEFT(a.addr_address_postcode, 8)
+                           FROM ssd_address a
+                          WHERE a.addr_person_id = p.pers_person_id
+                          ORDER BY a.addr_address_start_date DESC) AS [postcode],
+
+                        -- UASC bool
+                        CASE
+                            WHEN EXISTS (
                                 SELECT 1
-                                FROM ssd_immigration_status s
-                                WHERE s.immi_person_id = p.pers_person_id
-                                    -- case insensitive status chk
-                                    AND ISNULL(s.immi_immigration_status,'') 
-                                    COLLATE Latin1_General_CI_AI LIKE '%UASC%' 
-                            ) THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS [uasc_flag],           -- 14
+                                  FROM ssd_immigration_status s
+                                 WHERE s.immi_person_id = p.pers_person_id
+                                   AND ISNULL(s.immi_immigration_status, '') COLLATE Latin1_General_CI_AI LIKE '%UASC%'
+                            ) THEN CAST(1 AS bit)
+                            ELSE CAST(0 AS bit)
+                        END AS [uasc_flag],
 
-                        
                         (SELECT TOP 1 CONVERT(varchar(10), s2.immi_immigration_status_end_date, 23)
-                        FROM ssd_immigration_status s2
-                        WHERE s2.immi_person_id = p.pers_person_id
-                        ORDER BY CASE WHEN s2.immi_immigration_status_end_date IS NULL THEN 1 
-                        ELSE 0 END,
-                                s2.immi_immigration_status_start_date DESC) AS [uasc_end_date],     -- 15
+                           FROM ssd_immigration_status s2
+                          WHERE s2.immi_person_id = p.pers_person_id
+                          ORDER BY CASE WHEN s2.immi_immigration_status_end_date IS NULL THEN 1 ELSE 0 END,
+                                   s2.immi_immigration_status_start_date DESC) AS [uasc_end_date],
 
-                        -- child_details purge
                         CAST(0 AS bit) AS [purge]
                     FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
                 )) AS [child_details],
 
-                -- Social care episodes (Attributes 16..55)
+
+                -- Social care episodes
                 JSON_QUERY((
                     SELECT
-                        -- str(id) for JSON
-                        LEFT(CAST(cine.cine_referral_id AS varchar(36)), 36) AS [social_care_episode_id],                           -- 16 
-                        CONVERT(varchar(10), cine.cine_referral_date, 23) AS [referral_date],                                       -- 17
-                        LEFT(cine.cine_referral_source_code, 2) AS [referral_source],                                               -- 18    
-
-                        CONVERT(varchar(10), cine.cine_close_date, 23) AS [closure_date],                                           -- 19
-                        LEFT(cine.cine_close_reason, 3) AS [closure_reason],                                                        -- 20
+                        -- Note: id(str)
+                        LEFT(CAST(cine.cine_referral_id AS varchar(36)), 36) AS [social_care_episode_id], -- stringify for JSON
+                        CONVERT(varchar(10), cine.cine_referral_date, 23) AS [referral_date],
+                        LEFT(cine.cine_referral_source_code, 2) AS [referral_source],
 
                         CASE
                             WHEN TRY_CONVERT(bit, cine.cine_referral_nfa) IS NOT NULL
                                 THEN TRY_CONVERT(bit, cine.cine_referral_nfa)
-                            -- SSD source enforces NCHAR(1) but some robustness added
+                            -- SSD source enforces NCHAR(1) however..., some robustness - wrap potential LA source strings
                             -- SSD source field cine_referral_nfa in review as bool
                             WHEN UPPER(LTRIM(RTRIM(cine.cine_referral_nfa))) IN ('Y','T','1','TRUE')
                                 THEN CAST(1 AS bit)
                             WHEN UPPER(LTRIM(RTRIM(cine.cine_referral_nfa))) IN ('N','F','0','FALSE')
                                 THEN CAST(0 AS bit)
                             ELSE CAST(NULL AS bit)
-                        END AS [referral_no_further_action_flag],                                                                   -- 21
+                        END AS [referral_no_further_action_flag],
+
+                        -- Health and wellbeing
+                        JSON_QUERY((
+                            SELECT
+                            JSON_QUERY((
+                                SELECT
+                                -- SDQ scoped to episode window, avoid duplicate SDQs across episodes
+                                CONVERT(varchar(10), csdq.csdq_sdq_completed_date, 23) AS [sdq_date],
+                                TRY_CONVERT(int, csdq.csdq_sdq_score)                   AS [sdq_score]
+                                FROM ssd_sdq_scores csdq
+                                WHERE csdq.csdq_person_id = p.pers_person_id
+                                AND TRY_CONVERT(int, csdq.csdq_sdq_score) IS NOT NULL
+                                AND csdq.csdq_sdq_completed_date >= CASE
+                                    WHEN cine.cine_referral_date > @window_start THEN cine.cine_referral_date
+                                    ELSE @window_start
+                                    END
+                                AND csdq.csdq_sdq_completed_date <= COALESCE(cine.cine_close_date, @window_end)
+                                ORDER BY csdq.csdq_sdq_completed_date DESC
+                                FOR JSON PATH
+                            )) AS [sdq_assessments],
+                            CAST(0 AS bit) AS [purge]
+                            FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
+                        )) AS [health_and_wellbeing],
+
+                        -- Social worker details
+                        JSON_QUERY(
+                            CASE WHEN EXISTS (
+                                    SELECT 1
+                                    FROM ssd_involvements i
+                                    WHERE i.invo_referral_id = cine.cine_referral_id
+                                    AND i.invo_involvement_start_date <= @window_end
+                                    AND (i.invo_involvement_end_date IS NULL OR i.invo_involvement_end_date >= @window_start)
+                                )
+                                THEN (
+                                    SELECT
+                                        LEFT(CAST(pr.prof_staff_id AS varchar(12)), 12) AS [worker_id],
+                                        CONVERT(varchar(10), i.invo_involvement_start_date, 23) AS [worker_start_date],
+                                        CONVERT(varchar(10), i.invo_involvement_end_date, 23)   AS [worker_end_date]
+                                    FROM ssd_involvements i
+                                    JOIN ssd_professionals pr
+                                    ON i.invo_professional_id = pr.prof_professional_id
+                                    WHERE i.invo_referral_id = cine.cine_referral_id
+                                    AND i.invo_involvement_start_date <= @window_end
+                                    AND (i.invo_involvement_end_date IS NULL OR i.invo_involvement_end_date >= @window_start)
+                                    ORDER BY i.invo_involvement_start_date DESC
+                                    FOR JSON PATH
+                                )
+                                ELSE '[]'
+                            END
+                        ) AS [social_workers],
 
 
-                        -- Child and family assessments (22..25)
+                        -- Child and family assessments
                         JSON_QUERY(
                             CASE WHEN EXISTS (
                                     SELECT 1
@@ -282,13 +332,13 @@ RawPayloads AS (
                                 )
                                 THEN (
                                     SELECT
-                                        LEFT(CAST(ca.cina_assessment_id AS varchar(36)), 36) AS [child_and_family_assessment_id],   -- 22
-                                        CONVERT(varchar(10), ca.cina_assessment_start_date, 23) AS [start_date],                    -- 23
-                                        CONVERT(varchar(10), ca.cina_assessment_auth_date, 23)  AS [authorisation_date],            -- 24
+                                        LEFT(CAST(ca.cina_assessment_id AS varchar(36)), 36) AS [child_and_family_assessment_id],
+                                        CONVERT(varchar(10), ca.cina_assessment_start_date, 23) AS [start_date],
+                                        CONVERT(varchar(10), ca.cina_assessment_auth_date, 23)  AS [authorisation_date],
                                         JSON_QUERY(CASE
                                             WHEN af.cinf_assessment_factors_json IS NULL OR af.cinf_assessment_factors_json = '' THEN '[]'
                                             ELSE af.cinf_assessment_factors_json
-                                        END) AS [assessment_factors],                                                               -- 25
+                                        END) AS [assessment_factors],
                                         CAST(0 AS bit) AS [purge]
                                     FROM ssd_cin_assessments ca
                                     LEFT JOIN ssd_assessment_factors af
@@ -305,7 +355,7 @@ RawPayloads AS (
                         ) AS [child_and_family_assessments],
 
 
-                        -- Child in need plans (26..28)
+                        -- Child in need plans
                         JSON_QUERY(
                             CASE WHEN EXISTS (
                                     SELECT 1
@@ -316,9 +366,9 @@ RawPayloads AS (
                                 )
                                 THEN (
                                     SELECT
-                                        LEFT(CAST(cinp.cinp_cin_plan_id AS varchar(36)), 36) AS [child_in_need_plan_id],            -- 26
-                                        CONVERT(varchar(10), cinp.cinp_cin_plan_start_date, 23) AS [start_date],                    -- 27
-                                        CONVERT(varchar(10), cinp.cinp_cin_plan_end_date, 23) AS [end_date],                        -- 28
+                                        LEFT(CAST(cinp.cinp_cin_plan_id AS varchar(36)), 36) AS [child_in_need_plan_id],
+                                        CONVERT(varchar(10), cinp.cinp_cin_plan_start_date, 23) AS [start_date],
+                                        CONVERT(varchar(10), cinp.cinp_cin_plan_end_date, 23)   AS [end_date],
                                         CAST(0 AS bit) AS [purge]
                                     FROM ssd_cin_plans cinp
                                     WHERE cinp.cinp_referral_id = cine.cine_referral_id
@@ -331,7 +381,7 @@ RawPayloads AS (
                         ) AS [child_in_need_plans],
 
 
-                        -- s47 assessments (29..33)
+                        -- s47 assessments
                         JSON_QUERY(
                             CASE WHEN EXISTS (
                                     SELECT 1
@@ -350,17 +400,17 @@ RawPayloads AS (
                                 )
                                 THEN (
                                     SELECT
-                                        LEFT(CAST(s47e.s47e_s47_enquiry_id AS varchar(36)), 36) AS [section_47_assessment_id],      -- 29
-                                        CONVERT(varchar(10), s47e.s47e_s47_start_date, 23) AS [start_date],                         -- 30
+                                        LEFT(CAST(s47e.s47e_s47_enquiry_id AS varchar(36)), 36) AS [section_47_assessment_id],
+                                        CONVERT(varchar(10), s47e.s47e_s47_start_date, 23) AS [start_date],
                                         CASE
                                             WHEN JSON_VALUE(s47e.s47e_s47_outcome_json, '$.CP_CONFERENCE_FLAG') IN ('Y','T','1','true','True')
                                                 THEN CAST(1 AS bit)
                                             WHEN JSON_VALUE(s47e.s47e_s47_outcome_json, '$.CP_CONFERENCE_FLAG') IN ('N','F','0','false','False')
                                                 THEN CAST(0 AS bit)
                                             ELSE CAST(NULL AS bit)
-                                        END AS [icpc_required_flag],                                                                -- 31
-                                        CONVERT(varchar(10), icpc.icpc_icpc_date, 23) AS [icpc_date],                               -- 32
-                                        CONVERT(varchar(10), s47e.s47e_s47_end_date, 23) AS [end_date],                             -- 33
+                                        END AS [icpc_required_flag],
+                                        CONVERT(varchar(10), icpc.icpc_icpc_date, 23) AS [icpc_date],
+                                        CONVERT(varchar(10), s47e.s47e_s47_end_date, 23) AS [end_date],
                                         CAST(0 AS bit) AS [purge]
                                     FROM ssd_s47_enquiry s47e
                                     LEFT JOIN ssd_initial_cp_conference icpc
@@ -378,7 +428,7 @@ RawPayloads AS (
                         ) AS [section_47_assessments],
 
 
-                        -- Child protection plans (34..36)
+                        -- Child protection plans
                         JSON_QUERY(
                             CASE WHEN EXISTS (
                                     SELECT 1
@@ -389,9 +439,9 @@ RawPayloads AS (
                                 )
                                 THEN (
                                     SELECT
-                                        LEFT(CAST(cppl.cppl_cp_plan_id AS varchar(36)), 36) AS [child_protection_plan_id],          -- 34
-                                        CONVERT(varchar(10), cppl.cppl_cp_plan_start_date, 23) AS [start_date],                     -- 35
-                                        CONVERT(varchar(10), cppl.cppl_cp_plan_end_date, 23)   AS [end_date],                       -- 36
+                                        LEFT(CAST(cppl.cppl_cp_plan_id AS varchar(36)), 36) AS [child_protection_plan_id],
+                                        CONVERT(varchar(10), cppl.cppl_cp_plan_start_date, 23) AS [start_date],
+                                        CONVERT(varchar(10), cppl.cppl_cp_plan_end_date, 23)   AS [end_date],
                                         CAST(0 AS bit) AS [purge]
                                     FROM ssd_cp_plans cppl
                                     WHERE cppl.cppl_referral_id = cine.cine_referral_id
@@ -404,84 +454,48 @@ RawPayloads AS (
                         ) AS [child_protection_plans],
 
 
-                        -- Looked after placements (37..44)
+                        -- Looked after placements
                         JSON_QUERY(
-                        CASE WHEN EXISTS (
-                            SELECT 1
-                            FROM ssd_cla_episodes clae
-                            JOIN ssd_cla_placement clap
-                                ON clap.clap_cla_id = clae.clae_cla_id
-                            WHERE clae.clae_referral_id = cine.cine_referral_id
-                                AND clap.clap_cla_placement_start_date <= @window_end
-                                AND (clap.clap_cla_placement_end_date IS NULL OR clap.clap_cla_placement_end_date >= @window_start)
-                            )
-                            THEN (
-                            SELECT
-                                LEFT(CAST(clap.clap_cla_placement_id AS varchar(36)), 36) AS [child_looked_after_placement_id],     -- 37
-                                CONVERT(varchar(10), clap.clap_cla_placement_start_date, 23) AS [start_date],                       -- 38
-                                LEFT(MIN(clae.clae_cla_episode_start_reason), 1) AS [start_reason],                                 -- 39
-                                REPLACE(LTRIM(RTRIM(LEFT(clap.clap_cla_placement_postcode, 8))), ' ', '') AS [postcode],            -- 40
-                                LEFT(clap.clap_cla_placement_type, 2) AS [placement_type],                                          -- 41
-                                CONVERT(varchar(10),
-                                        CASE
-                                        WHEN clap.clap_cla_placement_end_date IS NULL
-                                            OR clap.clap_cla_placement_end_date >= clap.clap_cla_placement_start_date
-                                        THEN clap.clap_cla_placement_end_date
-                                        ELSE NULL
-                                        END, 23) AS [end_date],                                                                     -- 42
-                                LEFT(MIN(clae.clae_cla_episode_ceased_reason), 3) AS [end_reason],                                  -- 43
-                                LEFT(clap.clap_cla_placement_change_reason, 6) AS [change_reason],                                  -- 44
-                                CAST(0 AS bit) AS [purge] 
-                            FROM ssd_cla_episodes clae
-                            JOIN ssd_cla_placement clap
-                                ON clap.clap_cla_id = clae.clae_cla_id
-                            WHERE clae.clae_referral_id = cine.cine_referral_id
-                                AND clap.clap_cla_placement_start_date <= @window_end
-                                AND (clap.clap_cla_placement_end_date IS NULL OR clap.clap_cla_placement_end_date >= @window_start)
-                            GROUP BY
-                                clap.clap_cla_placement_id,
-                                clap.clap_cla_placement_start_date,
-                                clap.clap_cla_placement_type,
-                                clap.clap_cla_placement_postcode,
-                                clap.clap_cla_placement_end_date,
-                                clap.clap_cla_placement_change_reason
-                            ORDER BY clap.clap_cla_placement_start_date DESC
-                            FOR JSON PATH
-                            )
-                            ELSE '[]'
-                        END
+                            CASE WHEN EXISTS (
+                                    SELECT 1
+                                    FROM ssd_cla_episodes clae
+                                    JOIN ssd_cla_placement clap
+                                    ON clap.clap_cla_id = clae.clae_cla_id
+                                    WHERE clae.clae_referral_id = cine.cine_referral_id
+                                    AND clap.clap_cla_placement_start_date <= @window_end
+                                    AND (clap.clap_cla_placement_end_date IS NULL OR clap.clap_cla_placement_end_date >= @window_start)
+                                )
+                                THEN (
+                                    SELECT
+                                        LEFT(CAST(clap.clap_cla_placement_id AS varchar(36)), 36) AS [child_looked_after_placement_id],
+                                        CONVERT(varchar(10), clap.clap_cla_placement_start_date, 23) AS [start_date],
+                                        LEFT(clae.clae_cla_episode_start_reason, 1) AS [start_reason],
+                                        LEFT(clap.clap_cla_placement_type, 2) AS [placement_type],
+                                        LEFT(clap.clap_cla_placement_postcode, 8) AS [postcode],
+                                        CONVERT(varchar(10), clap.clap_cla_placement_end_date, 23) AS [end_date],
+                                        LEFT(clae.clae_cla_episode_ceased_reason, 3) AS [end_reason],
+                                        LEFT(clap.clap_cla_placement_change_reason, 6) AS [change_reason],
+                                        CAST(0 AS bit) AS [purge]
+                                    FROM ssd_cla_episodes clae
+                                    JOIN ssd_cla_placement clap
+                                    ON clap.clap_cla_id = clae.clae_cla_id
+                                    WHERE clae.clae_referral_id = cine.cine_referral_id
+                                    AND clap.clap_cla_placement_start_date <= @window_end
+                                    AND (clap.clap_cla_placement_end_date IS NULL OR clap.clap_cla_placement_end_date >= @window_start)
+                                    ORDER BY clap.clap_cla_placement_start_date DESC
+                                    FOR JSON PATH
+                                )
+                                ELSE '[]'
+                            END
                         ) AS [child_looked_after_placements],
 
-                        -- Health and wellbeing (45..46)
+
+                        -- Adoptions
                         JSON_QUERY((
                             SELECT
-                            JSON_QUERY((
-                                SELECT
-                                -- SDQ scoped to episode window, avoid duplicate SDQs across episodes
-                                CONVERT(varchar(10), csdq.csdq_sdq_completed_date, 23) AS [sdq_date],                               -- 45
-                                TRY_CONVERT(int, csdq.csdq_sdq_score) AS [sdq_score]                                                -- 46
-                                FROM ssd_sdq_scores csdq
-                                WHERE csdq.csdq_person_id = p.pers_person_id
-                                AND TRY_CONVERT(int, csdq.csdq_sdq_score) IS NOT NULL
-                                AND csdq.csdq_sdq_completed_date >= CASE
-                                    WHEN cine.cine_referral_date > @window_start THEN cine.cine_referral_date
-                                    ELSE @window_start
-                                    END
-                                AND csdq.csdq_sdq_completed_date <= COALESCE(cine.cine_close_date, @window_end)
-                                ORDER BY csdq.csdq_sdq_completed_date DESC
-                                FOR JSON PATH
-                            )) AS [sdq_assessments],
-                            CAST(0 AS bit) AS [purge]
-                            FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
-                        )) AS [health_and_wellbeing],
-
-
-                        -- Adoptions (47..49)
-                        JSON_QUERY((
-                            SELECT
-                                CONVERT(varchar(10), perm.perm_adm_decision_date, 23) AS [date_initial_decision],                   -- 47
-                                CONVERT(varchar(10), perm.perm_matched_date, 23) AS [date_match],                                   -- 48
-                                CONVERT(varchar(10), perm.perm_placed_for_adoption_date,23) AS [date_placed],                       -- 49
+                                CONVERT(varchar(10), perm.perm_adm_decision_date,       23) AS [date_initial_decision],
+                                CONVERT(varchar(10), perm.perm_matched_date,            23) AS [date_match],
+                                CONVERT(varchar(10), perm.perm_placed_for_adoption_date,23) AS [date_placed],
                                 CAST(0 AS bit) AS [purge]
                             FROM ssd_permanence perm
                             WHERE (perm.perm_person_id = p.pers_person_id
@@ -498,13 +512,12 @@ RawPayloads AS (
                             FOR JSON PATH
                             )) AS [adoptions],
 
-
-                        -- Care leavers (50..52)
+                        -- Care leavers (single object)
                         JSON_QUERY((
                             SELECT TOP 1
-                                CONVERT(varchar(10), clea.clea_care_leaver_latest_contact, 23) AS [contact_date],                   -- 50
-                                LEFT(clea.clea_care_leaver_activity, 2) AS [activity],                                              -- 51
-                                LEFT(clea.clea_care_leaver_accommodation, 1) AS [accommodation],                                    -- 52
+                                CONVERT(varchar(10), clea.clea_care_leaver_latest_contact, 23) AS [contact_date],
+                                LEFT(clea.clea_care_leaver_activity, 2) AS [activity],
+                                LEFT(clea.clea_care_leaver_accommodation, 1) AS [accommodation],
                                 CAST(0 AS bit) AS [purge]
                               FROM ssd_care_leavers clea
                              WHERE clea.clea_person_id = p.pers_person_id
@@ -513,35 +526,8 @@ RawPayloads AS (
                              FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
                         )) AS [care_leavers],
 
-
-                        -- Social worker details (53..55)
-                        JSON_QUERY(
-                            CASE WHEN EXISTS (
-                                    SELECT 1
-                                    FROM ssd_involvements i
-                                    WHERE i.invo_referral_id = cine.cine_referral_id
-                                    AND i.invo_involvement_start_date <= @window_end
-                                    AND (i.invo_involvement_end_date IS NULL OR i.invo_involvement_end_date >= @window_start)
-                                )
-                                THEN (
-                                    SELECT
-                                        LEFT(CAST(pr.prof_staff_id AS varchar(12)), 12) AS [worker_id],                             -- 53
-                                        CONVERT(varchar(10), i.invo_involvement_start_date, 23) AS [worker_start_date],             -- 54
-                                        CONVERT(varchar(10), i.invo_involvement_end_date, 23) AS [worker_end_date]                  -- 55
-                                    FROM ssd_involvements i
-                                    JOIN ssd_professionals pr
-                                    ON i.invo_professional_id = pr.prof_professional_id
-                                    WHERE i.invo_referral_id = cine.cine_referral_id
-                                    AND i.invo_involvement_start_date <= @window_end
-                                    AND (i.invo_involvement_end_date IS NULL OR i.invo_involvement_end_date >= @window_start)
-                                    ORDER BY i.invo_involvement_start_date DESC
-                                    FOR JSON PATH
-                                )
-                                ELSE '[]'
-                            END
-                        ) AS [social_workers],
-
-
+                        CONVERT(varchar(10), cine.cine_close_date, 23) AS [closure_date],
+                        LEFT(cine.cine_close_reason, 3) AS [closure_reason],
                         CAST(0 AS bit) AS [purge]
                       FROM ssd_cin_episodes cine
                      WHERE cine.cine_person_id = p.pers_person_id
@@ -628,7 +614,7 @@ WHERE prev.current_hash IS NULL             -- first time we’ve ever seen this
 -- -- CREATE UNIQUE INDEX UX_ssd_api_person_hash
 -- -- ON ssd_api_data_staging(person_id, current_hash);
 
--- sample LIVE rows with extended/nested payload (if available)
+-- sample LIVE rows that have extended/full payload (if available)
 SELECT TOP (5)
     person_id,
     LEN(json_payload)        AS payload_chars,
