@@ -18,8 +18,15 @@ Last updated: 18/09/25
  - Agree a safe _team accessible_ location to save the DfE API credentials
  - Confirm you have read access to source CMS reporting views/tables  
  - Obtain write access|permission to run `CREATE TABLE` on reporting instance(dev or existing data team reporting instance is ideal)  
- - Obtain access to use PowerShell 5.1+ locally, and thinking towards having local Anaconda or Miniconda or Python access
- - Download SSD SQL scripts for your CMS type and review/experiment with running queries. Colleagues are welcome to reach out to D2I for support.  [data-to-insight.github.io/ssd-data-model - SSD Deployment](https://data-to-insight.github.io/ssd-data-model-next/)
+ - Obtain access to use PowerShell 5.1+ locally, and conversations towards whether local single access to Anaconda, Miniconda or Python is possible
+ - Download SSD SQL scripts for your CMS type and review/experiment with running both the SSD setup queries, and against the data.  
+ - [**SystemC**:](https://github.com/data-to-insight/ssd-data-model/tree/main/deployment_extracts/systemc/live) (Click Zip file, then download icon)
+ - [**Mosaic**:](https://github.com/data-to-insight/ssd-data-model/blob/main/deployment_extracts/mosaic/live/) (Click Zip file, then download icon)
+ - [**Eclipse**:](https://github.com/data-to-insight/ssd-data-model/tree/main/deployment_extracts/eclipse/live) (Click Zip file, then download icon)
+
+ SSD details published  [github.io/ssd-data-model - SSD Deployment](https://data-to-insight.github.io/ssd-data-model-next/) 
+
+
 
 > <details>
 > <summary><em>Stage 0 - CSC Analyst/Data Lead Tech Stack Headlines</em></summary>
@@ -33,14 +40,16 @@ Last updated: 18/09/25
 > </details>
 
 
-**IT/DBA**  
-> - Ensure capability and capacity to schedule additional Db|server job(SSD SQL needs a nightly refresh) & Python or EXE(API)), outbound HTTPS calls to DfE API endpoint. 
-- Support to make Powershell or Anaconda or Miniconda or Python available to the project analyst/deployment team so they can test locally before IT/Infastructure move the SSD data refresh and API to a server overnight job. 
-- *Agree environment: Where can your LA deploy SSD schema(within sight of CMS data), optional: file/log locations. 
+**DBA/Data Lead**  
+> - Ensure capability and capacity to schedule additional Db|server job(SSD SQL needs a nightly refresh)
+- Agree environment/db reporting instance: Where can your LA deploy SSD schema(within sight of CMS data)
+- Visual checks on (un)populated SSD tables. Simple notes recording data gaps, possible issues - does the SSD need bespoke adjustments?
 
 **IT/server team**
-- Support if needed the project team **analyst/lead** in running the D2I end-to-end API connectivity Powershell test script to ensure external API calls to the DfE can be made from your LA. This script sends nothing, but pings the DfE and confirms response codes. D2I can support. 
-> - Book some time within week 3/4 of the timeline to review and port jobs to server overnights
+> - Support to make Powershell available to the project analyst/deployment team so they can initially smoke test locally before IT/Infastructure add the SSD data refresh and API to automated overnight jobs. (To achieve Phase 2 DELTA sends, Anaconda, Miniconda(or just Python) required)  
+- Support if needed the project team **analyst/lead** in running the D2I end-to-end API connectivity Powershell test script to ensure external API calls to the DfE can be made from your LA. This script sends nothing, but pings the DfE and confirms response codes. D2I can support.  
+- Discuss/ensure capability and capacity to schedule Python, Jupyter file or EXE, API outbound HTTPS calls to DfE API endpoint from LA.    
+- Suggested: Book some time within week 3/4+ of the timeline to review and port jobs to server overnights/db jobs
  - Raise awareness that a feedback loop between involved team(s) and either DfE project team or D2I direct might be needed during this
 
 **DPO / Information or IT Security Team**
