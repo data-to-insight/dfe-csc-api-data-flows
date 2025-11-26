@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS ssd_api_data_staging_anon (
 
 -- =============================================================================
 -- Main build and insert, idempotent by hash
--- Requires source tables to exist:
+-- Requires minimum source tables to exist:
 -- ssd_person, ssd_disability, ssd_sdq_scores, ssd_cin_episodes, ssd_involvements,
 -- ssd_professionals, ssd_cin_assessments, ssd_assessment_factors, ssd_cin_plans,
 -- ssd_s47_enquiry, ssd_initial_cp_conference, ssd_cla_episodes, ssd_cla_placement,
