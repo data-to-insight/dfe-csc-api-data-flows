@@ -17,7 +17,7 @@ release.zip                          export-ignore
 # notebooks/                           export-ignore
 # tests/                               export-ignore
 
-# -------- Root-level project files not needed for end-users ---
+# -------- Root-level project files d2i dev only ---
 mkdocs.yml                           export-ignore
 clean.sh                             export-ignore
 setup.sh                             export-ignore
@@ -29,10 +29,10 @@ sccm_graph_static.svg                export-ignore
 
 # -------- Keep only *current* SQL helper  ------------------
 # Exclude dev-only SQL
-api_sql_raw_json_query/dev/  export-ignore
+sql_json_query/dev/  export-ignore
 
 # NOTE: do NOT mark these paths with export-ignore:
 #   api_pipeline/**                               - keep package source
 #   api_pipeline_pshell/api_payload_sender.ps1   - keep helper
-#   api_sql_raw_json_query/populate_ssd_api_data_staging_*.sql  - keep helper
+#   sql_json_query/populate_ssd_api_data_staging_*.sql  - keep helper
 #   LICENSE, README.md, pyproject.toml, MANIFEST.in          - keep root essentials
