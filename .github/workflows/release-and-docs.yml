@@ -99,7 +99,7 @@ jobs:
             "api_pipeline\pshell\phase_1_api_payload.ps1",
             "pre_flight_checks\phase_1_api_credentials_smoke_test.ps1",
             "sql_json_query\populate_ssd_api_data_staging_2012.sql",
-            "sql_json_query\populate_ssd_api_data_staging_2016sp1.sql",
+            "sql_json_query\populate_ssd_api_data_staging_2016.sql",
             "pre_flight_checks\ssd_vw_csc_api_schema_checks.sql"
           )
           $missing = @()
@@ -123,7 +123,7 @@ jobs:
           Copy-Item api_pipeline\pshell\phase_1_api_payload.ps1 -Destination release_bundle\
           # SQL files, legacy and current 
           Copy-Item sql_json_query\populate_ssd_api_data_staging_2012.sql -Destination release_bundle\
-          Copy-Item sql_json_query\populate_ssd_api_data_staging_2016sp1.sql -Destination release_bundle\
+          Copy-Item sql_json_query\populate_ssd_api_data_staging_2016.sql -Destination release_bundle\
           # Notebooks
           Copy-Item api_pipeline\notebooks\* -Destination release_bundle\notebooks\ -Recurse -Force
           Compress-Archive -Path release_bundle\* -DestinationPath release.zip -Force
@@ -154,7 +154,7 @@ jobs:
         # api_pipeline/pshell/phase_1_api_payload.ps1
         # pre_flight_checks/phase_1_api_credentials_smoke_test.ps1
         # sql_json_query/populate_ssd_api_data_staging_2012.sql
-        # sql_json_query/populate_ssd_api_data_staging_2016sp1.sql
+        # sql_json_query/populate_ssd_api_data_staging_2016.sql
         # pre_flight_checks/ssd_vw_csc_api_schema_checks.sql
         # README.md
         # api_pipeline/.env.example
