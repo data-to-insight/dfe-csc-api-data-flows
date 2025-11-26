@@ -2,9 +2,7 @@
 use HDM_Local; -- Note: this the SystemC/LLogic default, LA should change to bespoke 
 
 /* ==========================================================================
-   D2I CSC API Payload Builder, Legacy SQL Server 2012 compatible
-   - No OPENJSON, JSON_VALUE, STRING_AGG
-   - JSON built with QUOTENAME + FOR XML PATH
+   D2I CSC API Payload Builder, SQL Server 2012+ compatible
    ========================================================================== */
 
 
@@ -17,10 +15,6 @@ can be appended into the main SSD and run as one - insert locations within the S
 &
 -- META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging_anon"}
 -- =============================================================================
-
-
--- Script compatibility and defaults
--- Default uses XML PATH for aggregations, SQL Server 2012+
 
 */
 
@@ -80,31 +74,42 @@ END
 
 
 
-/* === EA Spec window, dynamic: 24 months back to FY start on 1 April === */
-DECLARE @run_date       date = CONVERT(date, GETDATE());
-DECLARE @months_back    int  = 24;
-DECLARE @fy_start_month int  = 4;
+/* === EA Spec window (dynamic: 24 months back --> FY start on 1 April) ===  */
+DECLARE @run_date      date = CONVERT(date, GETDATE());
+DECLARE @months_back   int  = 24;
+DECLARE @fy_start_month int = 4;  -- April
 
 DECLARE @anchor date = DATEADD(month, -@months_back, @run_date);
+DECLARE @fy_start_year int = YEAR(@anchor) - CASE WHEN MONTH(@anchor) < @fy_start_month THEN 1 ELSE 0 END;
 
-DECLARE @fy_start_year int =
-  YEAR(@anchor) - CASE WHEN MONTH(@anchor) < @fy_start_month THEN 1 ELSE 0 END;
-
--- datetime2 for cohort window
-DECLARE @ea_cohort_window_start datetime2(0) = DATEFROMPARTS(@fy_start_year, @fy_start_month, 1);
-DECLARE @ea_cohort_window_end   datetime2(0) = CAST(@run_date AS datetime2(0));
+DECLARE @ea_cohort_window_start date = DATEFROMPARTS(@fy_start_year, @fy_start_month, 1);
+DECLARE @ea_cohort_window_end date = DATEADD(day, 1, @run_date) -- today + 1
 
 
 
 ;WITH
 EligibleBySpec AS (
-  /* unborn or 26th birthday on/after window start */
+  /* Age gate 16..25 overlaps window, plus unborn within window
+     Known DoB, include if 16th bday <= window_end and 26th bday > window_start
+     Unborn, include if expected_dob between window_start and window_end
+  */
   SELECT p.pers_person_id
   FROM ssd_person p
-  WHERE (p.pers_expected_dob IS NOT NULL)
-     OR (p.pers_dob IS NOT NULL AND DATEADD(year, 26, p.pers_dob) >= @ea_cohort_window_start)
+  WHERE
+    (
+      p.pers_dob IS NOT NULL
+      AND DATEADD(year, 16, p.pers_dob) <= @ea_cohort_window_end
+      AND DATEADD(year, 26, p.pers_dob)  > @ea_cohort_window_start
+    )
+    OR
+    (
+      p.pers_dob IS NULL
+      AND p.pers_expected_dob IS NOT NULL
+      AND p.pers_expected_dob BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+    )
 ),
 ActiveReferral AS (
+
   SELECT DISTINCT cine.cine_person_id AS person_id
   FROM ssd_cin_episodes cine
   WHERE cine.cine_referral_date <= @ea_cohort_window_end
@@ -155,7 +160,10 @@ IsCareLeaver16to25 AS (
   SELECT DISTINCT clea.clea_person_id AS person_id
   FROM ssd_care_leavers clea
   JOIN ssd_person p ON p.pers_person_id = clea.clea_person_id
-  WHERE clea.clea_care_leaver_latest_contact BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+
+  WHERE clea.clea_care_leaver_latest_contact >= @ea_cohort_window_start
+  AND clea.clea_care_leaver_latest_contact <  @ea_cohort_window_end
+
     AND (
          (p.pers_dob IS NOT NULL AND DATEDIFF(year, p.pers_dob, @run_date) BETWEEN 16 AND 25)
       OR (p.pers_dob IS NULL AND p.pers_expected_dob IS NOT NULL)
@@ -181,24 +189,21 @@ RawPayloads AS (
   SELECT
     p.pers_person_id AS person_id,
 
-    /* disabilities array as JSON text like ["A","B"] or [] */
+    /* disabilities array as ["A","B"]  */
     dis.disabilities_json,
 
-    /* child_details JSON object, attributes 3..15 */
     cd.child_details_json,
 
-    /* health_and_wellbeing JSON object, attributes 45..46, top level per child */
-    hw.health_json,
+    hw.health_obj,
 
-    /* episodes array JSON, attributes 16..44 and 47..55 */
     ep.episodes_json,
 
-    /* final payload assembly, includes 2 and top purge flag */
+    /* final payload assembly, incl. 2 and record-level purge flag */
     '{'
       + '"la_child_id":"'   + LEFT(CONVERT(varchar(36), p.pers_person_id), 36) + '",'              -- 2
       + '"mis_child_id":"'  + LEFT(CONVERT(varchar(36), ISNULL(p.pers_single_unique_id, 'SSD_SUI')), 36) + '",'
       + '"child_details":'  + cd.child_details_json + ','
-      + '"health_and_wellbeing":' + hw.health_json + ','
+      + CASE WHEN hw.has_sdq = 1 THEN '"health_and_wellbeing":' + hw.health_obj + ',' ELSE '' END 
       + '"social_care_episodes":' + ep.episodes_json + ','
       + '"purge":false'
     + '}' AS json_payload
@@ -207,394 +212,482 @@ RawPayloads AS (
   JOIN EligibleBySpec elig ON elig.pers_person_id = p.pers_person_id
   JOIN SpecInclusion  si   ON si.person_id        = p.pers_person_id
 
-  /* build disabilities array once */
+  /* build disabilities array once, return NULL when empty */
   OUTER APPLY (
     SELECT
-      '[' + ISNULL(
-        STUFF((
-          SELECT
-            ',' + '"' + u.code + '"'
-          FROM (
-            SELECT DISTINCT
-              LEFT(UPPER(LTRIM(RTRIM(d2.disa_disability_code))), 4) AS code
-            FROM ssd_disability AS d2
-            WHERE d2.disa_person_id = p.pers_person_id
-              AND d2.disa_disability_code IS NOT NULL
-              AND LTRIM(RTRIM(d2.disa_disability_code)) <> ''
-          ) u
-          FOR XML PATH(''), TYPE
-        ).value('.', 'nvarchar(max)'), 1, 1, ''), ''
-      ) + ']' AS disabilities_json
+      disabilities_json =
+        CASE
+          WHEN EXISTS (
+            SELECT 1
+            FROM ssd_disability d0
+            WHERE d0.disa_person_id = p.pers_person_id
+              AND d0.disa_disability_code IS NOT NULL
+              AND LTRIM(RTRIM(d0.disa_disability_code)) <> ''
+          )
+          THEN '[' + STUFF((
+                SELECT
+                  ',' + '"' + u.code + '"'
+                FROM (
+                  SELECT DISTINCT
+                    LEFT(UPPER(LTRIM(RTRIM(d2.disa_disability_code))), 4) AS code
+                  FROM ssd_disability AS d2
+                  WHERE d2.disa_person_id = p.pers_person_id
+                    AND d2.disa_disability_code IS NOT NULL
+                    AND LTRIM(RTRIM(d2.disa_disability_code)) <> ''
+                ) u
+                FOR XML PATH(''), TYPE
+              ).value('.', 'nvarchar(max)'), 1, 1, '') + ']'
+          ELSE NULL
+        END
   ) AS dis
 
-  -- Child details (Attributes 3..15)
-CROSS APPLY (
-  SELECT
-    '{'
-      + '"unique_pupil_number":'
-        + CASE 
-            WHEN NULLIF(LTRIM(RTRIM(p.pers_upn)), '') IS NULL
-              THEN 'null'
-            ELSE '"' + p.pers_upn + '"'
-          END                                                                                                   -- 3
-      + ',"former_unique_pupil_number":'
+
+
+  /* ================= child_details (3..15), per child, top level =================
+    - unique_pupil_number now from person table
+    - former_unique_pupil_number from linked_identifiers, latest by valid_from, ==13 chars
+    - disabilities prebuilt array, [] when none
+    - uasc_flag via case insensitive LIKE on immigration status
+  */
+/* ================= child_details (3..15), per child, omit nulls =================
+   - emit only populated attributes
+   - keep disabilities always, [] when none
+   - sex always present, 'U' fallback anchors commas
+*/
+  CROSS APPLY (
+    SELECT
+      '{'
+        + '"sex":"' + CASE WHEN p.pers_sex IN ('M','F') THEN p.pers_sex ELSE 'U' END + '"'                                   -- 10
+
+        + CASE WHEN NULLIF(LTRIM(RTRIM(p.pers_upn)), '') IS NOT NULL
+              THEN ',"unique_pupil_number":"' + p.pers_upn + '"' ELSE '' END                                                  -- 3
+
         + ISNULL((
             SELECT TOP 1
-              '"' + li2.link_identifier_value + '"'
+              ',"former_unique_pupil_number":"' + li2.link_identifier_value + '"'
             FROM ssd_linked_identifiers li2
             WHERE li2.link_person_id = p.pers_person_id
               AND li2.link_identifier_type = 'Former Unique Pupil Number'
               AND LEN(li2.link_identifier_value) = 13
               AND TRY_CONVERT(bigint, li2.link_identifier_value) IS NOT NULL
             ORDER BY li2.link_valid_from_date DESC
-          ), 'null')                                                                                            -- 4
-      + ',"unique_pupil_number_unknown_reason":' + ISNULL('"' + LEFT(p.pers_upn_unknown, 3) + '"', 'null')      -- 5
-      + ',"first_name":'   + ISNULL('"' + REPLACE(p.pers_forename, '"', '\"') + '"', 'null')                    -- 6
-      + ',"surname":'      + ISNULL('"' + REPLACE(p.pers_surname , '"', '\"') + '"', 'null')                    -- 7
-      + ',"date_of_birth":' + CASE WHEN p.pers_dob IS NULL
-                                   THEN 'null' ELSE '"' + CONVERT(varchar(10), p.pers_dob, 23) + '"' END        -- 8
-      + ',"expected_date_of_birth":' + CASE WHEN p.pers_expected_dob IS NULL
-                                            THEN 'null' ELSE '"' + CONVERT(varchar(10), p.pers_expected_dob, 23) + '"' END -- 9
-      + ',"sex":"' + CASE WHEN p.pers_sex IN ('M','F') THEN p.pers_sex ELSE 'U' END + '"'                        -- 10
-      + ',"ethnicity":' + ISNULL('"' + LEFT(p.pers_ethnicity, 4) + '"', 'null')                                 -- 11
-      + ',"disabilities":' + dis.disabilities_json                                                              -- 12
-      + ',"postcode":'
+          ), '')                                                                                                               -- 4
+
+        + CASE WHEN NULLIF(LTRIM(RTRIM(p.pers_upn_unknown)), '') IS NOT NULL
+              THEN ',"unique_pupil_number_unknown_reason":"' + LEFT(p.pers_upn_unknown, 3) + '"' ELSE '' END                  -- 5
+
+        + CASE WHEN NULLIF(p.pers_forename, '') IS NOT NULL
+              THEN ',"first_name":"' + REPLACE(p.pers_forename, '"', '\"') + '"' ELSE '' END                                  -- 6
+        + CASE WHEN NULLIF(p.pers_surname , '') IS NOT NULL
+              THEN ',"surname":"'    + REPLACE(p.pers_surname , '"', '\"') + '"' ELSE '' END                                  -- 7
+
+        + CASE WHEN p.pers_dob IS NOT NULL
+              THEN ',"date_of_birth":"' + CONVERT(varchar(10), p.pers_dob, 23) + '"' ELSE '' END                              -- 8
+        + CASE WHEN p.pers_expected_dob IS NOT NULL
+              THEN ',"expected_date_of_birth":"' + CONVERT(varchar(10), p.pers_expected_dob, 23) + '"' ELSE '' END            -- 9
+
+        + CASE WHEN NULLIF(LTRIM(RTRIM(p.pers_ethnicity)), '') IS NOT NULL
+              THEN ',"ethnicity":"' + LEFT(p.pers_ethnicity, 4) + '"' ELSE '' END                                             -- 11
+
+        + CASE WHEN dis.disabilities_json IS NOT NULL
+       THEN ',"disabilities":' + dis.disabilities_json
+       ELSE '' END                                                                                                            -- 12 
+
         + ISNULL((
             SELECT
-              '"' + LEFT(REPLACE(LTRIM(RTRIM(aa.addr_address_postcode)), ' ', ''), 8) + '"'
+              CASE WHEN NULLIF(LTRIM(RTRIM(aa.addr_address_postcode)), '') IS NOT NULL
+                  THEN ',"postcode":"' + aa.addr_address_postcode + '"' ELSE '' END
             FROM (
               SELECT TOP 1 a.addr_address_postcode
               FROM ssd_address a
               WHERE a.addr_person_id = p.pers_person_id
               ORDER BY a.addr_address_start_date DESC
             ) aa
-          ), 'null')                                                                                             -- 13
-      + ',"uasc_flag":' + CASE
-                            WHEN EXISTS (
-                              SELECT 1
-                              FROM ssd_immigration_status s
-                              WHERE s.immi_person_id = p.pers_person_id
-                                AND ISNULL(s.immi_immigration_status, '') COLLATE Latin1_General_CI_AI LIKE '%UASC%'
-                            ) THEN '1' ELSE '0'
-                          END                                                                                    -- 14
-      + ',"uasc_end_date":'
-          + ISNULL((
-              SELECT TOP 1
-                '"' + CONVERT(varchar(10), s2.immi_immigration_status_end_date, 23) + '"'
-              FROM ssd_immigration_status s2
-              WHERE s2.immi_person_id = p.pers_person_id
-              ORDER BY CASE WHEN s2.immi_immigration_status_end_date IS NULL THEN 1 ELSE 0 END,
-                       s2.immi_immigration_status_start_date DESC
-            ), 'null')                                                                                           -- 15
-      + ',"purge":false'
-    + '}' AS child_details_json
-) AS cd
+          ), '')                                                                                                               -- 13
+
+        + CASE WHEN EXISTS (
+                  SELECT 1
+                  FROM ssd_immigration_status s
+                  WHERE s.immi_person_id = p.pers_person_id
+                    AND ISNULL(s.immi_immigration_status, '') COLLATE Latin1_General_CI_AI LIKE '%UASC%'
+              )
+              THEN ',"uasc_flag":1' ELSE '' END                                                                               -- 14
+
+        + ISNULL((
+            SELECT TOP 1
+              CASE WHEN s2.immi_immigration_status_end_date IS NOT NULL
+                  THEN ',"uasc_end_date":"' + CONVERT(varchar(10), s2.immi_immigration_status_end_date, 23) + '"' ELSE '' END
+            FROM ssd_immigration_status s2
+            WHERE s2.immi_person_id = p.pers_person_id
+            ORDER BY CASE WHEN s2.immi_immigration_status_end_date IS NULL THEN 1 ELSE 0 END,
+                    s2.immi_immigration_status_start_date DESC
+          ), '')                                                                                                               -- 15
+
+        + ',"purge":false'
+      + '}' AS child_details_json
+  ) AS cd
 
 
-  -- Health and wellbeing (45..46) (per child not episode)
-  -- Returns: object with sdq_assessments array
-  CROSS APPLY (
-    SELECT
-      '{'
-        + '"sdq_assessments":'
-        + '[' + ISNULL(
-            STUFF((
-              SELECT
-                ',' + '{'
-                  + '"date":"'  + CONVERT(varchar(10), csdq.csdq_sdq_completed_date, 23) + '",'                               -- 45
-                  + '"score":'  + CAST(TRY_CONVERT(int, csdq.csdq_sdq_score) AS nvarchar(12))                                 -- 46
-                + '}'
+
+    /* ============ health_and_wellbeing (45..46), single object(or null), top level ============
+      - include SDQs for child in cohort window
+      - sdq scores ordered numeric array, TRY_CONVERT guard
+    */
+    CROSS APPLY (
+      SELECT
+        CASE WHEN EXISTS (
+              SELECT 1
               FROM ssd_sdq_scores csdq
               WHERE csdq.csdq_person_id = p.pers_person_id
                 AND TRY_CONVERT(int, csdq.csdq_sdq_score) IS NOT NULL
-                AND csdq.csdq_sdq_completed_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
-              ORDER BY csdq.csdq_sdq_completed_date DESC
-              FOR XML PATH(''), TYPE
-            ).value('.', 'nvarchar(max)'), 1, 1, ''), '')
-        + ']'
-        + ',"purge":false'
-      + '}' AS health_json
-  ) AS hw
+                AND csdq.csdq_sdq_completed_date >= @ea_cohort_window_start
+                AND csdq.csdq_sdq_completed_date <  @ea_cohort_window_end
+            )
+            THEN 1 ELSE 0 END AS has_sdq,
 
-  -- Social care episodes (Attributes 16..55)
-  -- Returns: array
+        CASE WHEN EXISTS (
+              SELECT 1
+              FROM ssd_sdq_scores csdq
+              WHERE csdq.csdq_person_id = p.pers_person_id
+                AND TRY_CONVERT(int, csdq.csdq_sdq_score) IS NOT NULL
+                AND csdq.csdq_sdq_completed_date >= @ea_cohort_window_start
+                AND csdq.csdq_sdq_completed_date <  @ea_cohort_window_end
+            )
+            THEN
+              '{'
+                + '"sdq_assessments":'
+                + '[' + ISNULL(
+                    STUFF((
+                      SELECT
+                        ',' + '{'
+                          + '"date":"'  + CONVERT(varchar(10), csdq.csdq_sdq_completed_date, 23) + '",'                           -- 45
+                          + '"score":'  + CAST(TRY_CONVERT(int, csdq.csdq_sdq_score) AS nvarchar(12))                             -- 46
+                        + '}'
+                      FROM ssd_sdq_scores csdq
+                      WHERE csdq.csdq_person_id = p.pers_person_id
+                        AND TRY_CONVERT(int, csdq.csdq_sdq_score) IS NOT NULL
+                        AND csdq.csdq_sdq_completed_date >= @ea_cohort_window_start
+                        AND csdq.csdq_sdq_completed_date <  @ea_cohort_window_end
+                      ORDER BY csdq.csdq_sdq_completed_date DESC
+                      FOR XML PATH(''), TYPE
+                    ).value('.', 'nvarchar(max)'), 1, 1, ''), '')
+                + ']'
+                + ',"purge":false'
+              + '}'
+            ELSE NULL END AS health_obj
+    ) AS hw
+
+
+
+    /* ================= social_care_episodes (16..44 and 47..55), array =================
+    - include episode if referral_date <= window_end and close_date is null or >= window_start, overlap with cohort window
+    - id string 36 chars max, referral_source 2 chars, closure_reason 3 chars, cast and trim as in spec
+    - referral_no_further_action_flag derived only, not gate for inclusion, try convert to bit else map Y T 1 TRUE to 1, N F 0 FALSE to 0, else null
+    - unused episode level purge false
+    */
   OUTER APPLY (
     SELECT
       '[' + ISNULL(
         STUFF((
           SELECT
-            ',' + '{' -- str(id) for JSON
-              + '"social_care_episode_id":"' + LEFT(CONVERT(varchar(36), cine.cine_referral_id), 36) + '",'      -- 16
-              + '"referral_date":"' + CONVERT(varchar(10), cine.cine_referral_date, 23) + '",'                    -- 17
-              + '"referral_source":"' + LEFT(cine.cine_referral_source_code, 2) + '",'                            -- 18
-              + '"closure_date":' + CASE WHEN cine.cine_close_date IS NULL THEN 'null'
-                                         ELSE '"' + CONVERT(varchar(10), cine.cine_close_date, 23) + '"' END + ',' -- 19
-              + '"closure_reason":' + ISNULL('"' + LEFT(cine.cine_close_reason, 3) + '"', 'null') + ','           -- 20
-              + '"referral_no_further_action_flag":'
-                + CASE
-                    WHEN TRY_CONVERT(bit, cine.cine_referral_nfa) IS NOT NULL
-                      THEN CAST(TRY_CONVERT(int, cine.cine_referral_nfa) AS nvarchar(1))
+            ',' + '{'
+              /* required episode keys */
+              + '"social_care_episode_id":"' + LEFT(CONVERT(varchar(36), cine.cine_referral_id), 36) + '"'          -- 16
+              + ',"referral_date":"' + CONVERT(varchar(10), cine.cine_referral_date, 23) + '"'                      -- 17
+              + ',"referral_source":"' + LEFT(cine.cine_referral_source_code, 2) + '"'                              -- 18
 
-                    -- SSD source enforces NCHAR(1) but some robustness added
-                    -- SSD source field cine_referral_nfa in review as bool
-                    WHEN UPPER(LTRIM(RTRIM(cine.cine_referral_nfa))) IN ('Y','T','1','TRUE')  THEN '1'
-                    WHEN UPPER(LTRIM(RTRIM(cine.cine_referral_nfa))) IN ('N','F','0','FALSE') THEN '0'
-                    ELSE 'null'
-                  END + ','                                                                                       -- 21
+              /* optional episode keys, emitted only when present */
+              + CASE WHEN cine.cine_close_date IS NOT NULL
+                    THEN ',"closure_date":"' + CONVERT(varchar(10), cine.cine_close_date, 23) + '"' ELSE '' END    -- 19
+              + CASE WHEN NULLIF(LTRIM(RTRIM(cine.cine_close_reason)), '') IS NOT NULL
+                    THEN ',"closure_reason":"' + LEFT(cine.cine_close_reason, 3) + '"'        ELSE '' END          -- 20
+              + CASE
+                  WHEN TRY_CONVERT(bit, cine.cine_referral_nfa) = 1 THEN ',"referral_no_further_action_flag":1'
+                  WHEN TRY_CONVERT(bit, cine.cine_referral_nfa) = 0 THEN ',"referral_no_further_action_flag":0'
+                  WHEN UPPER(LTRIM(RTRIM(cine.cine_referral_nfa))) IN ('Y','T','1','TRUE')  THEN ',"referral_no_further_action_flag":1'
+                  WHEN UPPER(LTRIM(RTRIM(cine.cine_referral_nfa))) IN ('N','F','0','FALSE') THEN ',"referral_no_further_action_flag":0'
+                  ELSE '' END                                                                                       -- 21
 
-              -- Child and family assessments (22..25)
-              -- Returns: array (or [])
-              + '"child_and_family_assessments":'
-              + '[' + ISNULL(
-                  STUFF((
-                    SELECT
-                      ',' + '{'
-                        + '"child_and_family_assessment_id":' + CASE WHEN ca.cina_assessment_id IS NULL
-                                                                      THEN 'null' ELSE '"' + LEFT(CONVERT(varchar(36), ca.cina_assessment_id), 36) + '"' END + ','  -- 22
-                        + '"start_date":'        + CASE WHEN ca.cina_assessment_start_date IS NULL
-                                                          THEN 'null' ELSE '"' + CONVERT(varchar(10), ca.cina_assessment_start_date, 23) + '"' END + ','            -- 23
-                        + '"authorisation_date":' + CASE WHEN ca.cina_assessment_auth_date  IS NULL
-                                                          THEN 'null' ELSE '"' + CONVERT(varchar(10), ca.cina_assessment_auth_date , 23) + '"' END + ','            -- 24
-                        + '"assessment_factors":' + ISNULL(NULLIF(af.cinf_assessment_factors_json, ''), '[]') + ','                                                  -- 25
-                        + '"purge":false'
-                      + '}'
-                    FROM ssd_cin_assessments ca
-                    LEFT JOIN ssd_assessment_factors af
-                      ON af.cinf_assessment_id = ca.cina_assessment_id
-                    WHERE ca.cina_referral_id = cine.cine_referral_id
-                      AND (
-                           ca.cina_assessment_start_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
-                           OR ca.cina_assessment_auth_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
-                      )
-                    FOR XML PATH(''), TYPE
-                  ).value('.', 'nvarchar(max)'), 1, 1, ''), '')
-              + '],' + 
-
-              -- Child in need plans (26..28)
-              -- Returns: array (or [])
-              '"child_in_need_plans":'
-              + '[' + ISNULL(
-                  STUFF((
-                    SELECT
-                      ',' + '{'
-                        + '"child_in_need_plan_id":"' + LEFT(CONVERT(varchar(36), cinp.cinp_cin_plan_id), 36) + '",'            -- 26
-                        + '"start_date":"' + CONVERT(varchar(10), cinp.cinp_cin_plan_start_date, 23) + '",'                      -- 27
-                        + '"end_date":' + CASE WHEN cinp.cinp_cin_plan_end_date IS NULL
-                                                THEN 'null' ELSE '"' + CONVERT(varchar(10), cinp.cinp_cin_plan_end_date, 23) + '"' END + ',' -- 28
-                        + '"purge":false'
-                      + '}'
-                    FROM ssd_cin_plans cinp
-                    WHERE cinp.cinp_referral_id = cine.cine_referral_id
-                      AND cinp.cinp_cin_plan_start_date <= @ea_cohort_window_end
-                      AND (cinp.cinp_cin_plan_end_date IS NULL OR cinp.cinp_cin_plan_end_date >= @ea_cohort_window_start)
-                    FOR XML PATH(''), TYPE
-                  ).value('.', 'nvarchar(max)'), 1, 1, ''), '')
-              + '],' +
-
-              -- s47 assessments (29..33)
-              -- Returns: array (or [])
-              '"section_47_assessments":'
-              + '[' + ISNULL(
-                  STUFF((
-                    SELECT
-                      ',' + '{'
-                        + '"section_47_assessment_id":"' + LEFT(CONVERT(varchar(36), s47e.s47e_s47_enquiry_id), 36) + '",'       -- 29
-                        + '"start_date":"' + CONVERT(varchar(10), s47e.s47e_s47_start_date, 23) + '",'                            -- 30
-                        + '"icpc_required_flag":'
-                          + CASE -- CP flag via string search */
-                              WHEN CHARINDEX('"CP_CONFERENCE_FLAG":"Y"', s47e.s47e_s47_outcome_json) > 0 THEN '1'
-                              WHEN CHARINDEX('"CP_CONFERENCE_FLAG":"N"', s47e.s47e_s47_outcome_json) > 0 THEN '0'
-                              ELSE 'null'
-                            END + ','                                                                                             -- 31
-                        + '"icpc_date":' + CASE WHEN icpc.icpc_icpc_date IS NULL
-                                               THEN 'null' ELSE '"' + CONVERT(varchar(10), icpc.icpc_icpc_date, 23) + '"' END + ',' -- 32
-                        + '"end_date":' + CASE WHEN s47e.s47e_s47_end_date IS NULL
-                                               THEN 'null' ELSE '"' + CONVERT(varchar(10), s47e.s47e_s47_end_date, 23) + '"' END + ',' -- 33
-                        + '"purge":false'
-                      + '}'
-                    FROM ssd_s47_enquiry s47e
-                    LEFT JOIN ssd_initial_cp_conference icpc
-                      ON icpc.icpc_s47_enquiry_id = s47e.s47e_s47_enquiry_id
-                    WHERE s47e.s47e_referral_id = cine.cine_referral_id
-                      AND (
-                           s47e.s47e_s47_start_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
-                           OR s47e.s47e_s47_end_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
-                           OR icpc.icpc_icpc_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
-                      )
-                    FOR XML PATH(''), TYPE
-                  ).value('.', 'nvarchar(max)'), 1, 1, ''), '')
-              + '],' +
-
-              -- Child protection plans (34..36)
-              -- Returns: array (or [])
-              '"child_protection_plans":'
-              + '[' + ISNULL(
-                  STUFF((
-                    SELECT
-                      ',' + '{'
-                        + '"child_protection_plan_id":"' + LEFT(CONVERT(varchar(36), cppl.cppl_cp_plan_id), 36) + '",'           -- 34
-                        + '"start_date":"' + CONVERT(varchar(10), cppl.cppl_cp_plan_start_date, 23) + '",'                       -- 35
-                        + '"end_date":' + CASE WHEN cppl.cppl_cp_plan_end_date IS NULL
-                                              THEN 'null' ELSE '"' + CONVERT(varchar(10), cppl.cppl_cp_plan_end_date, 23) + '"' END + ',' -- 36
-                        + '"purge":false'
-                      + '}'
-                    FROM ssd_cp_plans cppl
-                    WHERE cppl.cppl_referral_id = cine.cine_referral_id
-                      AND cppl.cppl_cp_plan_start_date <= @ea_cohort_window_end
-                      AND (cppl.cppl_cp_plan_end_date IS NULL OR cppl.cppl_cp_plan_end_date >= @ea_cohort_window_start)
-                    FOR XML PATH(''), TYPE
-                  ).value('.', 'nvarchar(max)'), 1, 1, ''), '')
-              + '],' +
-
-              -- Looked after placements (37..44)
-              -- Returns: array (or [])
-              '"child_looked_after_placements":'
-              + '[' + ISNULL(
-                  STUFF((
-                    SELECT
-                      ',' + '{'
-                        + '"child_looked_after_placement_id":"' + LEFT(CONVERT(varchar(36), g.clap_cla_placement_id), 36) + '",'  -- 37
-                        + '"start_date":"' + CONVERT(varchar(10), g.clap_cla_placement_start_date, 23) + '",'                     -- 38
-                        + '"start_reason":"' + g.start_reason + '",'                                                              -- 39
-                        + '"postcode":"' + REPLACE(LTRIM(RTRIM(LEFT(g.clap_cla_placement_postcode, 8))), ' ', '') + '",'          -- 40
-                        + '"placement_type":"' + LEFT(g.clap_cla_placement_type, 2) + '",'                                        -- 41
-                        + '"end_date":' + CASE WHEN g.clap_cla_placement_end_date IS NULL
-                                              THEN 'null' ELSE '"' + CONVERT(varchar(10), g.clap_cla_placement_end_date, 23) + '"' END + ',' -- 42
-                        + '"end_reason":"' + g.end_reason + '",'                                                                  -- 43
-                        + '"change_reason":"' + LEFT(g.clap_cla_placement_change_reason, 6) + '",'                                -- 44
-                        + '"purge":false'
-                      + '}'
-                    FROM (
-                      SELECT
-                        clap.clap_cla_placement_id,
-                        clap.clap_cla_placement_start_date,
-                        clap.clap_cla_placement_type,
-                        clap.clap_cla_placement_postcode,
-                        clap.clap_cla_placement_end_date,
-                        clap.clap_cla_placement_change_reason,
-                        LEFT(MIN(clae.clae_cla_episode_start_reason), 1) AS start_reason,
-                        LEFT(MIN(clae.clae_cla_episode_ceased_reason), 3) AS end_reason
-                      FROM ssd_cla_episodes clae
-                      JOIN ssd_cla_placement clap
-                        ON clap.clap_cla_id = clae.clae_cla_id
-                      WHERE clae.clae_referral_id = cine.cine_referral_id
-                        AND clap.clap_cla_placement_start_date <= @ea_cohort_window_end
-                        AND (clap.clap_cla_placement_end_date IS NULL OR clap.clap_cla_placement_end_date >= @ea_cohort_window_start)
-                      GROUP BY
-                        clap.clap_cla_placement_id,
-                        clap.clap_cla_placement_start_date,
-                        clap.clap_cla_placement_type,
-                        clap.clap_cla_placement_postcode,
-                        clap.clap_cla_placement_end_date,
-                        clap.clap_cla_placement_change_reason
-                    ) g
-                    ORDER BY g.clap_cla_placement_start_date DESC
-                    FOR XML PATH(''), TYPE
-                  ).value('.', 'nvarchar(max)'), 1, 1, ''), '')
-              + '],' +
+              /* child_and_family_assessments 22..25, omit whole key if zero rows */
+              + ISNULL((
+                  SELECT ',"child_and_family_assessments":[' + z.content + ']'
+                  FROM (
+                    SELECT ISNULL(STUFF((
+                            SELECT
+                              ',' + '{'
+                              + '"child_and_family_assessment_id":' 
+                                  + CASE WHEN ca.cina_assessment_id IS NULL 
+                                          THEN 'null' 
+                                          ELSE '"' + LEFT(CONVERT(varchar(36), ca.cina_assessment_id), 36) + '"'
+                                    END                                                  -- 22
+                              + CASE WHEN ca.cina_assessment_start_date IS NOT NULL
+                                      THEN ',"start_date":"' + CONVERT(varchar(10), ca.cina_assessment_start_date, 23) + '"'
+                                      ELSE '' END                                         -- 23
+                              + CASE WHEN ca.cina_assessment_auth_date IS NOT NULL
+                                      THEN ',"authorisation_date":"' + CONVERT(varchar(10), ca.cina_assessment_auth_date, 23) + '"'
+                                      ELSE '' END                                         -- 24
+                              + CASE 
+                                  WHEN NULLIF(REPLACE(af.cinf_assessment_factors_json, ' ', ''), '[]') IS NOT NULL
+                                    THEN ',"factors":' + af.cinf_assessment_factors_json
+                                  ELSE '' 
+                                END                                                      -- 25
+                              + ',"purge":false'
+                              + '}'
+                            FROM ssd_cin_assessments ca
+                            LEFT JOIN ssd_assessment_factors af
+                              ON af.cinf_assessment_id = ca.cina_assessment_id
+                            WHERE ca.cina_referral_id = cine.cine_referral_id
+                              AND (
+                                    ca.cina_assessment_start_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+                                OR ca.cina_assessment_auth_date  BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+                              )
+                            FOR XML PATH(''), TYPE
+                          ).value('.', 'nvarchar(max)'), 1, 1, ''), '') AS content
+                  ) AS z
+                  WHERE z.content <> ''
+              ), '')
 
 
-            -- Adoption (47..49)
-            -- Returns: single object or null
-            '"adoption":'
-            + ISNULL((
-                SELECT TOP 1
-                  '{'
-                    + '"initial_decision_date":' + CASE
-                        WHEN perm.perm_adm_decision_date IS NULL
-                          THEN 'null'
-                        ELSE '"' + CONVERT(varchar(10), perm.perm_adm_decision_date, 23) + '"'
-                      END + ','                                                                                               -- 47
-                    + '"matched_date":' + CASE
-                        WHEN perm.perm_matched_date IS NULL
-                          THEN 'null'
-                        ELSE '"' + CONVERT(varchar(10), perm.perm_matched_date, 23) + '"'
-                      END + ','                                                                                               -- 48
-                    + '"placed_date":' + CASE
-                        WHEN perm.perm_placed_for_adoption_date IS NULL
-                          THEN 'null'
-                        ELSE '"' + CONVERT(varchar(10), perm.perm_placed_for_adoption_date, 23) + '"'
-                      END + ','                                                                                               -- 49
-                    + '"purge":false'
-                  + '}'
-                FROM ssd_permanence perm
-                WHERE
-                  (perm.perm_person_id = p.pers_person_id
-                  OR perm.perm_cla_id IN (
-                        SELECT clae2.clae_cla_id
-                        FROM ssd_cla_episodes clae2
-                        WHERE clae2.clae_person_id = p.pers_person_id
-                  ))
-                  AND (
-                      perm.perm_adm_decision_date        BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
-                    OR perm.perm_matched_date             BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
-                    OR perm.perm_placed_for_adoption_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
-                  )
-                ORDER BY COALESCE(
-                        perm.perm_placed_for_adoption_date,
-                        perm.perm_matched_date,
-                        perm.perm_adm_decision_date
-                ) DESC
-              ), 'null')
-            + ','
-            
+              /* child_in_need_plans 26..28, omit whole key if zero rows */
+              + ISNULL((
+                  SELECT ',"child_in_need_plans":[' + z.content + ']'
+                  FROM (
+                    SELECT ISNULL(STUFF((
+                            SELECT
+                              ',' + '{'
+                              + '"child_in_need_plan_id":"' + LEFT(CONVERT(varchar(36), cinp.cinp_cin_plan_id), 36) + '",'      -- 26
+                              + '"start_date":"' + CONVERT(varchar(10), cinp.cinp_cin_plan_start_date, 23) + '"'                -- 27
+                              + CASE WHEN cinp.cinp_cin_plan_end_date IS NOT NULL
+                                      THEN ',"end_date":"' + CONVERT(varchar(10), cinp.cinp_cin_plan_end_date, 23) + '"'
+                                      ELSE '' END                                                                                -- 28
+                              + ',"purge":false'
+                              + '}'
+                            FROM ssd_cin_plans cinp
+                            WHERE cinp.cinp_referral_id = cine.cine_referral_id
+                              AND cinp.cinp_cin_plan_start_date <= @ea_cohort_window_end
+                              AND (cinp.cinp_cin_plan_end_date IS NULL OR cinp.cinp_cin_plan_end_date >= @ea_cohort_window_start)
+                            FOR XML PATH(''), TYPE
+                          ).value('.', 'nvarchar(max)'), 1, 1, ''), '') AS content
+                  ) AS z
+                  WHERE z.content <> ''
+              ), '')
 
-              -- Care leavers (50..52)
-              -- Returns: single object (or null)
-              '"care_leavers":'
+
+              /* section_47_assessments 29..33, omit whole key if zero rows */
+              + ISNULL((
+                  SELECT ',"section_47_assessments":[' + z.content + ']'
+                  FROM (
+                    SELECT ISNULL(STUFF((
+                            SELECT
+                              ',' + '{'
+                              + '"section_47_assessment_id":"' + LEFT(CONVERT(varchar(36), s47e.s47e_s47_enquiry_id), 36) + '"'  -- 29
+                              + CASE WHEN s47e.s47e_s47_start_date IS NOT NULL
+                                      THEN ',"start_date":"' + CONVERT(varchar(10), s47e.s47e_s47_start_date, 23) + '"'
+                                      ELSE '' END                                                                                -- 30
+                              + CASE                                                                                             -- 31
+                                  WHEN CHARINDEX('"CP_CONFERENCE_FLAG":"Y"', s47e.s47e_s47_outcome_json) > 0
+                                    OR CHARINDEX('"CP_CONFERENCE_FLAG":"T"', s47e.s47e_s47_outcome_json) > 0
+                                    OR CHARINDEX('"CP_CONFERENCE_FLAG":"1"', s47e.s47e_s47_outcome_json) > 0
+                                    OR CHARINDEX('"CP_CONFERENCE_FLAG":"true"',  s47e.s47e_s47_outcome_json) > 0
+                                    OR CHARINDEX('"CP_CONFERENCE_FLAG":"True"',  s47e.s47e_s47_outcome_json) > 0
+                                    THEN ',"icpc_required_flag":1'
+                                  WHEN CHARINDEX('"CP_CONFERENCE_FLAG":"N"', s47e.s47e_s47_outcome_json) > 0
+                                    OR CHARINDEX('"CP_CONFERENCE_FLAG":"F"', s47e.s47e_s47_outcome_json) > 0
+                                    OR CHARINDEX('"CP_CONFERENCE_FLAG":"0"', s47e.s47e_s47_outcome_json) > 0
+                                    OR CHARINDEX('"CP_CONFERENCE_FLAG":"false"', s47e.s47e_s47_outcome_json) > 0
+                                    OR CHARINDEX('"CP_CONFERENCE_FLAG":"False"', s47e.s47e_s47_outcome_json) > 0
+                                    THEN ',"icpc_required_flag":0'
+                                  ELSE '' END
+                              + CASE WHEN icpc.icpc_icpc_date IS NOT NULL
+                                      THEN ',"icpc_date":"' + CONVERT(varchar(10), icpc.icpc_icpc_date, 23) + '"'
+                                      ELSE '' END                                                                                -- 32
+                              + CASE WHEN s47e.s47e_s47_end_date IS NOT NULL
+                                      THEN ',"end_date":"' + CONVERT(varchar(10), s47e.s47e_s47_end_date, 23) + '"'
+                                      ELSE '' END                                                                                -- 33
+                              + ',"purge":false'
+                              + '}'
+                            FROM ssd_s47_enquiry s47e
+                            OUTER APPLY (
+                              SELECT TOP 1 i.icpc_icpc_date
+                              FROM ssd_initial_cp_conference i
+                              WHERE i.icpc_s47_enquiry_id = s47e.s47e_s47_enquiry_id
+                              ORDER BY i.icpc_icpc_date DESC
+                            ) icpc
+                            WHERE s47e.s47e_referral_id = cine.cine_referral_id
+                              AND (
+                                    s47e.s47e_s47_start_date <= @ea_cohort_window_end
+                                    AND (s47e.s47e_s47_end_date IS NULL OR s47e.s47e_s47_end_date >= @ea_cohort_window_start)
+                                OR icpc.icpc_icpc_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+                              )
+                            FOR XML PATH(''), TYPE
+                          ).value('.', 'nvarchar(max)'), 1, 1, ''), '') AS content
+                  ) AS z
+                  WHERE z.content <> ''
+              ), '')
+
+
+              /* child_protection_plans 34..36, omit whole key if zero rows */
+              + ISNULL((
+                  SELECT ',"child_protection_plans":[' + z.content + ']'
+                  FROM (
+                    SELECT ISNULL(STUFF((
+                            SELECT
+                              ',' + '{'
+                              + '"child_protection_plan_id":"' + LEFT(CONVERT(varchar(36), cppl.cppl_cp_plan_id), 36) + '",'     -- 34
+                              + '"start_date":"' + CONVERT(varchar(10), cppl.cppl_cp_plan_start_date, 23) + '"'                   -- 35
+                              + CASE WHEN cppl.cppl_cp_plan_end_date IS NOT NULL
+                                      THEN ',"end_date":"' + CONVERT(varchar(10), cppl.cppl_cp_plan_end_date, 23) + '"'
+                                      ELSE '' END                                                                                  -- 36
+                              + ',"purge":false'
+                              + '}'
+                            FROM ssd_cp_plans cppl
+                            WHERE cppl.cppl_referral_id = cine.cine_referral_id
+                              AND cppl.cppl_cp_plan_start_date <= @ea_cohort_window_end
+                              AND (cppl.cppl_cp_plan_end_date IS NULL OR cppl.cppl_cp_plan_end_date >= @ea_cohort_window_start)
+                            FOR XML PATH(''), TYPE
+                          ).value('.', 'nvarchar(max)'), 1, 1, ''), '') AS content
+                  ) AS z
+                  WHERE z.content <> ''
+              ), '')
+
+
+              /* child_looked_after_placements 37..44, omit key if zero rows */
+              + ISNULL((
+                  SELECT ',"child_looked_after_placements":[' + z.content + ']'
+                  FROM (
+                    SELECT ISNULL(STUFF((
+                            SELECT
+                              ',' + '{'
+                              + '"child_looked_after_placement_id":"' + LEFT(CONVERT(varchar(36), g.clap_cla_placement_id), 36) + '",'  -- 37
+                              + '"start_date":"' + CONVERT(varchar(10), g.clap_cla_placement_start_date, 23) + '",'                    -- 38
+                              + '"start_reason":"' + g.start_reason + '",'                                                             -- 39
+                              + '"postcode":' + ISNULL(QUOTENAME(g.clap_cla_placement_postcode, '"'), 'null') + ','                    -- 40
+                              + '"placement_type":"' + LEFT(g.clap_cla_placement_type, 2) + '",'                                       -- 41
+                              + CASE WHEN g.clap_cla_placement_end_date IS NOT NULL
+                                      THEN '"end_date":"' + CONVERT(varchar(10), g.clap_cla_placement_end_date, 23) + '",'
+                                      ELSE '' END                                                                                       -- 42
+                              + '"end_reason":"' + g.end_reason + '",'                                                                 -- 43
+                              + '"change_reason":"' + LEFT(g.clap_cla_placement_change_reason, 6) + '",'                               -- 44
+                              + '"purge":false'
+                              + '}'
+                            FROM (
+                              SELECT
+                                clap.clap_cla_placement_id,
+                                clap.clap_cla_placement_start_date,
+                                clap.clap_cla_placement_type,
+                                clap.clap_cla_placement_postcode,
+                                clap.clap_cla_placement_end_date,
+                                clap.clap_cla_placement_change_reason,
+                                LEFT(MIN(clae.clae_cla_episode_start_reason), 1) AS start_reason,
+                                LEFT(MIN(clae.clae_cla_episode_ceased_reason), 3) AS end_reason
+                              FROM ssd_cla_episodes clae
+                              JOIN ssd_cla_placement clap ON clap.clap_cla_id = clae.clae_cla_id
+                              WHERE clae.clae_referral_id = cine.cine_referral_id
+                                AND clap.clap_cla_placement_start_date <= @ea_cohort_window_end
+                                AND (clap.clap_cla_placement_end_date IS NULL OR clap.clap_cla_placement_end_date >= @ea_cohort_window_start)
+                              GROUP BY
+                                clap.clap_cla_placement_id,
+                                clap.clap_cla_placement_start_date,
+                                clap.clap_cla_placement_type,
+                                clap.clap_cla_placement_postcode,
+                                clap.clap_cla_placement_end_date,
+                                clap.clap_cla_placement_change_reason
+                            ) g
+                            ORDER BY g.clap_cla_placement_start_date DESC
+                            FOR XML PATH(''), TYPE
+                          ).value('.', 'nvarchar(max)'), 1, 1, ''), '') AS content
+                  ) AS z
+                  WHERE z.content <> ''
+              ), '')
+
+              /* adoption 47..49, single object, omit key if zero rows */
               + ISNULL((
                   SELECT TOP 1
-                    '{'
-                      + '"contact_date":"' + CONVERT(varchar(10), clea.clea_care_leaver_latest_contact, 23) + '",'          -- 50
-                      + '"activity":"' + LEFT(clea.clea_care_leaver_activity, 2) + '",'                                     -- 51
-                      + '"accommodation":"' + LEFT(clea.clea_care_leaver_accommodation, 1) + '",'                           -- 52
-                      + '"purge":false'
-                    + '}'
+                    ',"adoption":{'
+                      + CASE WHEN perm.perm_adm_decision_date IS NOT NULL
+                            THEN '"initial_decision_date":"' + CONVERT(varchar(10), perm.perm_adm_decision_date, 23) + '"' ELSE '' END        -- 47
+                      + CASE WHEN perm.perm_matched_date IS NOT NULL
+                            THEN CASE WHEN perm.perm_adm_decision_date IS NOT NULL THEN ',"matched_date":"' ELSE '"matched_date":"' END
+                                + CONVERT(varchar(10), perm.perm_matched_date, 23) + '"' ELSE '' END                                         -- 48
+                      + CASE WHEN perm.perm_placed_for_adoption_date IS NOT NULL
+                            THEN CASE WHEN perm.perm_adm_decision_date IS NOT NULL OR perm.perm_matched_date IS NOT NULL
+                                      THEN ',"placed_date":"' ELSE '"placed_date":"' END
+                                + CONVERT(varchar(10), perm.perm_placed_for_adoption_date, 23) + '"' ELSE '' END                             -- 49
+                      + ',"purge":false}'
+                  FROM ssd_permanence perm
+                  WHERE (perm.perm_person_id = p.pers_person_id
+                        OR perm.perm_cla_id IN (
+                              SELECT clae2.clae_cla_id
+                              FROM ssd_cla_episodes clae2
+                              WHERE clae2.clae_person_id = p.pers_person_id))
+                    AND (
+                          perm.perm_adm_decision_date        BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+                      OR perm.perm_matched_date             BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+                      OR perm.perm_placed_for_adoption_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+                    )
+                  ORDER BY COALESCE(perm.perm_placed_for_adoption_date, perm.perm_matched_date, perm.perm_adm_decision_date) DESC
+              ), '')
+
+
+              /* care_leavers 50..52, single object, omit key if zero rows */
+              + ISNULL((
+                  SELECT TOP 1
+                    ',"care_leavers":{'
+                      + '"contact_date":"' + CONVERT(varchar(10), clea.clea_care_leaver_latest_contact, 23) + '",'                               -- 50
+                      + CASE WHEN NULLIF(LTRIM(RTRIM(clea.clea_care_leaver_activity)), '') IS NOT NULL
+                            THEN '"activity":"' + LEFT(clea.clea_care_leaver_activity, 2) + '",' ELSE '' END                                     -- 51
+                      + CASE WHEN NULLIF(LTRIM(RTRIM(clea.clea_care_leaver_accommodation)), '') IS NOT NULL
+                            THEN '"accommodation":"' + LEFT(clea.clea_care_leaver_accommodation, 1) + '",' ELSE '' END                           -- 52
+                      + '"purge":false}'
                   FROM ssd_care_leavers clea
                   WHERE clea.clea_person_id = p.pers_person_id
-                    AND clea.clea_care_leaver_latest_contact BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+                    AND clea.clea_care_leaver_latest_contact >= @ea_cohort_window_start
+                    AND clea.clea_care_leaver_latest_contact <  @ea_cohort_window_end
                   ORDER BY clea.clea_care_leaver_latest_contact DESC
-                ), '{}') + ',' +
+              ), '')
 
-              -- Care worker details (53..55)
-              -- Returns: array (or [])
-              N',"care_worker_details":' +
-                N'[' +
-                ISNULL(
-                  STUFF((
-                    SELECT
-                      N',{' +
-                      N'"worker_id":'    + QUOTENAME(LEFT(CAST(pr.prof_staff_id AS varchar(12)), 12), '"') +
-                      N',"start_date":'  + QUOTENAME(CONVERT(varchar(10), i.invo_involvement_start_date, 23), '"') +
-                      N',"end_date":'    + CASE
-                                            WHEN i.invo_involvement_end_date IS NULL
-                                              THEN N'null'
-                                            ELSE QUOTENAME(CONVERT(varchar(10), i.invo_involvement_end_date, 23), '"')
-                                          END +
-                      N'}'
-                    FROM ssd_involvements i
-                    JOIN ssd_professionals pr
-                      ON i.invo_professional_id = pr.prof_professional_id
-                    WHERE i.invo_referral_id = cine.cine_referral_id
-                      AND i.invo_involvement_start_date <= @ea_cohort_window_end
-                      AND (
-                            i.invo_involvement_end_date IS NULL
-                        OR i.invo_involvement_end_date >= @ea_cohort_window_start
-                          )
-                    ORDER BY i.invo_involvement_start_date DESC
-                    FOR XML PATH(''), TYPE
-                  ).value('.', 'nvarchar(max)'), 1, 1, N''), N'') +
-                N']' +
 
-              '"purge":false'
+              /* care_worker_details 53..55, array, omit whole key if zero rows */
+              + CASE WHEN EXISTS(
+                      SELECT 1
+                      FROM ssd_involvements i
+                      WHERE i.invo_referral_id = cine.cine_referral_id
+                        AND i.invo_involvement_start_date <= @ea_cohort_window_end
+                        AND (i.invo_involvement_end_date IS NULL OR i.invo_involvement_end_date >= @ea_cohort_window_start)
+                  )
+                  THEN N',"care_worker_details":'
+                      + N'[' + ISNULL(
+                          STUFF((
+                            SELECT
+                              N',{' +
+                              N'"worker_id":'   + QUOTENAME(LEFT(CAST(pr.prof_staff_id AS varchar(12)), 12), '"') +                             -- 53
+                              N',"start_date":' + QUOTENAME(CONVERT(varchar(10), i.invo_involvement_start_date, 23), '"') +                    -- 54
+                              CASE WHEN i.invo_involvement_end_date IS NOT NULL
+                                    THEN N',"end_date":' + QUOTENAME(CONVERT(varchar(10), i.invo_involvement_end_date, 23), '"')
+                                    ELSE N'' END +                                                                                              -- 55
+                              N'}'
+                            FROM ssd_involvements i
+                            JOIN ssd_professionals pr ON i.invo_professional_id = pr.prof_professional_id
+                            WHERE i.invo_referral_id = cine.cine_referral_id
+                              AND i.invo_involvement_start_date <= @ea_cohort_window_end
+                              AND (i.invo_involvement_end_date IS NULL OR i.invo_involvement_end_date >= @ea_cohort_window_start)
+                            ORDER BY i.invo_involvement_start_date DESC
+                            FOR XML PATH(''), TYPE
+                          ).value('.', 'nvarchar(max)'), 1, 1, N''), N'')
+                      + N']'
+                  ELSE N'' END
+
+
+              /* episode level purge flag */
+              + ',"purge":false'
             + '}'
           FROM ssd_cin_episodes cine
           WHERE cine.cine_person_id = p.pers_person_id
             AND cine.cine_referral_date <= @ea_cohort_window_end
             AND (cine.cine_close_date IS NULL OR cine.cine_close_date >= @ea_cohort_window_start)
           FOR XML PATH(''), TYPE
-        ).value('.', 'nvarchar(max)'), 1, 1, ''), '')
-      + ']' AS episodes_json
+        ).value('.', 'nvarchar(max)'), 1, 1, ''), ''
+      ) + ']' AS episodes_json
   ) AS ep
 )
 ,
@@ -930,10 +1023,12 @@ VALUES
 SET NOCOUNT OFF;
 
 
--- Verification|sanity checks
--- Check table(s) populated
+/* 
+SAMPLE LIVE PAYLOAD VERIFICATION OUTPUTS
+Check table(s) populated
+*/
 select TOP (5) * from ssd_api_data_staging;
-select TOP (5) * from ssd_api_data_staging_anon; -- should be blank at this point
+select TOP (5) * from ssd_api_data_staging_anon; -- verify inclusion of x3 fake records added above 
 
 
 
@@ -942,7 +1037,7 @@ select TOP (5) * from ssd_api_data_staging_anon; -- should be blank at this poin
 -- */
 
 
--- -- PAYLOAD VERIFICATION : Show records with with extended/nested payload (if available)
+-- -- PAYLOAD VERIFICATION 1 : Show records with with extended/nested payload (if available)
 -- SELECT TOP (3)
 --     person_id,
 --     LEN(json_payload)        AS payload_chars,
@@ -952,7 +1047,7 @@ select TOP (5) * from ssd_api_data_staging_anon; -- should be blank at this poin
 
 
 
--- -- PAYLOAD VERIFICATION : Show records with health&wellbeing data available
+-- -- PAYLOAD VERIFICATION 2 : Show records with health&wellbeing data available
 -- ;WITH WithCounts AS (
 --     SELECT
 --         s.person_id,
@@ -985,25 +1080,58 @@ select TOP (5) * from ssd_api_data_staging_anon; -- should be blank at this poin
 --     payload_chars DESC,
 --     id DESC;
 
--- -- -- LEGACY-PRE2016 (pattern search fallback, no JSON functions)
+-- -- -- LEGACY-PRE2016 (no JSON functions)
 -- -- SELECT TOP (5) ...
 -- -- FROM ssd_api_data_staging
 -- -- WHERE json_payload LIKE '%"health_and_wellbeing"%sdq_assessments%"date"%'
 -- -- ORDER BY DATALENGTH(json_payload) DESC, id DESC;
 
 
-
-
--- -- PAYLOAD VERIFICATION : Show records with adoption data available
+-- -- PAYLOAD VERIFICATION 3 : Show records with adoption data available
 -- SELECT TOP (3)
 --     person_id,
 --     LEN(json_payload) AS payload_chars,
 --     json_payload AS preview
 -- FROM ssd_api_data_staging
 -- WHERE JSON_QUERY(json_payload, '$.social_care_episodes[0].adoption') IS NOT NULL
-
 -- -- -- LEGACY-PRE2016
 -- -- WHERE json_payload LIKE '%"adoption"%date_match"%'
 -- ORDER BY DATALENGTH(json_payload) DESC, id DESC;
 
 
+-- -- PAYLOAD VERIFICATION 4 : S47 records where an ICPC date exists
+-- -- spot episodes with conference activity recorded
+-- SELECT TOP (5)
+--     person_id,
+--     LEN(json_payload) AS payload_chars,
+--     json_payload AS preview
+-- FROM ssd_api_data_staging
+-- WHERE json_payload LIKE '%"section_47_assessments"%'
+--   AND json_payload LIKE '%"icpc_date":"20%'   -- not ideal date presence test yyyy-mm-dd
+-- ORDER BY payload_chars DESC, id DESC;
+
+
+
+-- -- PAYLOAD VERIFICATION 5 : Show records with S47 assessments
+-- -- S47 presence and s47s count per record in order
+-- ;WITH WithS47 AS (
+--     SELECT
+--         s.person_id,
+--         s.id,
+--         s.json_payload,
+--         LEN(s.json_payload) AS payload_chars,
+--         -- count S47 items by token occurrence, episode agnostic
+--         (LEN(s.json_payload) - LEN(REPLACE(s.json_payload, '"section_47_assessment_id"', '')))
+--             / NULLIF(LEN('"section_47_assessment_id"'), 0) AS s47_count,
+--         -- quick existence flag via array pattern
+--         CASE WHEN CHARINDEX('"section_47_assessments":[{', s.json_payload) > 0 THEN 1 ELSE 0 END AS has_s47
+--     FROM ssd_api_data_staging s
+-- )
+-- SELECT TOP (5)
+--     person_id,
+--     s47_count,
+--     payload_chars,
+--     json_payload AS preview
+-- FROM WithS47
+-- WHERE has_s47 = 1 OR s47_count > 0
+-- ORDER BY s47_count DESC, payload_chars DESC, id DESC;
