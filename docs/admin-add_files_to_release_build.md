@@ -44,7 +44,7 @@ def get_pkg_path(rel: str) -> str:
     return str(ir.files("api_pipeline").joinpath(rel))
 
 # examples
-ps1 = get_pkg_path("pshell/phase_1_api_payload.ps1")
+ps1 = get_pkg_path("pshell/api_payload_sender.ps1")
 tpl = get_pkg_path("templates/example.json")
 ```
 Keep this helper, it prevents path drift when you reorganise folders.
@@ -87,7 +87,7 @@ Update both the **local** bundler and the **Windows workflow** bundler.
 
 ### 3.1 `release.sh` copy block
 ```bash
-# add a new line mirroring the others
+# add new line mirroring the others
 cp path/to/your_new_file.ext release_bundle/ || true
 # or, for a folder
 cp -R path/to/new_folder/* release_bundle/new_folder/ || true
@@ -95,7 +95,7 @@ cp -R path/to/new_folder/* release_bundle/new_folder/ || true
 
 ### 3.2 `.github/workflows/release-and-docs.yml` copy block
 ```powershell
-# add a new line mirroring the others
+# add new line mirroring the others
 Copy-Item path	o\your_new_file.ext -Destination release_bundle# or a folder
 Copy-Item path	o
 ew_folder\* -Destination release_bundle
@@ -116,7 +116,7 @@ files: |
 
 ## 4) CI, keep PR checks close to changes
 
-If you added a **new path** not already watched by the PR workflow, add it to `package-ci-pr.yml`:
+If you added a **new path** not already watched by PR workflow, add it to `package-ci-pr.yml`:
 ```yaml
 on:
   pull_request:
@@ -130,7 +130,7 @@ on:
       - 'MANIFEST.in'
       - 'release.sh'
       - '.github/workflows/release-and-docs.yml'
-      - 'path/to/your_new_folder/**'  # add this if needed
+      - 'path/to/your_new_folder/**'  # add if needed
 ```
 
 If the file is a docs asset, confirm the docs job builds locally and in the PR job:
@@ -164,7 +164,7 @@ mkdocs build
 
 3. **Dry run bundling**:
    ```bash
-   bash release.sh   # stop before tagging if you want, or run fully with a pre-release tag
+   bash release.sh   # stop before tagging if wanted, or run fully with pre-release tag
    ```
 
 4. **Commit, PR, merge, tag**.
