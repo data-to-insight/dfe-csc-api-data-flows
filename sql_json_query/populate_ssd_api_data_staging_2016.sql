@@ -1,7 +1,11 @@
 -- define as required 
 use HDM_Local; -- Note: this the SystemC/LLogic default, LA should change to bespoke 
 
-
+/* ==========================================================================
+   D2I CSC API Payload Builder, Modern SQL Server 2016+ compatible
+   - Uses OPENJSON, JSON_VALUE, STRING_AGG
+   - JSON built with JSON_QUERY, WITHOUT_ARRAY_WRAPPER
+   ========================================================================== */
 
 
 /* Note for: Daily Data Flows Early Adopters
@@ -13,12 +17,6 @@ can be appended into the main SSD and run as one - insert locations within the S
 &
 -- META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging_anon"}
 -- =============================================================================
-
-
--- Script compatibility and defaults
--- Default uses XML PATH for aggregations, SQL Server 2012+
--- Payload assembly uses FOR JSON, JSON_QUERY, JSON_VALUE, SQL Server 2016+
--- Optional modern aggregation using STRING_AGG is included as commented block, SQL Server 2022+
 
 */
 
@@ -32,14 +30,13 @@ can be appended into the main SSD and run as one - insert locations within the S
 
 
 
-DECLARE @VERSION nvarchar(32) = N'0.2.4';
+DECLARE @VERSION nvarchar(32) = N'0.2.5';
 RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 
 
--- -- Apply when d2i tbl structual changes have been newly applied
--- -- 2012+ safe drops 
--- IF OBJECT_ID(N'ssd_api_data_staging_anon', N'U') IS NOT NULL DROP TABLE ssd_api_data_staging_anon;
--- IF OBJECT_ID(N'ssd_api_data_staging', N'U') IS NOT NULL DROP TABLE ssd_api_data_staging;
+-- -- Apply if/when d2i staging table structual changes have been newly applied
+-- DROP TABLE IF EXISTS ssd_api_data_staging_anon;
+-- DROP TABLE IF EXISTS ssd_api_data_staging;
 -- GO
 
 
@@ -77,7 +74,7 @@ BEGIN
 END
 
 
--- === Spec window (dynamic: 24 months back --> FY start on 1 April) ===
+-- === EA Spec window (dynamic: 24 months back --> FY start on 1 April) ===
 DECLARE @run_date      date = CONVERT(date, GETDATE());
 DECLARE @months_back   int  = 24;
 DECLARE @fy_start_month int = 4;  -- April
@@ -85,9 +82,10 @@ DECLARE @fy_start_month int = 4;  -- April
 DECLARE @anchor date = DATEADD(month, -@months_back, @run_date);
 DECLARE @fy_start_year int = YEAR(@anchor) - CASE WHEN MONTH(@anchor) < @fy_start_month THEN 1 ELSE 0 END;
 
-DECLARE @window_start date = DATEFROMPARTS(@fy_start_year, @fy_start_month, 1);
-DECLARE @window_end   date = @run_date;  -- today
+DECLARE @ea_cohort_window_start date = DATEFROMPARTS(@fy_start_year, @fy_start_month, 1);
+DECLARE @ea_cohort_window_end   date = @run_date;  -- today
 
+/* === Cohort CTEs, 2016+ compatible === */
 
 ;WITH EligibleBySpec AS (
     /* Keep if unborn (expected DoB) OR ever ≤25 within window
@@ -96,14 +94,14 @@ DECLARE @window_end   date = @run_date;  -- today
     FROM ssd_person p
     WHERE
           (p.pers_expected_dob IS NOT NULL)  -- unborn allowed
-       OR (p.pers_dob IS NOT NULL AND DATEADD(year, 26, p.pers_dob) >= @window_start)
+       OR (p.pers_dob IS NOT NULL AND DATEADD(year, 26, p.pers_dob) >= @ea_cohort_window_start)
 ),
 ActiveReferral AS (
     /* Episode overlaps window AND is open at run date (active) */
     SELECT DISTINCT cine.cine_person_id AS person_id
     FROM ssd_cin_episodes cine
-    WHERE cine.cine_referral_date <= @window_end
-      AND (cine.cine_close_date IS NULL OR cine.cine_close_date >= @window_start)
+    WHERE cine.cine_referral_date <= @ea_cohort_window_end
+      AND (cine.cine_close_date IS NULL OR cine.cine_close_date >= @ea_cohort_window_start)
       AND (cine.cine_close_date IS NULL OR cine.cine_close_date >  @run_date)
 ),
 WaitingAssessment AS (
@@ -121,14 +119,14 @@ WaitingAssessment AS (
 HasCINPlan AS (
     SELECT DISTINCT cinp.cinp_person_id AS person_id
     FROM ssd_cin_plans cinp
-    WHERE cinp.cinp_cin_plan_start_date <= @window_end
-      AND (cinp.cinp_cin_plan_end_date IS NULL OR cinp.cinp_cin_plan_end_date >= @window_start)
+    WHERE cinp.cinp_cin_plan_start_date <= @ea_cohort_window_end
+      AND (cinp.cinp_cin_plan_end_date IS NULL OR cinp.cinp_cin_plan_end_date >= @ea_cohort_window_start)
 ),
 HasCPPlan AS (
     SELECT DISTINCT cppl.cppl_person_id AS person_id
     FROM ssd_cp_plans cppl
-    WHERE cppl.cppl_cp_plan_start_date <= @window_end
-      AND (cppl.cppl_cp_plan_end_date IS NULL OR cppl.cppl_cp_plan_end_date >= @window_start)
+    WHERE cppl.cppl_cp_plan_start_date <= @ea_cohort_window_end
+      AND (cppl.cppl_cp_plan_end_date IS NULL OR cppl.cppl_cp_plan_end_date >= @ea_cohort_window_start)
 ),
 HasLAC AS (
     -- A) LAC episode linked to CIN episode that overlaps window
@@ -136,8 +134,8 @@ HasLAC AS (
     FROM ssd_cla_episodes clae
     JOIN ssd_cin_episodes cine
       ON cine.cine_referral_id = clae.clae_referral_id
-    WHERE cine.cine_referral_date <= @window_end
-      AND (cine.cine_close_date IS NULL OR cine.cine_close_date >= @window_start)
+    WHERE cine.cine_referral_date <= @ea_cohort_window_end
+      AND (cine.cine_close_date IS NULL OR cine.cine_close_date >= @ea_cohort_window_start)
 
     UNION
 
@@ -146,14 +144,14 @@ HasLAC AS (
     FROM ssd_cla_episodes clae2
     JOIN ssd_cla_placement clap
       ON clap.clap_cla_id = clae2.clae_cla_id
-    WHERE clap.clap_cla_placement_start_date <= @window_end
-      AND (clap.clap_cla_placement_end_date IS NULL OR clap.clap_cla_placement_end_date >= @window_start)
+    WHERE clap.clap_cla_placement_start_date <= @ea_cohort_window_end
+      AND (clap.clap_cla_placement_end_date IS NULL OR clap.clap_cla_placement_end_date >= @ea_cohort_window_start)
 ),
 IsCareLeaver16to25 AS (
     SELECT DISTINCT clea.clea_person_id AS person_id
     FROM ssd_care_leavers clea
     JOIN ssd_person p ON p.pers_person_id = clea.clea_person_id
-    WHERE clea.clea_care_leaver_latest_contact BETWEEN @window_start AND @window_end
+    WHERE clea.clea_care_leaver_latest_contact BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
       AND (
             (p.pers_dob IS NOT NULL AND DATEDIFF(year, p.pers_dob, @run_date) BETWEEN 16 AND 25) -- year boundary, not bday precise
          OR (p.pers_dob IS NULL AND p.pers_expected_dob IS NOT NULL)  -- rare, kept as guard
@@ -176,6 +174,7 @@ SpecInclusion AS (
     UNION SELECT person_id FROM IsDisabled
 ),
 
+/* === Payload builder, uses JSON functions, 2016Sp1+/Azure SQL compatible === */
 RawPayloads AS (
     SELECT
         p.pers_person_id AS person_id,
@@ -265,7 +264,7 @@ RawPayloads AS (
                             FROM ssd_development.ssd_sdq_scores csdq
                             WHERE csdq.csdq_person_id = p.pers_person_id
                               AND csdq.csdq_sdq_score IS NOT NULL
-                              AND csdq.csdq_sdq_completed_date BETWEEN @window_start AND @window_end
+                              AND csdq.csdq_sdq_completed_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
                             ORDER BY csdq.csdq_sdq_completed_date DESC
                             FOR JSON PATH
                         ) AS [sdq_assessments],
@@ -318,8 +317,8 @@ RawPayloads AS (
                                    ON af.cinf_assessment_id = ca.cina_assessment_id
                             WHERE ca.cina_referral_id = cine.cine_referral_id
                               AND (
-                                    ca.cina_assessment_start_date BETWEEN @window_start AND @window_end
-                                 OR ca.cina_assessment_auth_date  BETWEEN @window_start AND @window_end
+                                    ca.cina_assessment_start_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+                                 OR ca.cina_assessment_auth_date  BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
                                   )
                             FOR JSON PATH
                         )) AS [child_and_family_assessments],
@@ -336,9 +335,9 @@ RawPayloads AS (
                                 CAST(0 AS bit) AS [purge]
                             FROM ssd_cin_plans cinp
                             WHERE cinp.cinp_referral_id = cine.cine_referral_id
-                              AND cinp.cinp_cin_plan_start_date <= @window_end
+                              AND cinp.cinp_cin_plan_start_date <= @ea_cohort_window_end
                               AND (cinp.cinp_cin_plan_end_date IS NULL
-                                   OR cinp.cinp_cin_plan_end_date >= @window_start)
+                                   OR cinp.cinp_cin_plan_end_date >= @ea_cohort_window_start)
                             FOR JSON PATH
                         )) AS [child_in_need_plans],
 
@@ -366,9 +365,9 @@ RawPayloads AS (
                                    ON icpc.icpc_s47_enquiry_id = s47e.s47e_s47_enquiry_id
                             WHERE s47e.s47e_referral_id = cine.cine_referral_id
                               AND (
-                                    s47e.s47e_s47_start_date BETWEEN @window_start AND @window_end
-                                 OR s47e.s47e_s47_end_date   BETWEEN @window_start AND @window_end
-                                 OR icpc.icpc_icpc_date      BETWEEN @window_start AND @window_end
+                                    s47e.s47e_s47_start_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+                                 OR s47e.s47e_s47_end_date   BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+                                 OR icpc.icpc_icpc_date      BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
                                   )
                             FOR JSON PATH
                         )) AS [section_47_assessments],
@@ -385,9 +384,9 @@ RawPayloads AS (
                                 CAST(0 AS bit) AS [purge]
                             FROM ssd_cp_plans cppl
                             WHERE cppl.cppl_referral_id = cine.cine_referral_id
-                              AND cppl.cppl_cp_plan_start_date <= @window_end
+                              AND cppl.cppl_cp_plan_start_date <= @ea_cohort_window_end
                               AND (cppl.cppl_cp_plan_end_date IS NULL
-                                   OR cppl.cppl_cp_plan_end_date >= @window_start)
+                                   OR cppl.cppl_cp_plan_end_date >= @ea_cohort_window_start)
                             FOR JSON PATH
                         )) AS [child_protection_plans],
 
@@ -423,10 +422,10 @@ RawPayloads AS (
                             JOIN ssd_cla_placement clap
                             ON clap.clap_cla_id = clae.clae_cla_id
                             WHERE clae.clae_referral_id = cine.cine_referral_id
-                            AND clap.clap_cla_placement_start_date <= @window_end
+                            AND clap.clap_cla_placement_start_date <= @ea_cohort_window_end
                             AND (
                                     clap.clap_cla_placement_end_date IS NULL
-                                OR clap.clap_cla_placement_end_date >= @window_start
+                                OR clap.clap_cla_placement_end_date >= @ea_cohort_window_start
                                 )
                             GROUP BY
                                 clap.clap_cla_placement_id,
@@ -457,9 +456,9 @@ RawPayloads AS (
                                         WHERE clae2.clae_person_id = p.pers_person_id
                                    ))
                               AND (
-                                    perm.perm_adm_decision_date        BETWEEN @window_start AND @window_end
-                                 OR perm.perm_matched_date             BETWEEN @window_start AND @window_end
-                                 OR perm.perm_placed_for_adoption_date BETWEEN @window_start AND @window_end
+                                    perm.perm_adm_decision_date        BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+                                 OR perm.perm_matched_date             BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+                                 OR perm.perm_placed_for_adoption_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
                                   )
                             ORDER BY COALESCE(
                                         perm.perm_placed_for_adoption_date,
@@ -480,7 +479,7 @@ RawPayloads AS (
                                 CAST(0 AS bit) AS [purge]
                               FROM ssd_care_leavers clea
                              WHERE clea.clea_person_id = p.pers_person_id
-                               AND clea.clea_care_leaver_latest_contact BETWEEN @window_start AND @window_end
+                               AND clea.clea_care_leaver_latest_contact BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
                              ORDER BY clea.clea_care_leaver_latest_contact DESC
                              FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
                         )) AS [care_leavers],
@@ -497,20 +496,18 @@ RawPayloads AS (
                             JOIN ssd_professionals pr
                               ON i.invo_professional_id = pr.prof_professional_id
                             WHERE i.invo_referral_id = cine.cine_referral_id
-                              AND i.invo_involvement_start_date <= @window_end
+                              AND i.invo_involvement_start_date <= @ea_cohort_window_end
                               AND (i.invo_involvement_end_date IS NULL
-                                   OR i.invo_involvement_end_date >= @window_start)
+                                   OR i.invo_involvement_end_date >= @ea_cohort_window_start)
                             ORDER BY i.invo_involvement_start_date DESC
                             FOR JSON PATH
                         )) AS [care_worker_details],
 
-
-
                         CAST(0 AS bit) AS [purge]
                       FROM ssd_cin_episodes cine
                      WHERE cine.cine_person_id = p.pers_person_id
-                       AND cine.cine_referral_date <= @window_end
-                       AND (cine.cine_close_date IS NULL OR cine.cine_close_date >= @window_start)
+                       AND cine.cine_referral_date <= @ea_cohort_window_end
+                       AND (cine.cine_close_date IS NULL OR cine.cine_close_date >= @ea_cohort_window_start)
                      FOR JSON PATH
                 )) AS [social_care_episodes]
 
@@ -519,7 +516,7 @@ RawPayloads AS (
 
     -- keep only records who (a) pass age/unborn gate and (b) match at least one api spec groups
     FROM ssd_person p
-    JOIN EligibleBySpec elig ON elig.pers_person_id = p.pers_person_id -- either unborn, or 26th bday falls on or after @window_start (deceased not filtered)
+    JOIN EligibleBySpec elig ON elig.pers_person_id = p.pers_person_id -- either unborn, or 26th bday falls on or after @ea_cohort_window_start (deceased not filtered)
     JOIN SpecInclusion  si   ON si.person_id        = p.pers_person_id -- appearing in ActiveReferral, WaitingAssessment, CIN plan, CP plan, LAC, Care leavers 16 to 25, Disabled
 
     /* Disabilities array */
