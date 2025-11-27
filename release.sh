@@ -116,6 +116,7 @@ else
 fi
 
 # --- Build pre_flight_checks.zip from repo-root
+# Packages up all files in folder
 if [ -d pre_flight_checks ]; then
   if find pre_flight_checks -maxdepth 1 -type f -print -quit | grep -q .; then
     zip -r pre_flight_checks.zip pre_flight_checks
@@ -131,10 +132,10 @@ mkdir -p release_bundle/notebooks
 cp dist/* release_bundle/ || true
 cp README.md api_pipeline/.env.example release_bundle/ || true
 
-# PShell API
+# PShell API - main sender
 cp api_pipeline/pshell/api_payload_sender.ps1 release_bundle/ || true
 
-# SQL files
+# SQL files - DfE Cohort payload extracts
 # legacy
 cp sql_json_query/populate_ssd_api_data_staging_2012.sql release_bundle/ || true
 # current
