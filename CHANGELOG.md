@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.3.0] - 2025-11-27
+### Added
+- 
+
+### Changed
+- 
+
+### Fixed
+- 
+
+### Removed
+- 
+
+### Security
+- 
+
 ## [0.2.10] - 2025-11-27
 ### Added
 - 
@@ -107,6 +123,8 @@
 
 ### Changed
 - PyPI classifiers, SQL focus and Jupyter noted
+
+
 
 
 
