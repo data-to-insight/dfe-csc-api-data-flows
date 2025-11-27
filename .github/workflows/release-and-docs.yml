@@ -124,7 +124,7 @@ jobs:
           Copy-Item README.md -Destination release_bundle\
           Copy-Item api_pipeline\.env.example -Destination release_bundle\
           # PowerShell scripts 
-          Copy-Item api_pipeline\pshell\api_payload.ps1 -Destination release_bundle\
+          Copy-Item api_pipeline\pshell\api_payload_sender.ps1 -Destination release_bundle\
           # SQL files, legacy and current 
           Copy-Item sql_json_query\populate_ssd_api_data_staging_2012.sql -Destination release_bundle\
           Copy-Item sql_json_query\populate_ssd_api_data_staging_2016.sql -Destination release_bundle\
@@ -132,6 +132,7 @@ jobs:
           # Notebooks
           Copy-Item api_pipeline\notebooks\* -Destination release_bundle\notebooks\ -Recurse -Force
           Compress-Archive -Path release_bundle\* -DestinationPath release.zip -Force
+
 
       - name: Package pre_flight_checks.zip
         shell: pwsh
