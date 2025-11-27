@@ -1,5 +1,5 @@
 -- define as required 
-use HDM_Local; -- Note: this the SystemC/LLogic default, LA should change to bespoke 
+use HDM_Local; -- Note: LA should change to bespoke or remove - HDM_Local is SystemC/LLogic default
 
 /* ==========================================================================
    D2I CSC API Payload Builder, SQL Server 2012+ compatible
@@ -22,7 +22,7 @@ can be appended into the main SSD and run as one - insert locations within the S
 -- Data pre/smoke test validator(s) (optional) --
 -- D2I offers a seperate <simplified> validation VIEW towards your local data verification checks,
 -- this offers some pre-process comparison between your data and the DfE API payload schema 
--- File: (SQL 2016+)https://github.com/data-to-insight/dfe-csc-api-data-flows/tree/main/pre_flight_checks/ssd_vw_csc_api_schema_checks.sql
+-- File: (T-SQL 2016+ only)https://github.com/data-to-insight/dfe-csc-api-data-flows/tree/main/pre_flight_checks/ssd_vw_csc_api_schema_checks.sql
 -- -- 
 
 
