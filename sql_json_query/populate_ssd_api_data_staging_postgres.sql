@@ -3,15 +3,31 @@
 -- Notes: enable pgcrypto for SHA256 hashes, use jsonb for payloads, use LATERAL for subqueries
 -- Switch database manually if needed, for example in psql use \c db_name
 
+/* ==========================================================================
+   D2I CSC API Payload Builder, SQL Server 2016+ compatible
+   ========================================================================== */
+
 
 /* Note for: Daily Data Flows Early Adopters
-The following table definitions (and populating) can only be run after the main SSD script
+The following table definitions (and populating) can only be run <after> the main SSD script, OR the following definitions
+can be appended into the main SSD and run as one - insert locations within the SSD are marked via the meta tags of:
 
-META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging"}
-META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging_anon"} - temp table for API testing, can be removed post testing
+-- META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging"}
+-- =============================================================================
+&
+-- META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging_anon"}
+-- =============================================================================
+
 */
 
--- Optional banner
+-- Data pre/smoke test validator(s) (optional) --
+-- D2I offers a seperate <simplified> validation VIEW towards your local data verification checks,
+-- this offers some pre-process comparison between your data and the DfE API payload schema 
+-- File: (T-SQL 2016+ only)https://github.com/data-to-insight/dfe-csc-api-data-flows/tree/main/pre_flight_checks/ssd_vw_csc_api_schema_checks.sql
+-- -- 
+
+
+
 DO $$ BEGIN
   RAISE NOTICE '== CSC API staging build: v%s ==', '0.1.0';
 END $$;
@@ -76,324 +92,547 @@ CREATE TABLE IF NOT EXISTS ssd_api_data_staging_anon (
 -- ssd_permanence, ssd_care_leavers, ssd_linked_identifiers, ssd_address, ssd_immigration_status
 -- =============================================================================
 
+/* === Payload builder Postgres 13+ compatible === */
 BEGIN;
 
-WITH raw AS (
+/* === EA Spec window dynamic, 24 months back to FY start on 1 April === */
+WITH settings AS (
   SELECT
-    p.pers_person_id::VARCHAR(48) AS person_id,
+    CURRENT_DATE::date AS run_date,
+    24::int            AS months_back,
+    4::int             AS fy_start_month
+),
+win AS (
+  SELECT
+    (run_date - make_interval(months => months_back))::date AS anchor,
+    run_date,
+    fy_start_month
+  FROM settings
+),
+window AS (
+  SELECT
+    make_date(
+      extract(year from anchor)::int
+      - CASE WHEN extract(month from anchor) < fy_start_month THEN 1 ELSE 0 END,
+      fy_start_month,
+      1
+    )                       AS ea_cohort_window_start,
+    (run_date + INTERVAL '1 day')::date AS ea_cohort_window_end   /* exclusive end */
+  FROM win
+),
 
-    jsonb_build_object(
-      'la_child_id',
-        NULLIF(p.pers_person_id::TEXT, ''),
-      'mis_child_id',
-        COALESCE(NULLIF(p.pers_single_unique_id, ''), 'SSD_SUI'),
-      'purge', false,
+raw AS (
+  SELECT
+    p.pers_person_id::varchar(48) AS person_id,
 
-      'child_details', jsonb_build_object(
-        'first_name', NULLIF(p.pers_forename, ''),
-        'surname',    NULLIF(p.pers_surname, ''),
-        'unique_pupil_number', (
-          SELECT li.link_identifier_value
-          FROM ssd_linked_identifiers li
-          WHERE li.link_person_id = p.pers_person_id
-            AND li.link_identifier_type = 'Unique Pupil Number'
-            AND length(li.link_identifier_value) = 13
-            AND li.link_identifier_value ~ '^\d{13}$'
-          ORDER BY li.link_valid_from_date DESC
-          LIMIT 1
-        ),
-        'former_unique_pupil_number', (
-          SELECT li.link_identifier_value
-          FROM ssd_linked_identifiers li
-          WHERE li.link_person_id = p.pers_person_id
-            AND li.link_identifier_type = 'Former Unique Pupil Number'
-            AND length(li.link_identifier_value) = 13
-            AND li.link_identifier_value ~ '^\d{13}$'
-          ORDER BY li.link_valid_from_date DESC
-          LIMIT 1
-        ),
-        'unique_pupil_number_unknown_reason', NULLIF(left(COALESCE(p.pers_upn_unknown, ''), 3), ''),
-        'date_of_birth', CASE WHEN p.pers_dob IS NULL THEN NULL ELSE to_char(p.pers_dob, 'YYYY-MM-DD') END,
-        'expected_date_of_birth', CASE WHEN p.pers_expected_dob IS NULL THEN NULL ELSE to_char(p.pers_expected_dob, 'YYYY-MM-DD') END,
-        'sex', CASE WHEN p.pers_sex IN ('M','F') THEN p.pers_sex ELSE 'U' END,
-        'ethnicity', NULLIF(left(COALESCE(p.pers_ethnicity, ''), 4), ''),
-        'disabilities', COALESCE(disab.disabilities_json, '[]'::jsonb),
-        'postcode', (
-          SELECT left(a.addr_address_postcode, 8)
-          FROM ssd_address a
-          WHERE a.addr_person_id = p.pers_person_id
-          ORDER BY a.addr_address_start_date DESC
-          LIMIT 1
-        ),
-        'uasc_flag', EXISTS (
-          SELECT 1
-          FROM ssd_immigration_status immi
-          WHERE immi.immi_person_id = p.pers_person_id
-            AND (immi.immi_immigration_status = 'UASC' OR immi.immi_immigration_status ILIKE '%UASC%')
-        ),
-        'uasc_end_date', (
-          SELECT to_char(immi2.immi_immigration_status_end_date, 'YYYY-MM-DD')
-          FROM ssd_immigration_status immi2
-          WHERE immi2.immi_person_id = p.pers_person_id
-          ORDER BY (immi2.immi_immigration_status_end_date IS NULL) ASC,
-                   immi2.immi_immigration_status_start_date DESC
-          LIMIT 1
-        ),
-        'purge', false
-      ),
+    /* ---------- top level object: 2.., purge as 3rd ---------- */
+    (
+      /* base 2, 3, then append the rest in order using || */
+      jsonb_build_object(
+        'la_child_id',  left(p.pers_person_id::text, 36)                                    -- 2
+      , 'mis_child_id', left(coalesce(nullif(p.pers_single_unique_id, ''), 'SSD_SUI'), 36)  
+      , 'purge', false                                                                       -- top level purge
+      )
 
-      'health_and_wellbeing', jsonb_build_object(
-        'sdq_assessments', COALESCE(sdq.sdq_array_json, '[]'::jsonb),
-        'purge', false
-      ),
+      /* child_details 3..15, ordered, omit null keys */
+      || jsonb_build_object(
+           'child_details',
+           (
+             jsonb_build_object(
+               'sex', case when p.pers_sex in ('M','F') then p.pers_sex else 'U' end         -- 10
+             )
+             || case when nullif(btrim(p.pers_upn), '') is not null
+                     then jsonb_build_object('unique_pupil_number', p.pers_upn)              -- 3
+                     else '{}'::jsonb end
+             || coalesce((
+                  select jsonb_build_object('former_unique_pupil_number', li.link_identifier_value)
+                  from ssd_linked_identifiers li
+                  where li.link_person_id = p.pers_person_id
+                    and li.link_identifier_type = 'Former Unique Pupil Number'
+                    and length(li.link_identifier_value) = 13
+                    and li.link_identifier_value ~ '^\d{13}$'
+                  order by li.link_valid_from_date desc
+                  limit 1
+                ), '{}'::jsonb)                                                              -- 4
+             || case when nullif(btrim(coalesce(p.pers_upn_unknown,'')), '') is not null
+                     then jsonb_build_object('unique_pupil_number_unknown_reason', left(p.pers_upn_unknown, 3))  -- 5
+                     else '{}'::jsonb end
+             || case when nullif(p.pers_forename, '') is not null
+                     then jsonb_build_object('first_name', replace(p.pers_forename, '"', '\"'))  -- 6
+                     else '{}'::jsonb end
+             || case when nullif(p.pers_surname, '') is not null
+                     then jsonb_build_object('surname',    replace(p.pers_surname,  '"', '\"'))  -- 7
+                     else '{}'::jsonb end
+             || case when p.pers_dob is not null
+                     then jsonb_build_object('date_of_birth', to_char(p.pers_dob, 'YYYY-MM-DD')) -- 8
+                     else '{}'::jsonb end
+             || case when p.pers_expected_dob is not null
+                     then jsonb_build_object('expected_date_of_birth', to_char(p.pers_expected_dob, 'YYYY-MM-DD')) -- 9
+                     else '{}'::jsonb end
+             || case when nullif(btrim(coalesce(p.pers_ethnicity,'')), '') is not null
+                     then jsonb_build_object('ethnicity', left(p.pers_ethnicity, 4))            -- 11
+                     else '{}'::jsonb end
+             || case when disab.disabilities_json is not null
+                     then jsonb_build_object('disabilities', disab.disabilities_json)           -- 12
+                     else '{}'::jsonb end
+             || coalesce((
+                  select case when nullif(btrim(a.addr_address_postcode), '') is not null
+                              then jsonb_build_object('postcode', a.addr_address_postcode)
+                              else null end
+                  from (
+                    select a.addr_address_postcode
+                    from ssd_address a
+                    where a.addr_person_id = p.pers_person_id
+                    order by a.addr_address_start_date desc
+                    limit 1
+                  ) a
+                ), '{}'::jsonb)                                                                -- 13
+             || jsonb_build_object(
+                  'uasc_flag',
+                  exists(
+                    select 1
+                    from ssd_immigration_status s
+                    where s.immi_person_id = p.pers_person_id
+                      and coalesce(s.immi_immigration_status,'') ilike '%UASC%'
+                  )
+                )                                                                              -- 14
+             || coalesce((
+                  select case when s2.immi_immigration_status_end_date is not null
+                              then jsonb_build_object('uasc_end_date', to_char(s2.immi_immigration_status_end_date, 'YYYY-MM-DD'))
+                              else null end
+                  from (
+                    select *
+                    from ssd_immigration_status s2
+                    where s2.immi_person_id = p.pers_person_id
+                    order by (s2.immi_immigration_status_end_date is null) asc,
+                             s2.immi_immigration_status_start_date desc
+                    limit 1
+                  ) s2
+                ), '{}'::jsonb)                                                                -- 15
+             || jsonb_build_object('purge', false)
+           )
+         )
 
-      'social_care_episodes', COALESCE(sce.episodes_array_json, '[]'::jsonb)
+      /* health_and_wellbeing 45..46, omit whole block if NULL */
+      || case when sdq.has_sdq
+              then jsonb_build_object(
+                     'health_and_wellbeing',
+                     jsonb_build_object(
+                       'sdq_assessments', sdq.sdq_array_json                                   -- 45, 46
+                     , 'purge', false
+                     )
+                   )
+              else '{}'::jsonb end
+
+      /* social_care_episodes 16..44, 47..55, empty arrays and objects omitted */
+      || jsonb_build_object('social_care_episodes', coalesce(sce.episodes_array_json, '[]'::jsonb))
     ) AS json_payload
 
   FROM ssd_person p
+  CROSS JOIN window w   /* expose w.ea_cohort_window_start and w.ea_cohort_window_end */
 
-  -- disabilities -> JSON array of short codes
-  LEFT JOIN LATERAL (
-    SELECT
-      COALESCE(
-        jsonb_agg(code ORDER BY code),
-        '[]'::jsonb
-      ) AS disabilities_json
-    FROM (
-      SELECT DISTINCT upper(substr(btrim(d2.disa_disability_code), 1, 4)) AS code
-      FROM ssd_disability d2
-      WHERE d2.disa_person_id = p.pers_person_id
-        AND d2.disa_disability_code IS NOT NULL
-        AND btrim(d2.disa_disability_code) <> ''
+  /* disabilities array, return NULL if empty */
+  left join lateral (
+    select nullif(jsonb_agg(code order by code), '[]'::jsonb) as disabilities_json
+    from (
+      select distinct upper(substr(btrim(d2.disa_disability_code), 1, 4)) as code
+      from ssd_disability d2
+      where d2.disa_person_id = p.pers_person_id
+        and d2.disa_disability_code is not null
+        and btrim(d2.disa_disability_code) <> ''
     ) x
-  ) disab ON true
+  ) disab on true
 
-  -- sdq -> JSON array
-  LEFT JOIN LATERAL (
-    SELECT
-      jsonb_agg(
-        jsonb_build_object(
-          'date',  to_char(csdq.csdq_sdq_completed_date, 'YYYY-MM-DD'),
-          'score', (csdq.csdq_sdq_score)::INT
-        )
-        ORDER BY csdq.csdq_sdq_completed_date DESC
-      ) AS sdq_array_json
-    FROM ssd_sdq_scores csdq
-    WHERE csdq.csdq_person_id = p.pers_person_id
-      AND csdq.csdq_sdq_completed_date IS NOT NULL
-      AND csdq.csdq_sdq_completed_date > DATE '1900-01-01'
-      AND csdq.csdq_sdq_score ~ '^\d+$'
-  ) sdq ON true
+  /* SDQs prebuild filtered to EA window */
+  left join lateral (
+    select
+      coalesce(
+        (
+          select jsonb_agg(
+                   jsonb_build_object(
+                     'date',  to_char(csdq.csdq_sdq_completed_date, 'YYYY-MM-DD')              -- 45
+                   , 'score', (csdq.csdq_sdq_score)::int                                       -- 46
+                   )
+                   order by csdq.csdq_sdq_completed_date desc
+                 )
+          from ssd_sdq_scores csdq
+          where csdq.csdq_person_id = p.pers_person_id
+            and csdq.csdq_sdq_score ~ '^\d+$'
+            and csdq.csdq_sdq_completed_date >= w.ea_cohort_window_start
+            and csdq.csdq_sdq_completed_date <  w.ea_cohort_window_end
+        ),
+        '[]'::jsonb
+      ) as sdq_array_json,
+      exists(
+        select 1
+        from ssd_sdq_scores csdq
+        where csdq.csdq_person_id = p.pers_person_id
+          and csdq.csdq_sdq_score ~ '^\d+$'
+          and csdq.csdq_sdq_completed_date >= w.ea_cohort_window_start
+          and csdq.csdq_sdq_completed_date <  w.ea_cohort_window_end
+      ) as has_sdq
+  ) sdq on true
 
-  -- episodes -> JSON array with nested arrays
-  LEFT JOIN LATERAL (
-    SELECT
-      jsonb_agg(episode_obj ORDER BY COALESCE(cine.cine_referral_date, DATE '0001-01-01')) AS episodes_array_json
-    FROM (
-      SELECT
-        jsonb_build_object(
-          'social_care_episode_id', NULLIF(cine.cine_referral_id::TEXT, ''),
-          'referral_date', CASE WHEN cine.cine_referral_date IS NULL THEN NULL ELSE to_char(cine.cine_referral_date, 'YYYY-MM-DD') END,
-          'referral_source', NULLIF(left(COALESCE(cine.cine_referral_source_code, ''), 2), ''),
-          'referral_no_further_action_flag',
-            CASE
-              WHEN COALESCE(cine.cine_referral_nfa::TEXT, '') ~* '^(1|true|y|t)$' THEN true
-              WHEN COALESCE(cine.cine_referral_nfa::TEXT, '') ~* '^(0|false|n|f)$' THEN false
-              ELSE NULL
-            END,
+  /* episodes and nested blocks, all EA window rules applied */
+  left join lateral (
+    select
+      jsonb_agg(ep.episode_obj order by coalesce(ep.referral_date_sort, date '0001-01-01')) as episodes_array_json
+    from (
+      select
+        cine.cine_referral_date as referral_date_sort,
+        /* episode base with ordered keys 16..18 */
+        (
+          jsonb_build_object(
+            'social_care_episode_id', nullif(cine.cine_referral_id::text, '')                         -- 16
+          , 'referral_date', case when cine.cine_referral_date is null
+                                   then null else to_char(cine.cine_referral_date, 'YYYY-MM-DD') end  -- 17
+          , 'referral_source', nullif(left(coalesce(cine.cine_referral_source_code,''), 2), '')       -- 18
+          )
 
-          'care_worker_details', COALESCE(
-            (
-              SELECT jsonb_agg(
-                       jsonb_build_object(
-                         'worker_id', NULLIF(left(pr.prof_staff_id::TEXT, 12), ''),
-                         'start_date', CASE WHEN i.invo_involvement_start_date IS NULL THEN NULL ELSE to_char(i.invo_involvement_start_date, 'YYYY-MM-DD') END,
-                         'end_date',   CASE WHEN i.invo_involvement_end_date   IS NULL THEN NULL ELSE to_char(i.invo_involvement_end_date,   'YYYY-MM-DD') END
-                       )
-                       ORDER BY i.invo_involvement_start_date DESC
-                     )
-              FROM ssd_involvements i
-              JOIN ssd_professionals pr
-                ON i.invo_professional_id = pr.prof_professional_id
-              WHERE i.invo_referral_id = cine.cine_referral_id
-            ),
-            '[]'::jsonb
-          ),
+          /* closure_date */                                                                          -- 19
+          || case when cine.cine_close_date is not null
+                  then jsonb_build_object('closure_date', to_char(cine.cine_close_date, 'YYYY-MM-DD'))
+                  else '{}'::jsonb end
 
-          'child_and_family_assessments', COALESCE(
-            (
-              SELECT jsonb_agg(
-                       jsonb_build_object(
-                         'child_and_family_assessment_id', NULLIF(ca.cina_assessment_id::TEXT, ''),
-                         'start_date',        CASE WHEN ca.cina_assessment_start_date IS NULL THEN NULL ELSE to_char(ca.cina_assessment_start_date, 'YYYY-MM-DD') END,
-                         'authorisation_date',CASE WHEN ca.cina_assessment_auth_date  IS NULL THEN NULL ELSE to_char(ca.cina_assessment_auth_date,  'YYYY-MM-DD') END,
-                         'factors', COALESCE(af.cinf_assessment_factors_json::jsonb, '[]'::jsonb),
-                         'purge', false
-                       )
-                     )
-              FROM ssd_cin_assessments ca
-              LEFT JOIN ssd_assessment_factors af
-                ON af.cinf_assessment_id = ca.cina_assessment_id
-              WHERE ca.cina_referral_id = cine.cine_referral_id
-            ),
-            '[]'::jsonb
-          ),
+          /* closure_reason */                                                                        -- 20
+          || case when nullif(left(coalesce(cine.cine_close_reason,''), 3), '') is not null
+                  then jsonb_build_object('closure_reason', left(cine.cine_close_reason, 3))
+                  else '{}'::jsonb end
 
-          'child_in_need_plans', COALESCE(
-            (
-              SELECT jsonb_agg(
-                       jsonb_build_object(
-                         'child_in_need_plan_id', NULLIF(cinp.cinp_cin_plan_id::TEXT, ''),
-                         'start_date', CASE WHEN cinp.cinp_cin_plan_start_date IS NULL THEN NULL ELSE to_char(cinp.cinp_cin_plan_start_date, 'YYYY-MM-DD') END,
-                         'end_date',   CASE WHEN cinp.cinp_cin_plan_end_date   IS NULL THEN NULL ELSE to_char(cinp.cinp_cin_plan_end_date,   'YYYY-MM-DD') END,
-                         'purge', false
-                       )
-                     )
-              FROM ssd_cin_plans cinp
-              WHERE cinp.cinp_referral_id = cine.cine_referral_id
-            ),
-            '[]'::jsonb
-          ),
+          /* referral_no_further_action_flag, include only when mappable */                           -- 21
+          || case
+               when coalesce(cine.cine_referral_nfa::text,'') ~* '^(1|true|y|t)$'
+                 then jsonb_build_object('referral_no_further_action_flag', true)
+               when coalesce(cine.cine_referral_nfa::text,'') ~* '^(0|false|n|f)$'
+                 then jsonb_build_object('referral_no_further_action_flag', false)
+               else '{}'::jsonb
+             end
 
-          'section_47_assessments', COALESCE(
-            (
-              SELECT jsonb_agg(
-                       jsonb_build_object(
-                         'section_47_assessment_id', NULLIF(s47e.s47e_s47_enquiry_id::TEXT, ''),
-                         'start_date', CASE WHEN s47e.s47e_s47_start_date IS NULL THEN NULL ELSE to_char(s47e.s47e_s47_start_date, 'YYYY-MM-DD') END,
-                         'icpc_required_flag', CASE
-                           WHEN s47e.s47e_s47_outcome_json IS NULL THEN NULL
-                           WHEN position('"CP_CONFERENCE_FLAG":"Y"' in s47e.s47e_s47_outcome_json) > 0
-                                OR position('"CP_CONFERENCE_FLAG":"1"' in s47e.s47e_s47_outcome_json) > 0 THEN true
-                           WHEN position('"CP_CONFERENCE_FLAG":"N"' in s47e.s47e_s47_outcome_json) > 0
-                                OR position('"CP_CONFERENCE_FLAG":"0"' in s47e.s47e_s47_outcome_json) > 0 THEN false
-                           ELSE NULL
-                         END,
-                         'icpc_date', CASE WHEN icpc.icpc_icpc_date IS NULL THEN NULL ELSE to_char(icpc.icpc_icpc_date, 'YYYY-MM-DD') END,
-                         'end_date', CASE WHEN s47e.s47e_s47_end_date IS NULL THEN NULL ELSE to_char(s47e.s47e_s47_end_date, 'YYYY-MM-DD') END,
-                         'purge', false
-                       )
-                     )
-              FROM ssd_s47_enquiry s47e
-              LEFT JOIN ssd_initial_cp_conference icpc
-                ON icpc.icpc_s47_enquiry_id = s47e.s47e_s47_enquiry_id
-              WHERE s47e.s47e_referral_id = cine.cine_referral_id
-            ),
-            '[]'::jsonb
-          ),
+          /* 22..25 child_and_family_assessments filtered to EA window on start or auth date */
+          || coalesce((
+               select case when caf.arr is not null
+                           then jsonb_build_object('child_and_family_assessments', caf.arr)
+                           else null end
+               from (
+                 select nullif(
+                          jsonb_agg(
+                            jsonb_strip_nulls(
+                              jsonb_build_object(
+                                'child_and_family_assessment_id', nullif(ca.cina_assessment_id::text, '')                             -- 22
+                              ) ||
+                              case when ca.cina_assessment_start_date is not null
+                                   then jsonb_build_object('start_date', to_char(ca.cina_assessment_start_date, 'YYYY-MM-DD'))        -- 23
+                                   else '{}'::jsonb end
+                              || case when ca.cina_assessment_auth_date is not null
+                                   then jsonb_build_object('authorisation_date', to_char(ca.cina_assessment_auth_date, 'YYYY-MM-DD')) -- 24
+                                   else '{}'::jsonb end
+                              || coalesce(
+                                   case
+                                     when af.cinf_assessment_factors_json is not null
+                                          and btrim(af.cinf_assessment_factors_json) <> ''
+                                          and af.cinf_assessment_factors_json::jsonb <> '[]'::jsonb
+                                     then jsonb_build_object('factors', af.cinf_assessment_factors_json::jsonb)                       -- 25
+                                     else null
+                                   end,
+                                   '{}'::jsonb
+                                 )
+                              || jsonb_build_object('purge', false)
+                            )
+                          ), '[]'::jsonb
+                        ) as arr
+                 from ssd_cin_assessments ca
+                 left join ssd_assessment_factors af
+                   on af.cinf_assessment_id = ca.cina_assessment_id
+                 where ca.cina_referral_id = cine.cine_referral_id
+                   and (
+                         ca.cina_assessment_start_date >= w.ea_cohort_window_start
+                         and ca.cina_assessment_start_date <  w.ea_cohort_window_end
+                       or ca.cina_assessment_auth_date  >= w.ea_cohort_window_start
+                         and ca.cina_assessment_auth_date  <  w.ea_cohort_window_end
+                   )
+               ) caf
+             ), '{}'::jsonb)
 
-          'child_protection_plans', COALESCE(
-            (
-              SELECT jsonb_agg(
-                       jsonb_build_object(
-                         'child_protection_plan_id', NULLIF(cppl.cppl_cp_plan_id::TEXT, ''),
-                         'start_date', CASE WHEN cppl.cppl_cp_plan_start_date IS NULL THEN NULL ELSE to_char(cppl.cppl_cp_plan_start_date, 'YYYY-MM-DD') END,
-                         'end_date',   CASE WHEN cppl.cppl_cp_plan_end_date   IS NULL THEN NULL ELSE to_char(cppl.cppl_cp_plan_end_date,   'YYYY-MM-DD') END,
-                         'purge', false
-                       )
-                     )
-              FROM ssd_cp_plans cppl
-              WHERE cppl.cppl_referral_id = cine.cine_referral_id
-            ),
-            '[]'::jsonb
-          ),
+          /* 26..28 child_in_need_plans overlap EA window */
+          || coalesce((
+               select case when cin.arr is not null
+                           then jsonb_build_object('child_in_need_plans', cin.arr)
+                           else null end
+               from (
+                 select nullif(
+                          jsonb_agg(
+                            jsonb_strip_nulls(
+                              jsonb_build_object(
+                                'child_in_need_plan_id', nullif(cinp.cinp_cin_plan_id::text, '')                   -- 26
+                              , 'start_date', case when cinp.cinp_cin_plan_start_date is null then null
+                                                   else to_char(cinp.cinp_cin_plan_start_date, 'YYYY-MM-DD') end   -- 27
+                              , 'end_date',   case when cinp.cinp_cin_plan_end_date   is null then null
+                                                   else to_char(cinp.cinp_cin_plan_end_date,   'YYYY-MM-DD') end   -- 28
+                              , 'purge', false
+                              )
+                            )
+                            order by cinp.cinp_cin_plan_start_date desc
+                          ), '[]'::jsonb
+                        ) as arr
+                 from ssd_cin_plans cinp
+                 where cinp.cinp_referral_id = cine.cine_referral_id
+                   and cinp.cinp_cin_plan_start_date <  w.ea_cohort_window_end
+                   and (cinp.cinp_cin_plan_end_date is null or cinp.cinp_cin_plan_end_date >= w.ea_cohort_window_start)
+               ) cin
+             ), '{}'::jsonb)
 
-          'child_looked_after_placements', COALESCE(
-            (
-              SELECT jsonb_agg(
-                       jsonb_build_object(
-                         'child_looked_after_placement_id', NULLIF(clap.clap_cla_placement_id::TEXT, ''),
-                         'start_date',   CASE WHEN clap.clap_cla_placement_start_date IS NULL THEN NULL ELSE to_char(clap.clap_cla_placement_start_date, 'YYYY-MM-DD') END,
-                         'start_reason', NULLIF(left(COALESCE(clae.clae_cla_episode_start_reason, ''), 1), ''),
-                         'placement_type', NULLIF(left(COALESCE(clap.clap_cla_placement_type, ''), 2), ''),
-                         'postcode', NULLIF(left(COALESCE(clap.clap_cla_placement_postcode, ''), 8), ''),
-                         'end_date',     CASE WHEN clap.clap_cla_placement_end_date IS NULL THEN NULL ELSE to_char(clap.clap_cla_placement_end_date, 'YYYY-MM-DD') END,
-                         'end_reason',   NULLIF(left(COALESCE(clae.clae_cla_episode_ceased_reason, ''), 3), ''),
-                         'change_reason',NULLIF(left(COALESCE(clap.clap_cla_placement_change_reason, ''), 6), ''),
-                         'purge', false
-                       )
-                       ORDER BY clap.clap_cla_placement_start_date DESC
-                     )
-              FROM ssd_cla_episodes clae
-              JOIN ssd_cla_placement clap
-                ON clap.clap_cla_id = clae.clae_cla_id
-              WHERE clae.clae_referral_id = cine.cine_referral_id
-            ),
-            '[]'::jsonb
-          ),
+          /* 29..33 section_47_assessments overlap EA window or ICPC in window */
+          || coalesce((
+               select case when s47.arr is not null
+                           then jsonb_build_object('section_47_assessments', s47.arr)
+                           else null end
+               from (
+                 select nullif(
+                          jsonb_agg(
+                            jsonb_strip_nulls(
+                              jsonb_build_object(
+                                'section_47_assessment_id', nullif(s47e.s47e_s47_enquiry_id::text, '')                    -- 29
+                              ) ||
+                              case when s47e.s47e_s47_start_date is not null
+                                   then jsonb_build_object('start_date', to_char(s47e.s47e_s47_start_date, 'YYYY-MM-DD')) -- 30
+                                   else '{}'::jsonb end
+                              || case
+                                   when s47e.s47e_s47_outcome_json is null then '{}'::jsonb
+                                   when position('"CP_CONFERENCE_FLAG":"Y"' in s47e.s47e_s47_outcome_json) > 0
+                                     or position('"CP_CONFERENCE_FLAG":"T"' in s47e.s47e_s47_outcome_json) > 0
+                                     or position('"CP_CONFERENCE_FLAG":"1"' in s47e.s47e_s47_outcome_json) > 0
+                                     or position('"CP_CONFERENCE_FLAG":"true"' in s47e.s47e_s47_outcome_json) > 0
+                                     or position('"CP_CONFERENCE_FLAG":"True"' in s47e.s47e_s47_outcome_json) > 0
+                                     then jsonb_build_object('icpc_required_flag', true)                                  -- 31
+                                   when position('"CP_CONFERENCE_FLAG":"N"' in s47e.s47e_s47_outcome_json) > 0
+                                     or position('"CP_CONFERENCE_FLAG":"F"' in s47e.s47e_s47_outcome_json) > 0
+                                     or position('"CP_CONFERENCE_FLAG":"0"' in s47e.s47e_s47_outcome_json) > 0
+                                     or position('"CP_CONFERENCE_FLAG":"false"' in s47e.s47e_s47_outcome_json) > 0
+                                     or position('"CP_CONFERENCE_FLAG":"False"' in s47e.s47e_s47_outcome_json) > 0
+                                     then jsonb_build_object('icpc_required_flag', false)
+                                   else '{}'::jsonb
+                                 end
+                              || coalesce((
+                                   select case when icpc.icpc_icpc_date is not null
+                                               then jsonb_build_object('icpc_date', to_char(icpc.icpc_icpc_date, 'YYYY-MM-DD'))
+                                               else null end
+                                   from (
+                                     select i.icpc_icpc_date
+                                     from ssd_initial_cp_conference i
+                                     where i.icpc_s47_enquiry_id = s47e.s47e_s47_enquiry_id
+                                       and i.icpc_icpc_date >= w.ea_cohort_window_start            /* EA window */
+                                       and i.icpc_icpc_date <  w.ea_cohort_window_end
+                                     order by i.icpc_icpc_date desc
+                                     limit 1
+                                   ) icpc
+                                 ), '{}'::jsonb)                                                                          -- 32
+                              || case when s47e.s47e_s47_end_date is not null
+                                      then jsonb_build_object('end_date', to_char(s47e.s47e_s47_end_date, 'YYYY-MM-DD'))  -- 33
+                                      else '{}'::jsonb end
+                              || jsonb_build_object('purge', false)
+                            )
+                          ), '[]'::jsonb
+                        ) as arr
+                 from ssd_s47_enquiry s47e
+                 where s47e.s47e_referral_id = cine.cine_referral_id
+                   and (
+                        s47e.s47e_s47_start_date <= w.ea_cohort_window_end
+                        and (s47e.s47e_s47_end_date is null or s47e.s47e_s47_end_date >= w.ea_cohort_window_start)
+                       or exists (
+                            select 1 from ssd_initial_cp_conference i
+                            where i.icpc_s47_enquiry_id = s47e.s47e_s47_enquiry_id
+                              and i.icpc_icpc_date >= w.ea_cohort_window_start
+                              and i.icpc_icpc_date <  w.ea_cohort_window_end
+                         )
+                   )
+               ) s47
+             ), '{}'::jsonb)
 
-          'adoption', (
-            SELECT to_jsonb(ROW) FROM (
-              SELECT
-                CASE WHEN perm.perm_adm_decision_date IS NULL THEN NULL ELSE to_char(perm.perm_adm_decision_date, 'YYYY-MM-DD') END AS initial_decision_date,
-                CASE WHEN perm.perm_matched_date        IS NULL THEN NULL ELSE to_char(perm.perm_matched_date,        'YYYY-MM-DD') END AS matched_date,
-                CASE WHEN perm.perm_placed_for_adoption_date IS NULL THEN NULL ELSE to_char(perm.perm_placed_for_adoption_date, 'YYYY-MM-DD') END AS placed_date,
-                false AS purge
-            ) AS t( initial_decision_date, matched_date, placed_date, purge )
-            FROM ssd_permanence perm
-            WHERE perm.perm_person_id = p.pers_person_id
-               OR perm.perm_cla_id IN (
-                 SELECT clae2.clae_cla_id
-                 FROM ssd_cla_episodes clae2
-                 WHERE clae2.clae_person_id = p.pers_person_id
-               )
-            ORDER BY COALESCE(perm.perm_placed_for_adoption_date, perm.perm_matched_date, perm.perm_adm_decision_date) DESC
-            LIMIT 1
-          ),
+          /* 34..36 child_protection_plans overlap EA window */
+          || coalesce((
+               select case when cpp.arr is not null
+                           then jsonb_build_object('child_protection_plans', cpp.arr)
+                           else null end
+               from (
+                 select nullif(
+                          jsonb_agg(
+                            jsonb_strip_nulls(
+                              jsonb_build_object(
+                                'child_protection_plan_id', nullif(cppl.cppl_cp_plan_id::text, '')                        -- 34
+                              , 'start_date', case when cppl.cppl_cp_plan_start_date is null then null
+                                                   else to_char(cppl.cppl_cp_plan_start_date, 'YYYY-MM-DD') end           -- 35
+                              , 'end_date',   case when cppl.cppl_cp_plan_end_date   is null then null
+                                                   else to_char(cppl.cppl_cp_plan_end_date,   'YYYY-MM-DD') end           -- 36
+                              , 'purge', false
+                              )
+                            )
+                          ), '[]'::jsonb
+                        ) as arr
+                 from ssd_cp_plans cppl
+                 where cppl.cppl_referral_id = cine.cine_referral_id
+                   and cppl.cppl_cp_plan_start_date <  w.ea_cohort_window_end
+                   and (cppl.cppl_cp_plan_end_date is null or cppl.cppl_cp_plan_end_date >= w.ea_cohort_window_start)
+               ) cpp
+             ), '{}'::jsonb)
 
-          'care_leavers', (
-            SELECT to_jsonb(ROW) FROM (
-              SELECT
-                CASE WHEN clea.clea_care_leaver_latest_contact IS NULL THEN NULL ELSE to_char(clea.clea_care_leaver_latest_contact, 'YYYY-MM-DD') END AS contact_date,
-                NULLIF(left(COALESCE(clea.clea_care_leaver_activity, ''), 2), '') AS activity,
-                NULLIF(left(COALESCE(clea.clea_care_leaver_accommodation, ''), 1), '') AS accommodation,
-                false AS purge
-            ) AS t( contact_date, activity, accommodation, purge )
-            FROM ssd_care_leavers clea
-            WHERE clea.clea_person_id = p.pers_person_id
-            ORDER BY clea.clea_care_leaver_latest_contact DESC
-            LIMIT 1
-          ),
+          /* 37..44 child_looked_after_placements overlap EA window */
+          || coalesce((
+               select case when cla.arr is not null
+                           then jsonb_build_object('child_looked_after_placements', cla.arr)
+                           else null end
+               from (
+                 select nullif(
+                          jsonb_agg(
+                            jsonb_strip_nulls(
+                              jsonb_build_object(
+                                'child_looked_after_placement_id', nullif(clap.clap_cla_placement_id::text, '')           -- 37
+                              , 'start_date', to_char(clap.clap_cla_placement_start_date, 'YYYY-MM-DD')                   -- 38
+                              , 'start_reason', nullif(left(coalesce(clae.clae_cla_episode_start_reason,''), 1), '')      -- 39
+                              , 'postcode',     nullif(coalesce(clap.clap_cla_placement_postcode,''), '')                 -- 40
+                              , 'placement_type', nullif(left(coalesce(clap.clap_cla_placement_type,''), 2), '')          -- 41
+                              )
+                              || case when clap.clap_cla_placement_end_date is not null
+                                      then jsonb_build_object('end_date', to_char(clap.clap_cla_placement_end_date, 'YYYY-MM-DD'))  -- 42
+                                      else '{}'::jsonb end
+                              || jsonb_build_object(
+                                   'end_reason',   nullif(left(coalesce(clae.clae_cla_episode_ceased_reason,''), 3), '')            -- 43
+                                 , 'change_reason',nullif(left(coalesce(clap.clap_cla_placement_change_reason,''), 6), '')          -- 44
+                                 , 'purge', false
+                                 )
+                            )
+                            order by clap.clap_cla_placement_start_date desc
+                          ), '[]'::jsonb
+                        ) as arr
+                 from ssd_cla_episodes clae
+                 join ssd_cla_placement clap on clap.clap_cla_id = clae.clae_cla_id
+                 where clae.clae_referral_id = cine.cine_referral_id
+                   and clap.clap_cla_placement_start_date <  w.ea_cohort_window_end
+                   and (clap.clap_cla_placement_end_date is null or clap.clap_cla_placement_end_date >= w.ea_cohort_window_start)
+               ) cla
+             ), '{}'::jsonb)
 
-          'closure_date',  CASE WHEN cine.cine_close_date IS NULL THEN NULL ELSE to_char(cine.cine_close_date, 'YYYY-MM-DD') END,
-          'closure_reason', NULLIF(left(COALESCE(cine.cine_close_reason, ''), 3), ''),
-          'purge', false
-        ) AS episode_obj
-      FROM ssd_cin_episodes cine
-      WHERE cine.cine_person_id = p.pers_person_id
+          /* 47..49 adoption filtered to EA window on any permanence date */
+          || coalesce((
+               select jsonb_build_object('adoption', adopt.obj)
+               from (
+                 select to_jsonb(row) as obj
+                 from (
+                   select
+                     case when perm.perm_adm_decision_date is null then null else to_char(perm.perm_adm_decision_date, 'YYYY-MM-DD') end as initial_decision_date,      -- 47
+                     case when perm.perm_matched_date        is null then null else to_char(perm.perm_matched_date,        'YYYY-MM-DD') end as matched_date,           -- 48
+                     case when perm.perm_placed_for_adoption_date is null then null else to_char(perm.perm_placed_for_adoption_date, 'YYYY-MM-DD') end as placed_date,  -- 49
+                     false as purge
+                 ) as row
+                 from ssd_permanence perm
+                 where (perm.perm_person_id = p.pers_person_id
+                        or perm.perm_cla_id in (
+                             select clae2.clae_cla_id
+                             from ssd_cla_episodes clae2
+                             where clae2.clae_person_id = p.pers_person_id
+                           ))
+                   and (
+                        perm.perm_adm_decision_date        >= w.ea_cohort_window_start and perm.perm_adm_decision_date        < w.ea_cohort_window_end
+                     or perm.perm_matched_date             >= w.ea_cohort_window_start and perm.perm_matched_date             < w.ea_cohort_window_end
+                     or perm.perm_placed_for_adoption_date >= w.ea_cohort_window_start and perm.perm_placed_for_adoption_date < w.ea_cohort_window_end
+                   )
+                 order by coalesce(perm.perm_placed_for_adoption_date, perm.perm_matched_date, perm.perm_adm_decision_date) desc
+                 limit 1
+               ) adopt
+             ), '{}'::jsonb)
+
+          /* 50..52 care_leavers, single object in EA window */
+          || coalesce((
+               select jsonb_build_object('care_leavers', cl.obj)
+               from (
+                 select to_jsonb(row) as obj
+                 from (
+                   select
+                     case when clea.clea_care_leaver_latest_contact is null then null else to_char(clea.clea_care_leaver_latest_contact,'YYYY-MM-DD') end as contact_date, -- 50
+                     nullif(left(coalesce(clea.clea_care_leaver_activity,''), 2), '') as activity,                                -- 51
+                     nullif(left(coalesce(clea.clea_care_leaver_accommodation,''), 1), '') as accommodation,                      -- 52
+                     false as purge
+                 ) as row
+                 from ssd_care_leavers clea
+                 where clea.clea_person_id = p.pers_person_id
+                   and clea.clea_care_leaver_latest_contact >= w.ea_cohort_window_start
+                   and clea.clea_care_leaver_latest_contact <  w.ea_cohort_window_end
+                 order by clea.clea_care_leaver_latest_contact desc
+                 limit 1
+               ) cl
+             ), '{}'::jsonb)
+
+          /* 53..55 care_worker_details involvement overlaps EA window */
+          || coalesce((
+               select case when cw.arr is not null
+                           then jsonb_build_object('care_worker_details', cw.arr)
+                           else null end
+               from (
+                 select nullif(
+                          jsonb_agg(
+                            jsonb_strip_nulls(
+                              jsonb_build_object(
+                                'worker_id',  nullif(left(pr.prof_staff_id::text, 12), '')                           -- 53
+                              , 'start_date', to_char(i.invo_involvement_start_date, 'YYYY-MM-DD')                   -- 54
+                              , 'end_date',   case when i.invo_involvement_end_date is null then null
+                                                   else to_char(i.invo_involvement_end_date, 'YYYY-MM-DD') end       -- 55
+                              )
+                            )
+                            order by i.invo_involvement_start_date desc
+                          ), '[]'::jsonb
+                        ) as arr
+                 from ssd_involvements i
+                 join ssd_professionals pr on i.invo_professional_id = pr.prof_professional_id
+                 where i.invo_referral_id = cine.cine_referral_id
+                   and i.invo_involvement_start_date <  w.ea_cohort_window_end
+                   and (i.invo_involvement_end_date is null or i.invo_involvement_end_date >= w.ea_cohort_window_start)
+               ) cw
+             ), '{}'::jsonb)
+
+          /* episode level purge */
+          || jsonb_build_object('purge', false)
+        ) as episode_obj
+
+      from ssd_cin_episodes cine
+      where cine.cine_person_id = p.pers_person_id
+        and cine.cine_referral_date <  w.ea_cohort_window_end
+        and (cine.cine_close_date is null or cine.cine_close_date >= w.ea_cohort_window_start)
     ) ep
-  ) sce ON true
+  ) sce on true
 ),
+
 hashed AS (
-  SELECT
+  select
     person_id,
     json_payload,
-    digest(json_payload::TEXT, 'sha256') AS current_hash
-  FROM raw
+    digest(json_payload::text, 'sha256') as current_hash
+  from raw
 )
-INSERT INTO ssd_api_data_staging
+
+insert into ssd_api_data_staging
   (person_id, previous_json_payload, json_payload, current_hash, previous_hash,
    submission_status, row_state, last_updated)
-SELECT
+select
   h.person_id,
-  prev.json_payload AS previous_json_payload,
+  prev.json_payload as previous_json_payload,
   h.json_payload,
   h.current_hash,
-  prev.current_hash AS previous_hash,
+  prev.current_hash as previous_hash,
   'Pending',
-  CASE WHEN prev.current_hash IS NULL THEN 'New' ELSE 'Updated' END,
+  case when prev.current_hash is null then 'New' else 'Updated' end,
   now()
-FROM hashed h
-LEFT JOIN LATERAL (
-  SELECT s.json_payload, s.current_hash
-  FROM ssd_api_data_staging s
-  WHERE s.person_id = h.person_id
-  ORDER BY s.id DESC
-  LIMIT 1
-) prev ON true
-WHERE prev.current_hash IS NULL OR prev.current_hash <> h.current_hash;
+from hashed h
+left join lateral (
+  select s.json_payload, s.current_hash
+  from ssd_api_data_staging s
+  where s.person_id = h.person_id
+  order by s.id desc
+  limit 1
+) prev on true
+where prev.current_hash is null or prev.current_hash <> h.current_hash;
 
 COMMIT;
+
+
 
 -- =============================================================================
 -- Seed ANON table with example rows
