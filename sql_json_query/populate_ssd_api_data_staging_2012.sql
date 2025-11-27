@@ -201,13 +201,18 @@ RawPayloads AS (
     /* final payload assembly, incl. 2 and record-level purge flag */
     '{'
       + '"la_child_id":"'  + LEFT(CONVERT(varchar(36), p.pers_person_id), 36) + '",'                            -- 2
-      + '"mis_child_id":"' + LEFT(CONVERT(varchar(36), ISNULL(p.pers_single_unique_id, 'SSD_SUI')), 36) + '",' 
+      + '"mis_child_id":'                                                                                       -- only exists in openjson spec
+      + CASE 
+            WHEN p.pers_legacy_id IS NULL 
+                OR LTRIM(RTRIM(p.pers_legacy_id)) = '' THEN 'null'
+            ELSE '"' + LEFT(CONVERT(varchar(36), p.pers_legacy_id), 36) + '"'
+        END
+      + ','
       + '"purge":false,'                                                                                        -- top-level purge
       + '"child_details":' + cd.child_details_json + ','
       + CASE WHEN hw.has_sdq = 1 THEN '"health_and_wellbeing":' + hw.health_obj + ',' ELSE '' END               -- 45..46 omit block if empty
       + '"social_care_episodes":' + ep.episodes_json                                                            -- 16..44, 47..55
     + '}' AS json_payload
-
 
   FROM ssd_person p
   JOIN EligibleBySpec elig ON elig.pers_person_id = p.pers_person_id

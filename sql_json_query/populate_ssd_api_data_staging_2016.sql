@@ -221,7 +221,11 @@ RawPayloads AS (
             SELECT
                 -- (Spec attribute numbers 2..55 commented)
                 LEFT(CAST(p.pers_person_id AS varchar(36)), 36) AS [la_child_id],                   -- 2 :str(id) [Mandatory]
-                LEFT(CAST(ISNULL(p.pers_single_unique_id, 'SSD_SUI') AS varchar(36)), 36) AS [mis_child_id],
+                CASE 
+                    WHEN p.pers_legacy_id IS NULL                                                   
+                        OR LTRIM(RTRIM(p.pers_legacy_id)) = '' THEN NULL
+                    ELSE LEFT(CAST(p.pers_legacy_id AS varchar(36)), 36)
+                END AS [mis_child_id],                                                              -- only exists in openjson spec
                 CAST(0 AS bit) AS [purge],
 
 
