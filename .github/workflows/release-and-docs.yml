@@ -74,10 +74,14 @@ jobs:
           $code = $LASTEXITCODE
           Write-Host $out
           if ($code -ne 0) { Write-Error "non zero exit $code"; exit $code }
-          if ($out -notmatch '(Usage|CSC API Pipeline|Commands:)' ) {
+
+          # Pass if at least 1 output line contains any of these markers
+          # If no lines match pattern, treat as failure
+          if (-not ($out -match '(Usage|CSC API Pipeline|Commands:)')) {
             Write-Error "help text missing expected markers"
             exit 1
           }
+
 
       - name: Generate SHA256 checksums
         shell: pwsh
