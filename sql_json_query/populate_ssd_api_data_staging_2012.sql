@@ -200,12 +200,12 @@ RawPayloads AS (
 
     /* final payload assembly, incl. 2 and record-level purge flag */
     '{'
-      + '"la_child_id":"'  + LEFT(CONVERT(varchar(36), p.pers_person_id), 36) + '",'                            -- 2
-      -- + '"mis_child_id":'                                                                                       -- only exists in openjson spec
+      + '"la_child_id":"'  + CONVERT(varchar(36), p.pers_person_id) + '",'                                        -- 2
+      -- + '"mis_child_id":'                                                                                      -- only exists in openjson spec
       -- + CASE 
       --       WHEN p.pers_legacy_id IS NULL 
       --           OR LTRIM(RTRIM(p.pers_legacy_id)) = '' THEN 'null'
-      --       ELSE '"' + LEFT(CONVERT(varchar(36), p.pers_legacy_id), 36) + '"'
+      --       ELSE '"' + CONVERT(varchar(36), p.pers_legacy_id) + '"'
       --   END
       -- + ','
       + '"purge":false,'                                                                                        -- top-level purge
@@ -235,7 +235,7 @@ RawPayloads AS (
                     ',' + '"' + u.code + '"'
                   FROM (
                     SELECT DISTINCT
-                      LEFT(UPPER(LTRIM(RTRIM(d2.disa_disability_code))), 4) AS code
+                      UPPER(LTRIM(RTRIM(d2.disa_disability_code))) AS code
                     FROM ssd_disability AS d2
                     WHERE d2.disa_person_id = p.pers_person_id
                       AND d2.disa_disability_code IS NOT NULL
@@ -280,46 +280,46 @@ RawPayloads AS (
                 ORDER BY li2.link_valid_from_date DESC
               ) li2
 
-              UNION ALL /* 5 unique_pupil_number_unknown_reason */                                        -- 5
+              UNION ALL /* unique_pupil_number_unknown_reason */                                        -- 5
               SELECT 5,
-                    '"unique_pupil_number_unknown_reason":"' + LEFT(p.pers_upn_unknown, 3) + '"'
+                    '"unique_pupil_number_unknown_reason":"' + p.pers_upn_unknown + '"'
               WHERE NULLIF(LTRIM(RTRIM(p.pers_upn_unknown)), '') IS NOT NULL
 
-              UNION ALL /* 6 first_name */                                                                -- 6
+              UNION ALL /* first_name */                                                                -- 6
               SELECT 6,
                     '"first_name":"' + REPLACE(p.pers_forename, '"', '\"') + '"'
               WHERE NULLIF(p.pers_forename, '') IS NOT NULL
 
-              UNION ALL /* 7 surname */                                                                   -- 7
+              UNION ALL /* surname */                                                                   -- 7
               SELECT 7,
                     '"surname":"' + REPLACE(p.pers_surname, '"', '\"') + '"'
               WHERE NULLIF(p.pers_surname, '') IS NOT NULL
 
-              UNION ALL /* 8 date_of_birth */                                                             -- 8
+              UNION ALL /* date_of_birth */                                                             -- 8
               SELECT 8,
                     '"date_of_birth":"' + CONVERT(varchar(10), p.pers_dob, 23) + '"'
               WHERE p.pers_dob IS NOT NULL
 
-              UNION ALL /* 9 expected_date_of_birth */                                                    -- 9
+              UNION ALL /* expected_date_of_birth */                                                    -- 9
               SELECT 9,
                     '"expected_date_of_birth":"' + CONVERT(varchar(10), p.pers_expected_dob, 23) + '"'
               WHERE p.pers_expected_dob IS NOT NULL
 
-              UNION ALL /* 10 sex, always present with U fallback */                                      -- 10
+              UNION ALL /* sex, always present with U fallback */                                      -- 10
               SELECT 10,
                     '"sex":"' + CASE WHEN p.pers_sex IN ('M','F') THEN p.pers_sex ELSE 'U' END + '"'
 
-              UNION ALL /* 11 ethnicity */                                                                -- 11
+              UNION ALL /* ethnicity */                                                                -- 11
               SELECT 11,
-                    '"ethnicity":"' + LEFT(p.pers_ethnicity, 4) + '"'
+                    '"ethnicity":"' + p.pers_ethnicity + '"'
               WHERE NULLIF(LTRIM(RTRIM(p.pers_ethnicity)), '') IS NOT NULL
 
-              UNION ALL /* 12 disabilities, omit if none */                                               -- 12
+              UNION ALL /* disabilities, omit if none */                                               -- 12
               SELECT 12,
                     '"disabilities":' + dis.disabilities_json
               WHERE dis.disabilities_json IS NOT NULL
 
-              UNION ALL /* 13 postcode, latest address only if populated */                               -- 13
+              UNION ALL /* postcode, latest address */                                                -- 13
               SELECT 13,
                     (
                       SELECT CASE
@@ -335,7 +335,7 @@ RawPayloads AS (
                       ) aa
                     )
 
-              UNION ALL /* 14 uasc_flag, incl. only when true */                                           -- 14
+              UNION ALL /* uasc_flag, incl. only when true */                                         -- 14
               SELECT 14,
                     '"uasc_flag":1'
               WHERE EXISTS (
@@ -345,7 +345,7 @@ RawPayloads AS (
                         AND ISNULL(s.immi_immigration_status, '') COLLATE Latin1_General_CI_AI LIKE '%UASC%'
                     )
 
-              UNION ALL /* 15 uasc_end_date */                                                            -- 15
+              UNION ALL /* uasc_end_date */                                                        -- 15
               SELECT 15,
                     (
                       SELECT CASE
@@ -435,15 +435,15 @@ RawPayloads AS (
           SELECT
             ',' + '{'
               /* required episode keys */
-              + '"social_care_episode_id":"' + LEFT(CONVERT(varchar(36), cine.cine_referral_id), 36) + '"'          -- 16
+              + '"social_care_episode_id":"' + CONVERT(varchar(36), cine.cine_referral_id) + '"'                    -- 16
               + ',"referral_date":"' + CONVERT(varchar(10), cine.cine_referral_date, 23) + '"'                      -- 17
-              + ',"referral_source":"' + LEFT(cine.cine_referral_source_code, 2) + '"'                              -- 18
+              + ',"referral_source":"' + cine.cine_referral_source_code + '"'                              -- 18
 
               /* optional episode keys, emitted only when present */
               + CASE WHEN cine.cine_close_date IS NOT NULL
-                    THEN ',"closure_date":"' + CONVERT(varchar(10), cine.cine_close_date, 23) + '"' ELSE '' END    -- 19
+                    THEN ',"closure_date":"' + CONVERT(varchar(10), cine.cine_close_date, 23) + '"' ELSE '' END     -- 19
               + CASE WHEN NULLIF(LTRIM(RTRIM(cine.cine_close_reason)), '') IS NOT NULL
-                    THEN ',"closure_reason":"' + LEFT(cine.cine_close_reason, 3) + '"'        ELSE '' END          -- 20
+                    THEN ',"closure_reason":"' + cine.cine_close_reason + '"'        ELSE '' END          -- 20
               + CASE
                   WHEN TRY_CONVERT(bit, cine.cine_referral_nfa) = 1 THEN ',"referral_no_further_action_flag":1'
                   WHEN TRY_CONVERT(bit, cine.cine_referral_nfa) = 0 THEN ',"referral_no_further_action_flag":0'
@@ -461,7 +461,7 @@ RawPayloads AS (
                               + '"child_and_family_assessment_id":' 
                                   + CASE WHEN ca.cina_assessment_id IS NULL 
                                           THEN 'null' 
-                                          ELSE '"' + LEFT(CONVERT(varchar(36), ca.cina_assessment_id), 36) + '"'
+                                          ELSE '"' + CONVERT(varchar(36), ca.cina_assessment_id) + '"'
                                     END                                                                             -- 22
                               + CASE WHEN ca.cina_assessment_start_date IS NOT NULL
                                       THEN ',"start_date":"' + CONVERT(varchar(10), ca.cina_assessment_start_date, 23) + '"'
@@ -498,7 +498,7 @@ RawPayloads AS (
                     SELECT ISNULL(STUFF((
                             SELECT
                               ',' + '{'
-                              + '"child_in_need_plan_id":"' + LEFT(CONVERT(varchar(36), cinp.cinp_cin_plan_id), 36) + '",'      -- 26
+                              + '"child_in_need_plan_id":"' + CONVERT(varchar(36), cinp.cinp_cin_plan_id) + '",'      -- 26
                               + '"start_date":"' + CONVERT(varchar(10), cinp.cinp_cin_plan_start_date, 23) + '"'                -- 27
                               + CASE WHEN cinp.cinp_cin_plan_end_date IS NOT NULL
                                       THEN ',"end_date":"' + CONVERT(varchar(10), cinp.cinp_cin_plan_end_date, 23) + '"'
@@ -523,7 +523,7 @@ RawPayloads AS (
                     SELECT ISNULL(STUFF((
                             SELECT
                               ',' + '{'
-                              + '"section_47_assessment_id":"' + LEFT(CONVERT(varchar(36), s47e.s47e_s47_enquiry_id), 36) + '"'  -- 29
+                              + '"section_47_assessment_id":"' + CONVERT(varchar(36), s47e.s47e_s47_enquiry_id) + '"'  -- 29
                               + CASE WHEN s47e.s47e_s47_start_date IS NOT NULL
                                       THEN ',"start_date":"' + CONVERT(varchar(10), s47e.s47e_s47_start_date, 23) + '"'
                                       ELSE '' END                                                                                -- 30
@@ -576,7 +576,7 @@ RawPayloads AS (
                     SELECT ISNULL(STUFF((
                             SELECT
                               ',' + '{'
-                              + '"child_protection_plan_id":"' + LEFT(CONVERT(varchar(36), cppl.cppl_cp_plan_id), 36) + '",'     -- 34
+                              + '"child_protection_plan_id":"' + CONVERT(varchar(36), cppl.cppl_cp_plan_id) + '",'     -- 34
                               + '"start_date":"' + CONVERT(varchar(10), cppl.cppl_cp_plan_start_date, 23) + '"'                  -- 35
                               + CASE WHEN cppl.cppl_cp_plan_end_date IS NOT NULL
                                       THEN ',"end_date":"' + CONVERT(varchar(10), cppl.cppl_cp_plan_end_date, 23) + '"'
@@ -601,16 +601,16 @@ RawPayloads AS (
                     SELECT ISNULL(STUFF((
                             SELECT
                               ',' + '{'
-                              + '"child_looked_after_placement_id":"' + LEFT(CONVERT(varchar(36), g.clap_cla_placement_id), 36) + '",'  -- 37
+                              + '"child_looked_after_placement_id":"' + CONVERT(varchar(36), g.clap_cla_placement_id) + '",'  -- 37
                               + '"start_date":"' + CONVERT(varchar(10), g.clap_cla_placement_start_date, 23) + '",'                    -- 38
                               + '"start_reason":"' + g.start_reason + '",'                                                             -- 39
                               + '"postcode":' + ISNULL(QUOTENAME(g.clap_cla_placement_postcode, '"'), 'null') + ','                    -- 40
-                              + '"placement_type":"' + LEFT(g.clap_cla_placement_type, 2) + '",'                                       -- 41
+                              + '"placement_type":"' + g.clap_cla_placement_type + '",'                                       -- 41
                               + CASE WHEN g.clap_cla_placement_end_date IS NOT NULL
                                       THEN '"end_date":"' + CONVERT(varchar(10), g.clap_cla_placement_end_date, 23) + '",'
                                       ELSE '' END                                                                                      -- 42
                               + '"end_reason":"' + g.end_reason + '",'                                                                 -- 43
-                              + '"change_reason":"' + LEFT(g.clap_cla_placement_change_reason, 6) + '",'                               -- 44
+                              + '"change_reason":"' + g.clap_cla_placement_change_reason + '",'                               -- 44
                               + '"purge":false'
                               + '}'
                             FROM (
@@ -621,8 +621,8 @@ RawPayloads AS (
                                 clap.clap_cla_placement_postcode,
                                 clap.clap_cla_placement_end_date,
                                 clap.clap_cla_placement_change_reason,
-                                LEFT(MIN(clae.clae_cla_episode_start_reason), 1) AS start_reason,
-                                LEFT(MIN(clae.clae_cla_episode_ceased_reason), 3) AS end_reason
+                                MIN(clae.clae_cla_episode_start_reason) AS start_reason,
+                                MIN(clae.clae_cla_episode_ceased_reason) AS end_reason
                               FROM ssd_cla_episodes clae
                               JOIN ssd_cla_placement clap ON clap.clap_cla_id = clae.clae_cla_id
                               WHERE clae.clae_referral_id = cine.cine_referral_id
@@ -678,9 +678,9 @@ RawPayloads AS (
                     ',"care_leavers":{'
                       + '"contact_date":"' + CONVERT(varchar(10), clea.clea_care_leaver_latest_contact, 23) + '",'                               -- 50
                       + CASE WHEN NULLIF(LTRIM(RTRIM(clea.clea_care_leaver_activity)), '') IS NOT NULL
-                            THEN '"activity":"' + LEFT(clea.clea_care_leaver_activity, 2) + '",' ELSE '' END                                     -- 51
+                            THEN '"activity":"' + clea.clea_care_leaver_activity + '",' ELSE '' END                                     -- 51
                       + CASE WHEN NULLIF(LTRIM(RTRIM(clea.clea_care_leaver_accommodation)), '') IS NOT NULL
-                            THEN '"accommodation":"' + LEFT(clea.clea_care_leaver_accommodation, 1) + '",' ELSE '' END                           -- 52
+                            THEN '"accommodation":"' + clea.clea_care_leaver_accommodation + '",' ELSE '' END                           -- 52
                       + '"purge":false}'
                   FROM ssd_care_leavers clea
                   WHERE clea.clea_person_id = p.pers_person_id
@@ -703,7 +703,7 @@ RawPayloads AS (
                           STUFF((
                             SELECT
                               N',{' +
-                              N'"worker_id":'   + QUOTENAME(LEFT(CAST(pr.prof_staff_id AS varchar(12)), 12), '"') +                             -- 53
+                              N'"worker_id":'   + QUOTENAME(CAST(pr.prof_staff_id AS varchar(12)), '"') +                             -- 53
                               N',"start_date":' + QUOTENAME(CONVERT(varchar(10), i.invo_involvement_start_date, 23), '"') +                    -- 54
                               CASE WHEN i.invo_involvement_end_date IS NOT NULL
                                     THEN N',"end_date":' + QUOTENAME(CONVERT(varchar(10), i.invo_involvement_end_date, 23), '"')

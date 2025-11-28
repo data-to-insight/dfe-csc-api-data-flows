@@ -129,8 +129,8 @@ raw AS (
     (
       /* base 2, 3, then append the rest in order using || */
       jsonb_build_object(
-        'la_child_id',  left(p.pers_person_id::text, 36)                                    -- 2
-      , 'mis_child_id', left(coalesce(nullif(p.pers_single_unique_id, ''), 'SSD_SUI'), 36)  
+        'la_child_id',  p.pers_person_id::text                                              -- 2
+      , 'mis_child_id', coalesce(nullif(p.pers_single_unique_id, ''), 'SSD_SUI')  
       , 'purge', false                                                                       -- top level purge
       )
 
@@ -155,7 +155,7 @@ raw AS (
                   limit 1
                 ), '{}'::jsonb)                                                              -- 4
              || case when nullif(btrim(coalesce(p.pers_upn_unknown,'')), '') is not null
-                     then jsonb_build_object('unique_pupil_number_unknown_reason', left(p.pers_upn_unknown, 3))  -- 5
+                     then jsonb_build_object('unique_pupil_number_unknown_reason', p.pers_upn_unknown)  -- 5
                      else '{}'::jsonb end
              || case when nullif(p.pers_forename, '') is not null
                      then jsonb_build_object('first_name', replace(p.pers_forename, '"', '\"'))  -- 6
@@ -170,7 +170,7 @@ raw AS (
                      then jsonb_build_object('expected_date_of_birth', to_char(p.pers_expected_dob, 'YYYY-MM-DD')) -- 9
                      else '{}'::jsonb end
              || case when nullif(btrim(coalesce(p.pers_ethnicity,'')), '') is not null
-                     then jsonb_build_object('ethnicity', left(p.pers_ethnicity, 4))            -- 11
+                     then jsonb_build_object('ethnicity', p.pers_ethnicity)                     -- 11
                      else '{}'::jsonb end
              || case when disab.disabilities_json is not null
                      then jsonb_build_object('disabilities', disab.disabilities_json)           -- 12
@@ -286,7 +286,7 @@ raw AS (
             'social_care_episode_id', nullif(cine.cine_referral_id::text, '')                         -- 16
           , 'referral_date', case when cine.cine_referral_date is null
                                    then null else to_char(cine.cine_referral_date, 'YYYY-MM-DD') end  -- 17
-          , 'referral_source', nullif(left(coalesce(cine.cine_referral_source_code,''), 2), '')       -- 18
+          , 'referral_source', nullif(coalesce(cine.cine_referral_source_code,''), '')                -- 18
           )
 
           /* closure_date */                                                                          -- 19
@@ -295,8 +295,8 @@ raw AS (
                   else '{}'::jsonb end
 
           /* closure_reason */                                                                        -- 20
-          || case when nullif(left(coalesce(cine.cine_close_reason,''), 3), '') is not null
-                  then jsonb_build_object('closure_reason', left(cine.cine_close_reason, 3))
+          || case when nullif(coalesce(cine.cine_close_reason,''), '') is not null
+                  then jsonb_build_object('closure_reason', cine.cine_close_reason)
                   else '{}'::jsonb end
 
           /* referral_no_further_action_flag, include only when mappable */                           -- 21
@@ -487,16 +487,16 @@ raw AS (
                               jsonb_build_object(
                                 'child_looked_after_placement_id', nullif(clap.clap_cla_placement_id::text, '')           -- 37
                               , 'start_date', to_char(clap.clap_cla_placement_start_date, 'YYYY-MM-DD')                   -- 38
-                              , 'start_reason', nullif(left(coalesce(clae.clae_cla_episode_start_reason,''), 1), '')      -- 39
+                              , 'start_reason', nullif(coalesce(clae.clae_cla_episode_start_reason,''), '')      -- 39
                               , 'postcode',     nullif(coalesce(clap.clap_cla_placement_postcode,''), '')                 -- 40
-                              , 'placement_type', nullif(left(coalesce(clap.clap_cla_placement_type,''), 2), '')          -- 41
+                              , 'placement_type', nullif(coalesce(clap.clap_cla_placement_type,''), '')          -- 41
                               )
                               || case when clap.clap_cla_placement_end_date is not null
                                       then jsonb_build_object('end_date', to_char(clap.clap_cla_placement_end_date, 'YYYY-MM-DD'))  -- 42
                                       else '{}'::jsonb end
                               || jsonb_build_object(
-                                   'end_reason',   nullif(left(coalesce(clae.clae_cla_episode_ceased_reason,''), 3), '')            -- 43
-                                 , 'change_reason',nullif(left(coalesce(clap.clap_cla_placement_change_reason,''), 6), '')          -- 44
+                                   'end_reason',   nullif(coalesce(clae.clae_cla_episode_ceased_reason,''), '')            -- 43
+                                 , 'change_reason',nullif(coalesce(clap.clap_cla_placement_change_reason,''), '')          -- 44
                                  , 'purge', false
                                  )
                             )
@@ -548,8 +548,8 @@ raw AS (
                  from (
                    select
                      case when clea.clea_care_leaver_latest_contact is null then null else to_char(clea.clea_care_leaver_latest_contact,'YYYY-MM-DD') end as contact_date, -- 50
-                     nullif(left(coalesce(clea.clea_care_leaver_activity,''), 2), '') as activity,                                -- 51
-                     nullif(left(coalesce(clea.clea_care_leaver_accommodation,''), 1), '') as accommodation,                      -- 52
+                     nullif(coalesce(clea.clea_care_leaver_activity,''), '') as activity,                                -- 51
+                     nullif(coalesce(clea.clea_care_leaver_accommodation,''), '') as accommodation,                      -- 52
                      false as purge
                  ) as row
                  from ssd_care_leavers clea
@@ -571,7 +571,7 @@ raw AS (
                           jsonb_agg(
                             jsonb_strip_nulls(
                               jsonb_build_object(
-                                'worker_id',  nullif(left(pr.prof_staff_id::text, 12), '')                           -- 53
+                                'worker_id',  nullif(pr.prof_staff_id::text, '')                                      -- 53
                               , 'start_date', to_char(i.invo_involvement_start_date, 'YYYY-MM-DD')                   -- 54
                               , 'end_date',   case when i.invo_involvement_end_date is null then null
                                                    else to_char(i.invo_involvement_end_date, 'YYYY-MM-DD') end       -- 55
