@@ -516,7 +516,7 @@ RawPayloads AS (
                                     23
                                 ) AS [end_date],                                                                                  -- 42
 
-                                MIN(clae.clae_cla_episode_ceased_reason AS [end_reason],                                          -- 43
+                                MIN(clae.clae_cla_episode_ceased_reason) AS [end_reason],                                          -- 43
                                 clap.clap_cla_placement_change_reason AS [change_reason],                                         -- 44
                                 CAST(0 AS bit) AS [purge]
                             FROM ssd_cla_episodes clae
