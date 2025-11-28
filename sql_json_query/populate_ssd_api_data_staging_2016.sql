@@ -104,7 +104,14 @@ DECLARE @ea_cohort_window_end date = DATEADD(day, 1, @run_date) -- today + 1
       AND p.pers_expected_dob IS NOT NULL
       AND p.pers_expected_dob BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
     )
+
+    /* hard cohort filter, 
+    used during live pre-alpha cohort testing -> LA to add child IDs here */
+    AND p.pers_person_id IN ('-1') 
+    /* end pre-alpha cohort (remove this block as required) */
+
 ),
+
 ActiveReferral AS (
   /* episode overlaps window, and open at run_date
      overlap, referral_date <= window_end and (close_date null or close_date >= window_start)
@@ -220,11 +227,11 @@ RawPayloads AS (
             -- DfE payload start 
             SELECT
                 -- (Spec attribute numbers 2..55 commented)
-                LEFT(CAST(p.pers_person_id AS varchar(36)), 36) AS [la_child_id],                   -- 2 :str(id) [Mandatory]
+                CAST(p.pers_person_id AS varchar(36)) AS [la_child_id],                             -- 2 :str(id) [Mandatory]
                 -- CASE 
                 --     WHEN p.pers_legacy_id IS NULL                                                   
                 --         OR LTRIM(RTRIM(p.pers_legacy_id)) = '' THEN NULL
-                --     ELSE LEFT(CAST(p.pers_legacy_id AS varchar(36)), 36)
+                --     ELSE CAST(p.pers_legacy_id AS varchar(36))
                 -- END AS [mis_child_id],                                                              -- only exists in openjson spec
                 CAST(0 AS bit) AS [purge],
 
@@ -261,7 +268,7 @@ RawPayloads AS (
                             ELSE 'U' 
                         END AS [sex],                                                               -- 10
 
-                        LEFT(p.pers_ethnicity, 4) AS [ethnicity],                                   -- 11
+                        p.pers_ethnicity AS [ethnicity],                                            -- 11
 
                         JSON_QUERY(
                             CASE 
@@ -344,12 +351,12 @@ RawPayloads AS (
                 JSON_QUERY((
                     SELECT
                         -- str(id) for JSON
-                        LEFT(CAST(cine.cine_referral_id AS varchar(36)), 36) AS [social_care_episode_id],                   -- 16  [Mandatory]
+                        CAST(cine.cine_referral_id AS varchar(36)) AS [social_care_episode_id],                             -- 16  [Mandatory]
                         CONVERT(varchar(10), cine.cine_referral_date, 23) AS [referral_date],                               -- 17
-                        LEFT(cine.cine_referral_source_code, 2) AS [referral_source],                                       -- 18    
+                        cine.cine_referral_source_code AS [referral_source],                                                -- 18    
 
                         CONVERT(varchar(10), cine.cine_close_date, 23) AS [closure_date],                                   -- 19
-                        LEFT(cine.cine_close_reason, 3) AS [closure_reason],                                                -- 20
+                        cine.cine_close_reason AS [closure_reason],                                                         -- 20
 
                         CASE
                             WHEN TRY_CONVERT(bit, cine.cine_referral_nfa) IS NOT NULL
@@ -370,7 +377,7 @@ RawPayloads AS (
                         */
                         JSON_QUERY((
                             SELECT
-                                LEFT(CAST(ca.cina_assessment_id AS varchar(36)), 36) AS [child_and_family_assessment_id],   -- 22 [Mandatory]
+                                CAST(ca.cina_assessment_id AS varchar(36)) AS [child_and_family_assessment_id],             -- 22 [Mandatory]
                                 CONVERT(varchar(10), ca.cina_assessment_start_date, 23) AS [start_date],                    -- 23
                                 CONVERT(varchar(10), ca.cina_assessment_auth_date, 23)  AS [authorisation_date],            -- 24
                                 JSON_QUERY(CASE
@@ -399,7 +406,7 @@ RawPayloads AS (
                         */
                         JSON_QUERY((
                             SELECT
-                                LEFT(CAST(cinp.cinp_cin_plan_id AS varchar(36)), 36) AS [child_in_need_plan_id],           -- 26 [Mandatory]
+                                CAST(cinp.cinp_cin_plan_id AS varchar(36)) AS [child_in_need_plan_id],                     -- 26 [Mandatory]
                                 CONVERT(varchar(10), cinp.cinp_cin_plan_start_date, 23) AS [start_date],                   -- 27
                                 CONVERT(varchar(10), cinp.cinp_cin_plan_end_date, 23)   AS [end_date],                     -- 28
                                 CAST(0 AS bit) AS [purge]
@@ -423,7 +430,7 @@ RawPayloads AS (
                         */
                         JSON_QUERY((
                             SELECT
-                                LEFT(CAST(s47e.s47e_s47_enquiry_id AS varchar(36)), 36) AS [section_47_assessment_id],  -- 29 [Mandatory]
+                                CAST(s47e.s47e_s47_enquiry_id AS varchar(36)) AS [section_47_assessment_id],            -- 29 [Mandatory]
                                 CONVERT(varchar(10), s47e.s47e_s47_start_date, 23) AS [start_date],                     -- 30
 
                                 -- CP conference flag derived, not gate for inclusion
@@ -469,7 +476,7 @@ RawPayloads AS (
                         */
                         JSON_QUERY((
                             SELECT
-                                LEFT(CAST(cppl.cppl_cp_plan_id AS varchar(36)), 36) AS [child_protection_plan_id],       -- 34 [Mandatory]
+                                CAST(cppl.cppl_cp_plan_id AS varchar(36)) AS [child_protection_plan_id],                 -- 34 [Mandatory]
                                 CONVERT(varchar(10), cppl.cppl_cp_plan_start_date, 23) AS [start_date],                  -- 35
                                 CONVERT(varchar(10), cppl.cppl_cp_plan_end_date, 23)   AS [end_date],                    -- 36
                                 CAST(0 AS bit) AS [purge]
@@ -490,13 +497,13 @@ RawPayloads AS (
                         */
                         JSON_QUERY((
                             SELECT
-                                LEFT(CAST(clap.clap_cla_placement_id AS varchar(36)), 36) AS [child_looked_after_placement_id],  -- 37 [Mandatory]
-                                CONVERT(varchar(10), clap.clap_cla_placement_start_date, 23) AS [start_date],                    -- 38
-                                LEFT(MIN(clae.clae_cla_episode_start_reason), 1)            AS [start_reason],                   -- 39
+                                CAST(clap.clap_cla_placement_id AS varchar(36)) AS [child_looked_after_placement_id],             -- 37 [Mandatory]
+                                CONVERT(varchar(10), clap.clap_cla_placement_start_date, 23) AS [start_date],                     -- 38
+                                MIN(clae.clae_cla_episode_start_reason)            AS [start_reason],                             -- 39
 
                                 
-                                clap.clap_cla_placement_postcode AS [postcode],                                                  -- 40
-                                LEFT(clap.clap_cla_placement_type, 2)                       AS [placement_type],                 -- 41
+                                clap.clap_cla_placement_postcode AS [postcode],                                                   -- 40
+                                clap.clap_cla_placement_type AS [placement_type],                                                 -- 41
 
                                 CONVERT(
                                     varchar(10),
@@ -509,8 +516,8 @@ RawPayloads AS (
                                     23
                                 ) AS [end_date],                                                                                  -- 42
 
-                                LEFT(MIN(clae.clae_cla_episode_ceased_reason), 3)           AS [end_reason],                      -- 43
-                                LEFT(clap.clap_cla_placement_change_reason, 6)              AS [change_reason],                   -- 44
+                                MIN(clae.clae_cla_episode_ceased_reason AS [end_reason],                                          -- 43
+                                clap.clap_cla_placement_change_reason AS [change_reason],                                         -- 44
                                 CAST(0 AS bit) AS [purge]
                             FROM ssd_cla_episodes clae
                             JOIN ssd_cla_placement clap
@@ -570,9 +577,9 @@ RawPayloads AS (
                         */
                         JSON_QUERY((
                             SELECT TOP 1
-                                CONVERT(varchar(10), clea.clea_care_leaver_latest_contact, 23) AS [contact_date],                   -- 50
-                                LEFT(clea.clea_care_leaver_activity, 2) AS [activity],                                              -- 51
-                                LEFT(clea.clea_care_leaver_accommodation, 1) AS [accommodation],                                    -- 52
+                                CONVERT(varchar(10), clea.clea_care_leaver_latest_contact, 23) AS [contact_date],          -- 50
+                                clea.clea_care_leaver_activity AS [activity],                                              -- 51
+                                clea.clea_care_leaver_accommodation AS [accommodation],                                    -- 52
                                 CAST(0 AS bit) AS [purge]
                               FROM ssd_care_leavers clea
                              WHERE clea.clea_person_id = p.pers_person_id
@@ -588,9 +595,9 @@ RawPayloads AS (
                         */
                         JSON_QUERY((
                             SELECT
-                                LEFT(CAST(pr.prof_staff_id AS varchar(12)), 12) AS [worker_id],                             -- 53
+                                CAST(pr.prof_staff_id AS varchar(12)) AS [worker_id],                                       -- 53
                                 CONVERT(varchar(10), i.invo_involvement_start_date, 23) AS [start_date],                    -- 54
-                                CONVERT(varchar(10), i.invo_involvement_end_date, 23)   AS [end_date]                       -- 55
+                                CONVERT(varchar(10), i.invo_involvement_end_date, 23) AS [end_date]                         -- 55
                             FROM ssd_involvements i
                             JOIN ssd_professionals pr
                               ON i.invo_professional_id = pr.prof_professional_id
@@ -629,7 +636,7 @@ RawPayloads AS (
                         SELECT TOP (12) code
                         FROM (
                             SELECT DISTINCT
-                                LEFT(UPPER(LTRIM(RTRIM(d2.disa_disability_code))), 4) AS code
+                                UPPER(LTRIM(RTRIM(d2.disa_disability_code))) AS code
                             FROM ssd_disability AS d2
                             WHERE d2.disa_person_id = p.pers_person_id
                               AND d2.disa_disability_code IS NOT NULL
