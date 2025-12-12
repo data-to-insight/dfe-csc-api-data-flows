@@ -766,7 +766,7 @@ WHERE (submission_status IN ('pending','error'))
 
 function Get-HardcodedTestRecord {
   # test api process with single minimal fake record
-  # la_code is zero-padded then used to suffix IDs so each LA is unique
+  # zero-padded la_code suffix IDs so each LA unique
   $la_code_str = ('{0:D3}' -f [int]$la_code)
   $childId     = "Fake1234$la_code_str"
   $misId       = "MIS$la_code_str"
@@ -787,6 +787,7 @@ function Get-HardcodedTestRecord {
     }
     purge = $false
   }
+
 
   # normalise to PSCustomObject
   $jsonObj = ($payload | ConvertTo-Json -Depth 10 -Compress) | ConvertFrom-Json -ErrorAction Stop

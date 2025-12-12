@@ -152,7 +152,8 @@ def query_new_table(conn_str):
     conn.close()
 
 def main():
-    # Define the sample JSON record.
+    # Define the sample JSON record
+    # updated 081225
     sample_json_str = """
     {
         "la_child_id" : "Child1234",
@@ -253,6 +254,7 @@ def main():
         "purge" : false
     }
     """
+
     sample_record = json.loads(sample_json_str)
 
     # Generate duplicated records (with unique id values updated within the JSON payloads).
