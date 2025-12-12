@@ -1,0 +1,746 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>D2I SSD, Phase 2 onboarding</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top left, #0f172a, #020617);
+      color: #f9fafb;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: center;
+    }
+
+    .deck {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      padding: 16px 8px 72px 8px;
+    }
+
+    .slide {
+      width: min(1280px, 100%);
+      height: min(720px, calc(100vh - 96px));
+      margin: 0 auto;
+      padding: 40px 60px;
+      background: radial-gradient(circle at top left, #020617, #020617 30%, #020617 100%);
+      border-radius: 24px;
+      border: 1px solid rgba(148, 163, 184, 0.6);
+      box-shadow: 0 24px 80px rgba(15, 23, 42, 0.95);
+      display: none;
+      flex-direction: column;
+      gap: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .slide::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(circle at top right, rgba(56, 189, 248, 0.16), transparent 60%),
+        radial-gradient(circle at bottom left, rgba(129, 140, 248, 0.18), transparent 55%);
+      pointer-events: none;
+    }
+
+    .slide.active {
+      display: flex;
+    }
+
+    .slide-header {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .slide-eyebrow {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      opacity: 0.75;
+    }
+
+    .slide-title {
+      font-size: 30px;
+      font-weight: 650;
+      letter-spacing: 0.02em;
+    }
+
+    .slide-subtitle {
+      font-size: 15px;
+      opacity: 0.85;
+      max-width: 900px;
+    }
+
+    .slide-body {
+      position: relative;
+      z-index: 1;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      margin-top: 8px;
+    }
+
+    .content-card {
+      background: rgba(15, 23, 42, 0.94);
+      border-radius: 18px;
+      border: 1px solid rgba(148, 163, 184, 0.7);
+      padding: 18px 22px 20px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .content-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .content-card-title {
+      font-size: 17px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .content-card-subtitle {
+      font-size: 13px;
+      opacity: 0.8;
+      margin-bottom: 4px;
+    }
+
+    .content-card p {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    .content-card ul {
+      margin: 4px 0 0 0;
+      padding-left: 18px;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .content-card li {
+      margin-bottom: 2px;
+    }
+
+    .content-footnote {
+      font-size: 12px;
+      opacity: 0.7;
+      margin-top: 6px;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 4px;
+    }
+
+    .pill {
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      white-space: nowrap;
+      border: 1px solid rgba(191, 219, 254, 0.9);
+      background: rgba(30, 64, 175, 0.98);
+    }
+
+    .pill.secondary {
+      border-color: rgba(110, 231, 183, 0.9);
+      background: rgba(6, 78, 59, 0.98);
+    }
+
+    .pill.muted {
+      border-color: rgba(148, 163, 184, 0.9);
+      background: rgba(30, 41, 59, 0.98);
+    }
+
+    .two-column-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px 32px;
+    }
+
+    .two-column-list li {
+      margin-bottom: 0;
+    }
+
+    .stage-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      opacity: 0.7;
+      margin-bottom: 6px;
+    }
+
+    .stages-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-bottom: 4px;
+    }
+
+    .stage-card {
+      background: rgba(15, 23, 42, 0.96);
+      border-radius: 18px;
+      padding: 14px 14px 16px 14px;
+      border: 1px solid rgba(148, 163, 184, 0.7);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stage-card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at top right, rgba(56, 189, 248, 0.16), transparent 65%);
+      pointer-events: none;
+    }
+
+    .stage-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .stage-badge {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 3px 9px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.9);
+      background: rgba(15, 23, 42, 0.96);
+    }
+
+    .stage-title-text {
+      font-size: 14px;
+      font-weight: 600;
+      text-align: right;
+      opacity: 0.95;
+    }
+
+    .stage-card ul {
+      position: relative;
+      z-index: 1;
+      padding-left: 16px;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .roles-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      padding-top: 6px;
+      border-top: 1px solid rgba(51, 65, 85, 0.95);
+      font-size: 11px;
+    }
+
+    .roles-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.13em;
+      opacity: 0.7;
+      margin-bottom: 4px;
+    }
+
+    .footer-note {
+      font-size: 11px;
+      opacity: 0.7;
+      margin-top: 4px;
+    }
+
+    .nav {
+      position: fixed;
+      left: 50%;
+      bottom: 14px;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 6px 12px;
+      background: rgba(15, 23, 42, 0.96);
+      border-radius: 999px;
+      border: 1px solid rgba(75, 85, 99, 0.9);
+      box-shadow: 0 10px 40px rgba(15, 23, 42, 0.9);
+      font-size: 12px;
+      z-index: 10;
+    }
+
+    .nav button {
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.9);
+      background: rgba(15, 23, 42, 0.98);
+      padding: 6px 12px;
+      color: #e5e7eb;
+      font-size: 12px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .nav button[disabled] {
+      opacity: 0.4;
+      cursor: default;
+    }
+
+    .nav button:hover:not([disabled]) {
+      background: rgba(30, 64, 175, 0.95);
+      border-color: rgba(191, 219, 254, 0.9);
+    }
+
+    .nav-middle {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+    }
+
+    .nav-counter {
+      font-weight: 500;
+    }
+
+    .nav-hint {
+      opacity: 0.65;
+      font-size: 11px;
+    }
+
+    a {
+      color: #38bdf8;
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    @media (max-width: 800px) {
+      .slide {
+        padding: 24px 18px;
+      }
+      .stages-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .roles-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .content-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="deck">
+    <section class="slide active" data-slide="1">
+      <div class="slide-header">
+        <div class="slide-eyebrow">Data to Insight, sector led</div>
+        <div class="slide-title">Working with local authorities to make better use of children's services data</div>
+        <div class="slide-subtitle">
+          Led by local authorities with support from ADCS, DfE, Ofsted and DLUHC, working to help local authorities make better use of data in children's services.
+        </div>
+      </div>
+
+      <div class="slide-body">
+        <div class="content-card">
+          <div class="content-card-title">Sector led service</div>
+          <p>
+            Sector led service for local authority children's data professionals.
+          </p>
+          <p>
+            Maintain shared toolkits, support collaborative projects and help build local capabilities within authorities. Where goals align with government,
+            Data to Insight secures funding so that the service is freely available to every local authority.
+          </p>
+          <div class="content-footnote">
+            Shared toolkits include ChAT, Benchmarking, CiN 903 Validators, Demand Modelling, RIIA Benchmark and SSD.
+          </div>
+          <div class="pill-row">
+            <span class="pill muted">Local authority led</span>
+            <span class="pill secondary">ADCS</span>
+            <span class="pill secondary">DfE</span>
+            <span class="pill secondary">Ofsted</span>
+            <span class="pill secondary">DLUHC</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-slide="2">
+      <div class="slide-header">
+        <div class="slide-eyebrow">Standard Safeguarding Dataset</div>
+        <div class="slide-title">SSD components, statutory and indicator items</div>
+        <div class="slide-subtitle">
+          SSD brings together items already present in key statutory and voluntary collections, plus items for priority indicators that are being developed.
+        </div>
+      </div>
+
+      <div class="slide-body content-grid">
+        <div class="content-card">
+          <div class="content-card-title">Items from statutory and voluntary collections</div>
+          <div class="content-card-subtitle">
+            Data items currently returned as part of existing collections.
+          </div>
+          <ul class="two-column-list">
+            <li>CiN Census</li>
+            <li>Children Looked After 903</li>
+            <li>Annex A lists</li>
+            <li>RIIA Quarterly</li>
+            <li>ASGLB child and SGO data</li>
+            <li>ADCS Safeguarding Pressures</li>
+            <li>SEN2, children with EHCP</li>
+            <li>CSC Workforce Census</li>
+          </ul>
+        </div>
+
+        <div class="content-card">
+          <div class="content-card-title">Items for indicators under development</div>
+          <div class="content-card-subtitle">
+            Data needed for the one b projects.
+          </div>
+          <ul>
+            <li>Children looked after through kinship care, one a i</li>
+            <li>Children who are subject to pre proceedings, one a ii</li>
+            <li>s251 financial data, one a iii</li>
+            <li>Data presenting the voice of children and families, one a iv</li>
+          </ul>
+          <div class="content-footnote">
+            These items are designed with partners to support new measures and dashboards that go beyond existing returns.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-slide="3">
+      <div class="slide-header">
+        <div class="slide-eyebrow">Standard Safeguarding Dataset</div>
+        <div class="slide-title">SSD components, extended and new items</div>
+        <div class="slide-subtitle">
+          SSD also includes additional data most authorities already hold, and new items developed with stakeholders to support emerging frameworks and story telling.
+        </div>
+      </div>
+
+      <div class="slide-body content-grid">
+        <div class="content-card">
+          <div class="content-card-title">Extended local data</div>
+          <div class="content-card-subtitle">
+            Additional items which most authorities hold but do not currently submit in statutory returns.
+          </div>
+          <ul>
+            <li>Data to support SSD outputs for different time periods including multi year longitudinal analysis</li>
+            <li>Immigration status</li>
+            <li>CiN, CP and CLA visit data</li>
+            <li>Address history</li>
+            <li>CP and CLA review data</li>
+            <li>Data recorded consistently across authorities that can support benchmarking and analysis</li>
+          </ul>
+        </div>
+
+        <div class="content-card">
+          <div class="content-card-title">New items developed with stakeholders</div>
+          <div class="content-card-subtitle">
+            Designed with local authority colleagues and national partners.
+          </div>
+          <ul>
+            <li>Items included in the CSC National Framework dashboard</li>
+            <li>Items linked to the CSCS Outcomes Framework</li>
+            <li>Items authorities need to tell important stories about children and families</li>
+          </ul>
+          <div class="content-footnote">
+            These additions are co designed so that SSD supports practical local questions as well as national reporting.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-slide="4">
+      <div class="slide-header">
+        <div class="slide-eyebrow">Standard Safeguarding Dataset</div>
+        <div class="slide-title">SSD reductive views</div>
+        <div class="slide-subtitle">
+          Standard views over the core SSD schema, designed with colleagues, make it easier to use the dataset for specific purposes.
+        </div>
+      </div>
+
+      <div class="slide-body">
+        <div class="content-card">
+          <div class="content-card-title">Standard views for specific purposes</div>
+          <p>
+            SSD reductive views are sets of standardised outputs that present SSD data in simplified, purpose specific formats, for example for returns, dashboards or analysis.
+          </p>
+          <ul>
+            <li>Reduce complex schema into views that analysts can work with quickly</li>
+            <li>Support consistent interpretation of measures across authorities</li>
+            <li>Can be aligned to existing local reporting and tools</li>
+          </ul>
+        </div>
+
+        <div class="content-card">
+          <div class="content-card-title">Designed from local inputs</div>
+          <p>
+            The core SSD was designed from inputs provided by local authority colleagues to fulfil existing returns and reporting needs from the core schema.
+          </p>
+          <p>
+            This means reductive views sit on top of a model that is already grounded in real local use cases.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-slide="5">
+      <div class="slide-header">
+        <div class="slide-eyebrow">Deployment journey</div>
+        <div class="slide-title">SSD deployment and onboarding, Stage 1 to Stage 4</div>
+        <div class="slide-subtitle">
+          A shared view of how we move from initial deployment to regular server based runs, with indicative roles at each step.
+        </div>
+      </div>
+
+      <div class="slide-body">
+        <div class="stage-label">Technical stages</div>
+        <div class="stages-row">
+          <div class="stage-card">
+            <div class="stage-header-row">
+              <div class="stage-badge">Stage 1</div>
+              <div class="stage-title-text">Setup and smoke tests</div>
+            </div>
+            <ul>
+              <li>Deploy SSD core tables and SSD staging tables for the API</li>
+              <li>Schedule one to one sessions to agree support and progress check ins</li>
+              <li>Run local API smoke tests with fake data using PowerShell or Python to confirm connectivity</li>
+            </ul>
+          </div>
+
+          <div class="stage-card">
+            <div class="stage-header-row">
+              <div class="stage-badge">Stage 2</div>
+              <div class="stage-title-text">Local verification</div>
+            </div>
+            <ul>
+              <li>Visual checks that SSD tables are populating as expected, not data fixes, focus on flows</li>
+              <li>Visual checks on SSD staging cohort subset</li>
+              <li>Cross checks against recent 903 and CiN data</li>
+            </ul>
+          </div>
+
+          <div class="stage-card">
+            <div class="stage-header-row">
+              <div class="stage-badge">Stage 3</div>
+              <div class="stage-title-text">First live data</div>
+            </div>
+            <ul>
+              <li>Send an initial live alpha from SSD staging, with hard filters if helpful for early testing</li>
+              <li>Provide access to the private dashboard once live data is available</li>
+            </ul>
+          </div>
+
+          <div class="stage-card">
+            <div class="stage-header-row">
+              <div class="stage-badge">Stage 4</div>
+              <div class="stage-title-text">Operational rollout</div>
+            </div>
+            <ul>
+              <li>Move from local click to run patterns to server based deployments</li>
+              <li>Configure overnight or scheduled runs for ongoing operation</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="roles-row">
+          <div>
+            <div class="roles-label">Stage 1 roles</div>
+            <div class="pill-row">
+              <span class="pill">[Data engineer]</span>
+              <span class="pill secondary">[D2I]</span>
+            </div>
+          </div>
+          <div>
+            <div class="roles-label">Stage 2 roles</div>
+            <div class="pill-row">
+              <span class="pill">[Analyst]</span>
+              <span class="pill secondary">[Data engineer]</span>
+            </div>
+          </div>
+          <div>
+            <div class="roles-label">Stage 3 roles</div>
+            <div class="pill-row">
+              <span class="pill">[Data lead]</span>
+              <span class="pill secondary">[D2I]</span>
+            </div>
+          </div>
+          <div>
+            <div class="roles-label">Stage 4 roles</div>
+            <div class="pill-row">
+              <span class="pill">[IT or infrastructure]</span>
+              <span class="pill secondary">[Data engineer]</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer-note">
+          Roles are indicative. Replace labels with local team names or add more pills where that helps the conversation.
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-slide="6">
+      <div class="slide-header">
+        <div class="slide-eyebrow">Next steps</div>
+        <div class="slide-title">Staying connected and making use of SSD and the API work</div>
+        <div class="slide-subtitle">
+          Support is sector led and collaborative, building on the work of early adopters and the shared SSD model.
+        </div>
+      </div>
+
+      <div class="slide-body">
+        <div class="content-card">
+          <div class="content-card-title">What to do next</div>
+          <ul>
+            <li>Confirm where you are in the Stage 1 to Stage 4 journey</li>
+            <li>Agree local roles across data, IT and service leads</li>
+            <li>Plan your next set of tests or dashboard reviews using SSD outputs</li>
+          </ul>
+        </div>
+
+        <div class="content-card">
+          <div class="content-card-title">Useful links and contacts</div>
+          <p>
+            Early Adopters project:
+            <a href="https://data-to-insight.github.io/dfe-csc-api-data-flows/" target="_blank" rel="noreferrer">
+              data-to-insight.github.io/dfe-csc-api-data-flows
+            </a>
+          </p>
+          <p>
+            SSD model and deployment extracts:
+            <br>
+            <a href="https://data-to-insight.github.io/ssd-data-model-next/" target="_blank" rel="noreferrer">
+              data-to-insight.github.io/ssd-data-model-next
+            </a>
+            <br>
+            <a href="https://github.com/data-to-insight/ssd-data-model/tree/main/deployment_extracts" target="_blank" rel="noreferrer">
+              github.com/data-to-insight/ssd-data-model/tree/main/deployment_extracts
+            </a>
+          </p>
+          <p>
+            Data to Insight:
+            <br>
+            <a href="https://www.datatoinsight.org" target="_blank" rel="noreferrer">
+              www.datatoinsight.org
+            </a>
+          </p>
+          <p>
+            Contact:
+            <br>
+            <a href="mailto:robert.harrison@eastsussex.gov.uk">
+              robert.harrison@eastsussex.gov.uk
+            </a>
+          </p>
+
+          <div class="pill-row">
+            <span class="pill muted">Share feedback</span>
+            <span class="pill muted">Join sector projects</span>
+            <span class="pill secondary">Reuse SSD assets</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="nav" aria-label="Slide navigation">
+    <button id="prev-btn" type="button">
+      ◀ Prev
+    </button>
+    <div class="nav-middle">
+      <div class="nav-counter" id="slide-counter">1 / 6</div>
+      <div class="nav-hint">Space or right arrow for next</div>
+    </div>
+    <button id="next-btn" type="button">
+      Next ▶
+    </button>
+  </div>
+
+  <script>
+    (function () {
+      const slides = Array.from(document.querySelectorAll(".slide"));
+      const prevBtn = document.getElementById("prev-btn");
+      const nextBtn = document.getElementById("next-btn");
+      const counter = document.getElementById("slide-counter");
+
+      let current = 0;
+
+      function showSlide(index) {
+        if (index < 0 || index >= slides.length) {
+          return;
+        }
+        current = index;
+        slides.forEach((slide, i) => {
+          slide.classList.toggle("active", i === current);
+        });
+        counter.textContent = (current + 1) + " / " + slides.length;
+        prevBtn.disabled = current === 0;
+        nextBtn.disabled = current === slides.length - 1;
+      }
+
+      prevBtn.addEventListener("click", () => {
+        if (current > 0) {
+          showSlide(current - 1);
+        }
+      });
+
+      nextBtn.addEventListener("click", () => {
+        if (current < slides.length - 1) {
+          showSlide(current + 1);
+        }
+      });
+
+      document.addEventListener("keydown", (event) => {
+        const key = event.key;
+        if (key === "ArrowRight" || key === " " || key === "PageDown") {
+          if (current < slides.length - 1) {
+            event.preventDefault();
+            showSlide(current + 1);
+          }
+        } else if (key === "ArrowLeft" || key === "PageUp") {
+          if (current > 0) {
+            event.preventDefault();
+            showSlide(current - 1);
+          }
+        }
+      });
+
+      showSlide(0);
+    }());
+  </script>
+</body>
+</html>

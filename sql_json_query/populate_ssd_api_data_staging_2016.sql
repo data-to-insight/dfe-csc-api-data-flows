@@ -28,7 +28,7 @@ can be appended into the main SSD and run as one - insert locations within the S
 
 
 
-DECLARE @VERSION nvarchar(32) = N'0.2.5';
+DECLARE @VERSION nvarchar(32) = N'0.2.7';
 RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 
 
@@ -86,17 +86,25 @@ DECLARE @ea_cohort_window_end date = DATEADD(day, 1, @run_date) -- today + 1
 /* === Cohort CTEs, 2016+ compatible === */
 
 ;WITH EligibleBySpec AS (
-  /* Age gate 16..25 overlaps window, plus unborn within window
-     Known DoB, include if 16th bday <= window_end and 26th bday > window_start
-     Unborn, include if expected_dob between window_start and window_end
+  /* Include if:
+        - Known DoB and age <=25 inclusive at some point during window(we key off the 26th bday)
+         (26th birthday after window_start) and born by window_end
+        - OR unborn (expected_dob in window)
+        - Deceased included, no death-date filter
+
+    Expected cohort: 
+    children <=25 at any point between @ea_cohort_window_start and @ea_cohort_window_end (dynamic EA window, derived from 24 months back anchored to FY start)
+
   */
   SELECT p.pers_person_id
   FROM ssd_person p
   WHERE
     (
       p.pers_dob IS NOT NULL
-      AND DATEADD(year, 16, p.pers_dob) <= @ea_cohort_window_end
-      AND DATEADD(year, 26, p.pers_dob)  > @ea_cohort_window_start
+      AND p.pers_dob <= @ea_cohort_window_end
+      AND DATEADD(year, 26, p.pers_dob) > @ea_cohort_window_start -- <=25 at any point in window (DfE spec)
+      -- DATEADD(year, 26, p.pers_dob) > @run_date                -- <=25 on run date
+
     )
     OR
     (
@@ -105,12 +113,14 @@ DECLARE @ea_cohort_window_end date = DATEADD(day, 1, @run_date) -- today + 1
       AND p.pers_expected_dob BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
     )
 
-    /* hard cohort filter, 
-    used during live pre-alpha cohort testing -> LA to add child IDs here */
-    AND p.pers_person_id IN ('-1') 
-    /* end pre-alpha cohort (remove this block as required) */
+
+    /* LA hard cohort filter, used during live pre-alpha cohort testing
+       LA to add child IDs here. Remove this line|block for full cohort. */
+
+    -- AND p.pers_person_id IN ('-1')
 
 ),
+
 
 ActiveReferral AS (
   /* episode overlaps window, and open at run_date
@@ -180,21 +190,41 @@ HasLAC AS (
     WHERE clap.clap_cla_placement_start_date <= @ea_cohort_window_end
       AND (clap.clap_cla_placement_end_date IS NULL OR clap.clap_cla_placement_end_date >= @ea_cohort_window_start)
 ),
+
+
+
 IsCareLeaver16to25 AS (
     /*
-      Include if care leaver latest contact in window
+      Include if care leaver latest contact in window [REVIEW]
       And age between 16 and 25 by DATEDIFF year, coarse boundary -not- birthday precise
       Allow expected DoB guard when DoB null
+
+    Expected Care leavers cohort subset:
+    Care leavers classified 16-25 (at run date), plus latest contact in window
+    Include care leavers who have a non null clea_care_leaver_latest_contact date inside the window
     */
-    SELECT DISTINCT clea.clea_person_id AS person_id
-    FROM ssd_care_leavers clea
-    JOIN ssd_person p ON p.pers_person_id = clea.clea_person_id
-    WHERE clea.clea_care_leaver_latest_contact BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
-      AND (
-            (p.pers_dob IS NOT NULL AND DATEDIFF(year, p.pers_dob, @run_date) BETWEEN 16 AND 25) -- year boundary, not bday precise
-         OR (p.pers_dob IS NULL AND p.pers_expected_dob IS NOT NULL)  -- rare, kept as guard
-      )
+  SELECT DISTINCT p.pers_person_id AS person_id
+  FROM ssd_person p
+  WHERE EXISTS (
+      SELECT 1
+      FROM ssd_care_leavers clea
+      WHERE clea.clea_person_id = p.pers_person_id
+
+        -- [REVIEW] Opt: gate on latest contact being within cohort window
+        -- AND clea.clea_care_leaver_latest_contact >= @ea_cohort_window_start
+        -- AND clea.clea_care_leaver_latest_contact <  @ea_cohort_window_end
+
+        -- [REVIEW] Opt: require they are considered in touch
+        -- AND NULLIF(LTRIM(RTRIM(clea.clea_care_leaver_in_touch)), '') IS NOT NULL
+  )
+    AND p.pers_dob IS NOT NULL
+    AND DATEADD(year, 16, p.pers_dob) <  @ea_cohort_window_end    -- classified 16-25 (within window)
+    AND DATEADD(year, 26, p.pers_dob) >= @ea_cohort_window_start  -- classified 16-25 (within window)
+
+    -- AND @run_date >= DATEADD(year, 16, p.pers_dob) -- [REVIEW] classified 16-25 (at run date)
+    -- AND @run_date <  DATEADD(year, 26, p.pers_dob) -- [REVIEW] classified 16-25 (at run date)
 ),
+
 IsDisabled AS (
     /*
       Include if -any- disability code recorded
@@ -204,18 +234,19 @@ IsDisabled AS (
     FROM ssd_disability d
     WHERE NULLIF(LTRIM(RTRIM(d.disa_disability_code)), '') IS NOT NULL
 ),
+
 SpecInclusion AS (
     /*
       Union of inclusion sets per spec
-      removes dups across groups
+      de-dup across groups
     */
     SELECT person_id FROM ActiveReferral
     UNION SELECT person_id FROM WaitingAssessment
     UNION SELECT person_id FROM HasCINPlan
-    UNION SELECT person_id FROM HasCPPlan
+    -- UNION SELECT person_id FROM HasCPPlan
     UNION SELECT person_id FROM HasLAC
     UNION SELECT person_id FROM IsCareLeaver16to25
-    UNION SELECT person_id FROM IsDisabled
+    -- UNION SELECT person_id FROM IsDisabled
 ),
 
 /* === Payload builder 2016Sp1+/Azure SQL compatible === */

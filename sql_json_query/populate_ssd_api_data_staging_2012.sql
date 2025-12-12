@@ -28,7 +28,7 @@ can be appended into the main SSD and run as one - insert locations within the S
 
 
 
-DECLARE @VERSION nvarchar(32) = N'0.2.5';
+DECLARE @VERSION nvarchar(32) = N'0.2.6';
 RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 
 
@@ -107,9 +107,18 @@ EligibleBySpec AS (
       AND p.pers_expected_dob IS NOT NULL
       AND p.pers_expected_dob BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
     )
-),
-ActiveReferral AS (
 
+    /* hard cohort filter, 
+    used during live pre-alpha cohort testing -> LA to add child IDs here */
+    AND p.pers_person_id IN ('-1') 
+    /* end pre-alpha cohort (remove this block as required) */
+),
+
+ActiveReferral AS (
+    /* episode overlaps window, and open at run_date
+     overlap, referral_date <= window_end and (close_date null or close_date >= window_start)
+     open, close_date null or close_date > run_date
+  */
   SELECT DISTINCT cine.cine_person_id AS person_id
   FROM ssd_cin_episodes cine
   WHERE cine.cine_referral_date <= @ea_cohort_window_end
@@ -117,6 +126,7 @@ ActiveReferral AS (
     AND (cine.cine_close_date IS NULL OR cine.cine_close_date >  @run_date)
 ),
 WaitingAssessment AS (
+    /* Open referral episode with no assessment started for that referral (placeholder). */
   SELECT DISTINCT cine.cine_person_id AS person_id
   FROM ssd_cin_episodes cine
   WHERE cine.cine_close_date IS NULL
@@ -128,19 +138,33 @@ WaitingAssessment AS (
     )
 ),
 HasCINPlan AS (
+    /*
+      Include if any CiN plan overlaps window
+      Overlap, plan_start <= window_end and (plan_end null or plan_end >= window_start)
+    */
   SELECT DISTINCT cinp.cinp_person_id AS person_id
   FROM ssd_cin_plans cinp
   WHERE cinp.cinp_cin_plan_start_date <= @ea_cohort_window_end
     AND (cinp.cinp_cin_plan_end_date IS NULL OR cinp.cinp_cin_plan_end_date >= @ea_cohort_window_start)
 ),
 HasCPPlan AS (
+    /*
+      Include if any CP plan overlaps window
+      Overlap, plan_start <= window_end and (plan_end null or plan_end >= window_start)
+    */
   SELECT DISTINCT cppl.cppl_person_id AS person_id
   FROM ssd_cp_plans cppl
   WHERE cppl.cppl_cp_plan_start_date <= @ea_cohort_window_end
     AND (cppl.cppl_cp_plan_end_date IS NULL OR cppl.cppl_cp_plan_end_date >= @ea_cohort_window_start)
 ),
 HasLAC AS (
-  /* A: LAC linked to CIN episode overlapping window */
+    /*
+      Include if LAC by either 
+      A, LAC episode linked to CIN referral overlapping window
+      B, any placement overlapping window, independent of CIN linkage
+    */
+
+    -- A) LAC episode linked to CIN episode that overlaps window
   SELECT DISTINCT clae.clae_person_id AS person_id
   FROM ssd_cla_episodes clae
   JOIN ssd_cin_episodes cine
@@ -148,7 +172,7 @@ HasLAC AS (
   WHERE cine.cine_referral_date <= @ea_cohort_window_end
     AND (cine.cine_close_date IS NULL OR cine.cine_close_date >= @ea_cohort_window_start)
   UNION
-  /* B: any placement overlapping window */
+    -- B) Or any placement overlapping window
   SELECT DISTINCT clae2.clae_person_id AS person_id
   FROM ssd_cla_episodes clae2
   JOIN ssd_cla_placement clap
@@ -157,6 +181,11 @@ HasLAC AS (
     AND (clap.clap_cla_placement_end_date IS NULL OR clap.clap_cla_placement_end_date >= @ea_cohort_window_start)
 ),
 IsCareLeaver16to25 AS (
+    /*
+      Include if care leaver latest contact in window
+      And age between 16 and 25 by DATEDIFF year, coarse boundary -not- birthday precise
+      Allow expected DoB guard when DoB null
+    */
   SELECT DISTINCT clea.clea_person_id AS person_id
   FROM ssd_care_leavers clea
   JOIN ssd_person p ON p.pers_person_id = clea.clea_person_id
@@ -170,11 +199,19 @@ IsCareLeaver16to25 AS (
     )
 ),
 IsDisabled AS (
+    /*
+      Include if -any- disability code recorded
+      No dates, treat as ever recorded
+    */
   SELECT DISTINCT d.disa_person_id AS person_id
   FROM ssd_disability d
   WHERE NULLIF(LTRIM(RTRIM(d.disa_disability_code)), '') IS NOT NULL
 ),
 SpecInclusion AS (
+    /*
+      Union of inclusion sets per spec
+      de-dup across groups
+    */
   SELECT person_id FROM ActiveReferral
   UNION SELECT person_id FROM WaitingAssessment
   UNION SELECT person_id FROM HasCINPlan
