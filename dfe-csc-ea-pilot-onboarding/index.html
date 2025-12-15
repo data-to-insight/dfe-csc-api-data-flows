@@ -23,28 +23,53 @@
       justify-content: center;
     }
 
-    .deck {
-      width: 100%;
-      display: flex;
-      justify-content: center;
-      padding: 16px 8px 72px 8px;
-    }
+.links-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  align-items: baseline;
+}
 
-    .slide {
-      width: min(1280px, 100%);
-      height: min(720px, calc(100vh - 96px));
-      margin: 0 auto;
-      padding: 40px 60px;
-      background: radial-gradient(circle at top left, #020617, #020617 30%, #020617 100%);
-      border-radius: 24px;
-      border: 1px solid rgba(148, 163, 184, 0.6);
-      box-shadow: 0 24px 80px rgba(15, 23, 42, 0.95);
-      display: none;
-      flex-direction: column;
-      gap: 20px;
-      position: relative;
-      overflow: hidden;
-    }
+.links-grid-label {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.links-grid-label::after {
+  content: " :";
+}
+
+.links-grid a {
+  word-break: break-all;
+}
+
+
+
+.deck {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  /* smaller outer padding so the slide can grow */
+  padding: 8px 0 56px 0;
+}
+
+.slide {
+  /* slightly wider max width */
+  width: min(1440px, 100%);
+  /* use almost the full viewport height */
+  height: calc(100vh - 64px);
+  margin: 0 auto;
+  padding: 48px 72px;  /* a bit more breathing room inside */
+  background: radial-gradient(circle at top left, #020617, #020617 30%, #020617 100%);
+  border-radius: 24px;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.95);
+  display: none;
+  flex-direction: column;
+  gap: 20px;
+  position: relative;
+  overflow: hidden;
+}
 
     .slide::before {
       content: "";
@@ -60,6 +85,18 @@
       display: flex;
     }
 
+    .slide-logo {
+      position: absolute;
+      top: 26px;
+      right: 42px;
+      z-index: 2;
+    }
+
+    .slide-logo img {
+      max-height: 88px;
+      opacity: 0.96;
+    }
+
     .slide-header {
       position: relative;
       z-index: 1;
@@ -72,7 +109,8 @@
       font-size: 13px;
       text-transform: uppercase;
       letter-spacing: 0.16em;
-      opacity: 0.75;
+      opacity: 0.9;
+      color: #fb923c;
     }
 
     .slide-title {
@@ -82,8 +120,8 @@
     }
 
     .slide-subtitle {
-      font-size: 15px;
-      opacity: 0.85;
+      font-size: 18px;
+      opacity: 0.9;
       max-width: 900px;
     }
 
@@ -114,28 +152,28 @@
     }
 
     .content-card-title {
-      font-size: 17px;
+      font-size: 20px;
       font-weight: 600;
       margin-bottom: 4px;
     }
 
     .content-card-subtitle {
-      font-size: 13px;
-      opacity: 0.8;
+      font-size: 16px;
+      opacity: 0.85;
       margin-bottom: 4px;
     }
 
     .content-card p {
       margin: 0;
-      font-size: 14px;
-      line-height: 1.4;
+      font-size: 22px;
+      line-height: 1.6;
     }
 
     .content-card ul {
       margin: 4px 0 0 0;
       padding-left: 18px;
-      font-size: 13px;
-      line-height: 1.4;
+      font-size: 22px;
+      line-height: 1.6;
     }
 
     .content-card li {
@@ -143,7 +181,7 @@
     }
 
     .content-footnote {
-      font-size: 12px;
+      font-size: 14px;
       opacity: 0.7;
       margin-top: 6px;
     }
@@ -155,10 +193,15 @@
       margin-top: 4px;
     }
 
+.pill-row.column {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
     .pill {
-      padding: 2px 8px;
+      padding: 4px 10px;
       border-radius: 999px;
-      font-size: 11px;
+      font-size: 14px;
       white-space: nowrap;
       border: 1px solid rgba(191, 219, 254, 0.9);
       background: rgba(30, 64, 175, 0.98);
@@ -177,7 +220,7 @@
     .two-column-list {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 6px 32px;
+      gap: 8px 32px;
     }
 
     .two-column-list li {
@@ -185,10 +228,10 @@
     }
 
     .stage-label {
-      font-size: 11px;
+      font-size: 13px;
       text-transform: uppercase;
       letter-spacing: 0.12em;
-      opacity: 0.7;
+      opacity: 0.8;
       margin-bottom: 6px;
     }
 
@@ -229,7 +272,7 @@
     }
 
     .stage-badge {
-      font-size: 11px;
+      font-size: 13px;
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.08em;
@@ -240,7 +283,7 @@
     }
 
     .stage-title-text {
-      font-size: 14px;
+      font-size: 18px;
       font-weight: 600;
       text-align: right;
       opacity: 0.95;
@@ -253,9 +296,9 @@
       margin: 0;
       display: flex;
       flex-direction: column;
-      gap: 3px;
-      font-size: 12px;
-      line-height: 1.35;
+      gap: 4px;
+      font-size: 18px;
+      line-height: 1.5;
     }
 
     .roles-row {
@@ -264,19 +307,19 @@
       gap: 14px;
       padding-top: 6px;
       border-top: 1px solid rgba(51, 65, 85, 0.95);
-      font-size: 11px;
+      font-size: 13px;
     }
 
     .roles-label {
-      font-size: 11px;
+      font-size: 13px;
       text-transform: uppercase;
       letter-spacing: 0.13em;
-      opacity: 0.7;
+      opacity: 0.8;
       margin-bottom: 4px;
     }
 
     .footer-note {
-      font-size: 11px;
+      font-size: 13px;
       opacity: 0.7;
       margin-top: 4px;
     }
@@ -294,7 +337,7 @@
       border-radius: 999px;
       border: 1px solid rgba(75, 85, 99, 0.9);
       box-shadow: 0 10px 40px rgba(15, 23, 42, 0.9);
-      font-size: 12px;
+      font-size: 14px;
       z-index: 10;
     }
 
@@ -302,9 +345,9 @@
       border-radius: 999px;
       border: 1px solid rgba(148, 163, 184, 0.9);
       background: rgba(15, 23, 42, 0.98);
-      padding: 6px 12px;
+      padding: 6px 14px;
       color: #e5e7eb;
-      font-size: 12px;
+      font-size: 14px;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
@@ -332,11 +375,6 @@
       font-weight: 500;
     }
 
-    .nav-hint {
-      opacity: 0.65;
-      font-size: 11px;
-    }
-
     a {
       color: #38bdf8;
       text-decoration: none;
@@ -345,6 +383,18 @@
     a:hover {
       text-decoration: underline;
     }
+
+
+    .content-card img.content-image {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      border-radius: 12px;
+      border: 1px solid rgba(148, 163, 184, 0.7);
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.7);
+      margin-top: 6px;
+    }
+
 
     @media (max-width: 800px) {
       .slide {
@@ -365,27 +415,29 @@
 <body>
   <div class="deck">
     <section class="slide active" data-slide="1">
+      <div class="slide-logo"><img src="media/d2i-logo.png" alt=""></div>
       <div class="slide-header">
-        <div class="slide-eyebrow">Data to Insight, sector led</div>
-        <div class="slide-title">Working with local authorities to make better use of children's services data</div>
+        <div class="slide-eyebrow">Make better use of children's services data, sector led</div>
+        <div class="slide-title">Data to Insight</div>
         <div class="slide-subtitle">
-          Led by local authorities with support from ADCS, DfE, Ofsted and DLUHC, working to help local authorities make better use of data in children's services.
+          Led by local authorities with support from ADCS, DfE, Ofsted and DLUHC(CSCDUG), working to  <br>
+          help local authorities make better use of data in children's services.
         </div>
       </div>
 
       <div class="slide-body">
         <div class="content-card">
-          <div class="content-card-title">Sector led service</div>
+          <div class="content-card-title"> </div><br><br>
           <p>
-            Sector led service for local authority children's data professionals.
-          </p>
+            Our focus is assisting and enabling local authority children's data professionals; aligned to developing once, use 153x
+          </p><br>
           <p>
-            Maintain shared toolkits, support collaborative projects and help build local capabilities within authorities. Where goals align with government,
-            Data to Insight secures funding so that the service is freely available to every local authority.
-          </p>
+            We maintain shared toolkits*, support collaborative projects and help build local capabilities within authorities. <br>
+            Where goals align with government, Data to Insight secures funding so that the service|tool is freely available to every local authority.
+          </p><br>
           <div class="content-footnote">
-            Shared toolkits include ChAT, Benchmarking, CiN 903 Validators, Demand Modelling, RIIA Benchmark and SSD.
-          </div>
+            *Shared toolkits include such as the ChAT, Benchmarking, CiN 903 Validators, Demand Modelling, RIIA Benchmark and the SSD.
+          </div><br><br><br>
           <div class="pill-row">
             <span class="pill muted">Local authority led</span>
             <span class="pill secondary">ADCS</span>
@@ -398,11 +450,13 @@
     </section>
 
     <section class="slide" data-slide="2">
+      <div class="slide-logo"><img src="media/d2i-logo.png" alt=""></div>
       <div class="slide-header">
         <div class="slide-eyebrow">Standard Safeguarding Dataset</div>
         <div class="slide-title">SSD components, statutory and indicator items</div>
         <div class="slide-subtitle">
-          SSD brings together items already present in key statutory and voluntary collections, plus items for priority indicators that are being developed.
+          SSD is a small-footprint, standardised schema that can sit within existing LA reporting structure(s). <br>
+          It brings together data items present in key statutory and voluntary collections, plus items for priority indicators that are being developed.
         </div>
       </div>
 
@@ -410,39 +464,40 @@
         <div class="content-card">
           <div class="content-card-title">Items from statutory and voluntary collections</div>
           <div class="content-card-subtitle">
-            Data items currently returned as part of existing collections.
+            Data items currently returned within existing stat/voluntary collections
           </div>
           <ul class="two-column-list">
             <li>CiN Census</li>
-            <li>Children Looked After 903</li>
+            <li>CLA 903</li>
             <li>Annex A lists</li>
             <li>RIIA Quarterly</li>
             <li>ASGLB child and SGO data</li>
-            <li>ADCS Safeguarding Pressures</li>
             <li>SEN2, children with EHCP</li>
             <li>CSC Workforce Census</li>
+            <li>ADCS Safeguarding Pressures</li>
           </ul>
         </div>
 
         <div class="content-card">
-          <div class="content-card-title">Items for indicators under development</div>
+          <div class="content-card-title">Items for indicators being developed</div>
           <div class="content-card-subtitle">
-            Data needed for the one b projects.
+            Data considered as part of DDSF 1a/b projects.
           </div>
           <ul>
-            <li>Children looked after through kinship care, one a i</li>
-            <li>Children who are subject to pre proceedings, one a ii</li>
-            <li>s251 financial data, one a iii</li>
-            <li>Data presenting the voice of children and families, one a iv</li>
+            <li>Children looked after via kinship care, 1a(i)</li>
+            <li>Children subject to pre proceedings, 1a(ii)</li>
+            <li>s251 financial data, 1a(iii)</li>
+            <li>Voice of the child, and families, 1a(iv)</li>
           </ul>
           <div class="content-footnote">
-            These items are designed with partners to support new measures and dashboards that go beyond existing returns.
+            Items designed with partners to support new measures and dashboards beyond existing returns.
           </div>
         </div>
       </div>
     </section>
 
     <section class="slide" data-slide="3">
+      <div class="slide-logo"><img src="media/d2i-logo.png" alt=""></div>
       <div class="slide-header">
         <div class="slide-eyebrow">Standard Safeguarding Dataset</div>
         <div class="slide-title">SSD components, extended and new items</div>
@@ -485,45 +540,93 @@
     </section>
 
     <section class="slide" data-slide="4">
+      <div class="slide-logo"><img src="media/d2i-logo.png" alt=""></div>
       <div class="slide-header">
         <div class="slide-eyebrow">Standard Safeguarding Dataset</div>
         <div class="slide-title">SSD reductive views</div>
         <div class="slide-subtitle">
-          Standard views over the core SSD schema, designed with colleagues, make it easier to use the dataset for specific purposes.
+          Standard views over the core SSD schema, designed with colleagues, make it easier to use the dataset for local, statuatory and new purposes. Inter-LA data development/reporting is enabled with near-plug-and-play collaborative efforts. 
         </div>
       </div>
 
       <div class="slide-body">
         <div class="content-card">
           <div class="content-card-title">Standard views for specific purposes</div>
-          <p>
-            SSD reductive views are sets of standardised outputs that present SSD data in simplified, purpose specific formats, for example for returns, dashboards or analysis.
-          </p>
-          <ul>
-            <li>Reduce complex schema into views that analysts can work with quickly</li>
-            <li>Support consistent interpretation of measures across authorities</li>
-            <li>Can be aligned to existing local reporting and tools</li>
-          </ul>
+          <img
+            src="media/SSD-schema-reductive-views.png"
+            alt="SSD schema, reductive views and outputs"
+            class="content-image"
+          >
         </div>
+
 
         <div class="content-card">
           <div class="content-card-title">Designed from local inputs</div>
           <p>
             The core SSD was designed from inputs provided by local authority colleagues to fulfil existing returns and reporting needs from the core schema.
-          </p>
-          <p>
-            This means reductive views sit on top of a model that is already grounded in real local use cases.
+            This means reductive views sit on top of the schema|model that is already grounded in real local use cases.
           </p>
         </div>
       </div>
     </section>
 
-    <section class="slide" data-slide="5">
+
+<section class="slide" data-slide="5">
+  <div class="slide-logo">
+    <img src="media/d2i-logo.png" alt="">
+  </div>
+
+  <div class="slide-header">
+    <div class="slide-eyebrow">Deployment files</div>
+    <div class="slide-title">Live assets on GitHub</div>
+    <div class="slide-subtitle">
+      Quick links and signpost for the two key repositories LAs need
+    </div>
+  </div>
+
+  <div class="slide-body content-grid">
+    <div class="content-card">
+      <div class="content-card-title">
+      github.com/data-to-insight/<br>
+        <a href="https://github.com/data-to-insight/ssd-data-model/tree/main/deployment_extracts" target="_blank" rel="noreferrer">
+              ssd-data-model/deployment_extracts
+            </a>
+      </div>
+      <img
+        src="media/ssd-data-model-deployment-extracts.png"
+        alt="SSD data model deployment extracts on GitHub"
+        class="content-image"
+      >
+    </div>
+
+    <div class="content-card">
+      <div class="content-card-title">
+      github.com/data-to-insight/<br>
+        <a href="github.com/data-to-insight/dfe-csc-api-data-flows/releases" target="_blank" rel="noreferrer">
+              dfe-csc-api-data-flows/releases
+            </a>
+      </div>
+      <img
+        src="media/dfe-csc-api-data-flows-releases.png"
+        alt="DfE CSC API data flows releases page on GitHub"
+        class="content-image"
+      >
+    </div>
+        <div class="footer-note">
+          All needed deployment files links are signposted from the main D2I Early Adopters API playbook: data-to-insight.github.io/dfe-csc-api-data-flows/roadmap_la_deployment/
+        </div>
+      </div>
+    </section>
+
+
+
+    <section class="slide" data-slide="6">
+      <div class="slide-logo"><img src="media/d2i-logo.png" alt=""></div>
       <div class="slide-header">
         <div class="slide-eyebrow">Deployment journey</div>
-        <div class="slide-title">SSD deployment and onboarding, Stage 1 to Stage 4</div>
+        <div class="slide-title">EA SSD + API deployment, stages summary</div>
         <div class="slide-subtitle">
-          A shared view of how we move from initial deployment to regular server based runs, with indicative roles at each step.
+          A perspective on initial deployment to integration with existing regular server processes. 
         </div>
       </div>
 
@@ -533,12 +636,14 @@
           <div class="stage-card">
             <div class="stage-header-row">
               <div class="stage-badge">Stage 1</div>
-              <div class="stage-title-text">Setup and smoke tests</div>
+              <div class="stage-title-text">Setup | smoke tests</div>
             </div>
             <ul>
               <li>Deploy SSD core tables and SSD staging tables for the API</li>
               <li>Schedule one to one sessions to agree support and progress check ins</li>
-              <li>Run local API smoke tests with fake data using PowerShell or Python to confirm connectivity</li>
+              <li>Run local API pre-flight|smoke tests with fake record (PowerShell) to confirm connectivity and whitelisting</li>
+              <br><br>
+              <li>D2I feedback loop</li>
             </ul>
           </div>
 
@@ -550,7 +655,10 @@
             <ul>
               <li>Visual checks that SSD tables are populating as expected, not data fixes, focus on flows</li>
               <li>Visual checks on SSD staging cohort subset</li>
-              <li>Cross checks against recent 903 and CiN data</li>
+              <li>Cohort id checks against recent 903 and CiN data</li>
+              <li>Run local API db tests with batched records in payload</li>
+              <br><br>
+              <li>D2I feedback loop</li>
             </ul>
           </div>
 
@@ -560,8 +668,11 @@
               <div class="stage-title-text">First live data</div>
             </div>
             <ul>
-              <li>Send an initial live alpha from SSD staging, with hard filters if helpful for early testing</li>
-              <li>Provide access to the private dashboard once live data is available</li>
+              <li>Send initial live alpha from SSD staging, with hard id filters if helpful during ongoing early cohort checks</li>
+              <li>Manage running cohort cross-checks</li>
+              <li>Access available to the private dashboard once live data is available - start local data fixes as needed</li>
+              <br>
+              <li>D2I feedback loop</li>
             </ul>
           </div>
 
@@ -572,7 +683,9 @@
             </div>
             <ul>
               <li>Move from local click to run patterns to server based deployments</li>
-              <li>Configure overnight or scheduled runs for ongoing operation</li>
+              <li>Configure overnight or scheduled runs[SSD refresh + API sender] for ongoing operation</li>
+              <br><br><br><br><br>
+              <li>D2I feedback loop</li>
             </ul>
           </div>
         </div>
@@ -580,46 +693,56 @@
         <div class="roles-row">
           <div>
             <div class="roles-label">Stage 1 roles</div>
-            <div class="pill-row">
-              <span class="pill">[Data engineer]</span>
+            <div class="pill-row column">
               <span class="pill secondary">[D2I]</span>
+              <span class="pill">[DBA]</span>
+              <span class="pill">[Performance|Data Team]</span>
+              <span class="pill">[Data Engineer|IT|Infrastructure]</span>
+
             </div>
           </div>
           <div>
             <div class="roles-label">Stage 2 roles</div>
-            <div class="pill-row">
-              <span class="pill">[Analyst]</span>
-              <span class="pill secondary">[Data engineer]</span>
+            <div class="pill-row column">
+              <span class="pill secondary">[D2I]</span>
+              <span class="pill">[BI|Performance]</span>
+              <span class="pill">[Data Returns Team]</span>
             </div>
           </div>
           <div>
             <div class="roles-label">Stage 3 roles</div>
-            <div class="pill-row">
-              <span class="pill">[Data lead]</span>
+            <div class="pill-row column">
               <span class="pill secondary">[D2I]</span>
+              <span class="pill">[Data lead]</span>
+              <span class="pill">[Info Sec|DPO]</span>
+              <span class="pill">[Data Engineer|IT|Infrastructure]</span>
+
             </div>
           </div>
           <div>
             <div class="roles-label">Stage 4 roles</div>
-            <div class="pill-row">
-              <span class="pill">[IT or infrastructure]</span>
+            <div class="pill-row column">
+              <span class="pill">[DBA]</span>
               <span class="pill secondary">[Data engineer]</span>
+              <span class="pill">[IT or infrastructure]</span>              
             </div>
           </div>
         </div>
 
         <div class="footer-note">
-          Roles are indicative. Replace labels with local team names or add more pills where that helps the conversation.
+          Roles are generalised and suggestions in-part based on phase 1 involvements.
         </div>
       </div>
     </section>
 
-    <section class="slide" data-slide="6">
+    <section class="slide" data-slide="7">
+      <div class="slide-logo"><img src="media/d2i-logo.png" alt=""></div>
       <div class="slide-header">
         <div class="slide-eyebrow">Next steps</div>
-        <div class="slide-title">Staying connected and making use of SSD and the API work</div>
+        <div class="slide-title">Deployment journey from now</div>
         <div class="slide-subtitle">
-          Support is sector led and collaborative, building on the work of early adopters and the shared SSD model.
+          Collaborative conversations can help LA progress.<br>
+          It's likely that we'll see both common and perhaps unchartered issues crop up, this is a pilot and we'll be figuring this out alongside your team. 
         </div>
       </div>
 
@@ -628,53 +751,111 @@
           <div class="content-card-title">What to do next</div>
           <ul>
             <li>Confirm where you are in the Stage 1 to Stage 4 journey</li>
-            <li>Agree local roles across data, IT and service leads</li>
-            <li>Plan your next set of tests or dashboard reviews using SSD outputs</li>
+            <li>Agree local roles across data, IT and service leads - have you informed your IT/info sec team?</li>
+            <li>Can we access and run a Powershell script for early connectivity tests?</li>
+            <li>Align team capacity for possible bespoke SSD adjustments, cohort and data presence review</li>
+            <li>Review/test deploy the SSD scripts - for Mosaic some config required</li>
+            <li>Register for the DfE endpoint TEST (& PreProd or Prod)</li>
+            <li>Save and plug in DfE endpoint details to D2I API sender (DfE + LA Config)</li>
           </ul>
         </div>
 
         <div class="content-card">
           <div class="content-card-title">Useful links and contacts</div>
-          <p>
-            Early Adopters project:
+
+          <div class="links-grid">
+            <span class="links-grid-label">Early Adopters project</span>
             <a href="https://data-to-insight.github.io/dfe-csc-api-data-flows/" target="_blank" rel="noreferrer">
               data-to-insight.github.io/dfe-csc-api-data-flows
             </a>
-          </p>
-          <p>
-            SSD model and deployment extracts:
-            <br>
+
+            <span class="links-grid-label">SSD EA site</span>
             <a href="https://data-to-insight.github.io/ssd-data-model-next/" target="_blank" rel="noreferrer">
               data-to-insight.github.io/ssd-data-model-next
             </a>
-            <br>
+
+            <span class="links-grid-label">SSD Legacy DDSF site</span>
+            <a href="https://data-to-insight.github.io/ssd-data-model/" target="_blank" rel="noreferrer">
+              data-to-insight.github.io/ssd-data-model
+            </a>
+
+
+            <span class="links-grid-label">Deployment extracts</span>
             <a href="https://github.com/data-to-insight/ssd-data-model/tree/main/deployment_extracts" target="_blank" rel="noreferrer">
               github.com/data-to-insight/ssd-data-model/tree/main/deployment_extracts
             </a>
-          </p>
-          <p>
-            Data to Insight:
-            <br>
-            <a href="https://www.datatoinsight.org" target="_blank" rel="noreferrer">
-              www.datatoinsight.org
-            </a>
-          </p>
-          <p>
-            Contact:
-            <br>
-            <a href="mailto:robert.harrison@eastsussex.gov.uk">
-              robert.harrison@eastsussex.gov.uk
-            </a>
-          </p>
 
-          <div class="pill-row">
-            <span class="pill muted">Share feedback</span>
-            <span class="pill muted">Join sector projects</span>
-            <span class="pill secondary">Reuse SSD assets</span>
+            <span class="links-grid-label">Data to Insight</span>
+            <span>
+              www.datatoinsight.org | 
+              <a href="mailto:robert.harrison@eastsussex.gov.uk">robert.harrison@eastsussex.gov.uk</a>
+            </span>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+
+
+        <section class="slide" data-slide="8">
+      <div class="slide-logo"><img src="media/d2i-logo.png" alt=""></div>
+      <div class="slide-header">
+        <div class="slide-eyebrow">Next steps</div>
+        <div class="slide-title">Questions</div>
+        <div class="slide-subtitle">
+          Once D2I have the list of Phase 2 LA team contacts we'll be in touch directly. 
+          <br> LA's are also welcome to reach out as required either via the DfE project team or direct for deployment/tech/other support  
+        </div>
+      </div>
+
+      <div class="slide-body">
+        <div class="content-card">
+          <div class="content-card-title">Questions and next steps</div>
+          <ul>
+            <li>What feels clear and what still feels unclear</li>
+            <li>Any early blockers or risks you can already see</li>
+            <li>Where could D2I help your teams the most first</li>
+            <li>Who else needs to be involved from your side</li>
+            <li>What would a good first month look like</li>
+          </ul>
+
+        </div>
+
+        <div class="content-card">
+          <div class="content-card-title">Useful links and contacts</div>
+
+          <div class="links-grid">
+            <span class="links-grid-label">Early Adopters project</span>
+            <a href="https://data-to-insight.github.io/dfe-csc-api-data-flows/" target="_blank" rel="noreferrer">
+              data-to-insight.github.io/dfe-csc-api-data-flows
+            </a>
+
+            <span class="links-grid-label">SSD EA site</span>
+            <a href="https://data-to-insight.github.io/ssd-data-model-next/" target="_blank" rel="noreferrer">
+              data-to-insight.github.io/ssd-data-model-next
+            </a>
+
+            <span class="links-grid-label">SSD Legacy DDSF site</span>
+            <a href="https://data-to-insight.github.io/ssd-data-model/" target="_blank" rel="noreferrer">
+              data-to-insight.github.io/ssd-data-model
+            </a>
+
+            <span class="links-grid-label">Deployment extracts</span>
+            <a href="https://github.com/data-to-insight/ssd-data-model/tree/main/deployment_extracts" target="_blank" rel="noreferrer">
+              github.com/data-to-insight/ssd-data-model/tree/main/deployment_extracts
+            </a>
+
+            <span class="links-grid-label">Data to Insight</span>
+            <span>
+              www.datatoinsight.org | 
+              <a href="mailto:robert.harrison@eastsussex.gov.uk">robert.harrison@eastsussex.gov.uk</a>
+            </span>
           </div>
         </div>
       </div>
     </section>
+
   </div>
 
   <div class="nav" aria-label="Slide navigation">
@@ -682,8 +863,7 @@
       ◀ Prev
     </button>
     <div class="nav-middle">
-      <div class="nav-counter" id="slide-counter">1 / 6</div>
-      <div class="nav-hint">Space or right arrow for next</div>
+      <div class="nav-counter" id="slide-counter">1 / 8</div>
     </div>
     <button id="next-btn" type="button">
       Next ▶
