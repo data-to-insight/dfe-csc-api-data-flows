@@ -205,25 +205,27 @@ IsCareLeaver16to25 AS (
     */
   SELECT DISTINCT p.pers_person_id AS person_id
   FROM ssd_person p
-  WHERE EXISTS (
+  WHERE p.pers_dob IS NOT NULL
+    AND DATEADD(year, 16, p.pers_dob) <  @ea_cohort_window_end    -- classified 16-25 (within window)
+    AND DATEADD(year, 26, p.pers_dob) >= @ea_cohort_window_start  -- classified 16-25 (within window)
+
+    AND EXISTS (
       SELECT 1
       FROM ssd_care_leavers clea
       WHERE clea.clea_person_id = p.pers_person_id
 
         -- [REVIEW] Opt: gate on latest contact being within cohort window
-        -- AND clea.clea_care_leaver_latest_contact >= @ea_cohort_window_start
-        -- AND clea.clea_care_leaver_latest_contact <  @ea_cohort_window_end
+        AND clea.clea_care_leaver_latest_contact >= @ea_cohort_window_start
+        AND clea.clea_care_leaver_latest_contact <  @ea_cohort_window_end
 
         -- [REVIEW] Opt: require they are considered in touch
         -- AND NULLIF(LTRIM(RTRIM(clea.clea_care_leaver_in_touch)), '') IS NOT NULL
-  )
-    AND p.pers_dob IS NOT NULL
-    AND DATEADD(year, 16, p.pers_dob) <  @ea_cohort_window_end    -- classified 16-25 (within window)
-    AND DATEADD(year, 26, p.pers_dob) >= @ea_cohort_window_start  -- classified 16-25 (within window)
+    )
 
     -- AND @run_date >= DATEADD(year, 16, p.pers_dob) -- [REVIEW] classified 16-25 (at run date)
     -- AND @run_date <  DATEADD(year, 26, p.pers_dob) -- [REVIEW] classified 16-25 (at run date)
 ),
+
 
 IsDisabled AS (
     /*
@@ -604,7 +606,7 @@ RawPayloads AS (
 
 
                         /* ================= care_leavers (50..52), single object(or null) per episode =================
-                          - latest contact in window 
+                          - latest contact in window
                         */
                         JSON_QUERY((
                             SELECT TOP 1
@@ -614,7 +616,8 @@ RawPayloads AS (
                                 CAST(0 AS bit) AS [purge]
                               FROM ssd_care_leavers clea
                              WHERE clea.clea_person_id = p.pers_person_id
-                               AND clea.clea_care_leaver_latest_contact BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+                               -- NOTE: cohort gating for care leavers now handled in IsCareLeaver16to25 CTE
+                               -- AND clea.clea_care_leaver_latest_contact BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
                              ORDER BY clea.clea_care_leaver_latest_contact DESC
                              FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
                         )) AS [care_leavers],

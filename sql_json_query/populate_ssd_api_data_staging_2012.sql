@@ -186,18 +186,29 @@ IsCareLeaver16to25 AS (
       And age between 16 and 25 by DATEDIFF year, coarse boundary -not- birthday precise
       Allow expected DoB guard when DoB null
     */
-  SELECT DISTINCT clea.clea_person_id AS person_id
-  FROM ssd_care_leavers clea
-  JOIN ssd_person p ON p.pers_person_id = clea.clea_person_id
+    SELECT DISTINCT p.pers_person_id AS person_id
+    FROM ssd_care_leavers clea
+    JOIN ssd_person p ON p.pers_person_id = clea.clea_person_id
 
-  WHERE clea.clea_care_leaver_latest_contact >= @ea_cohort_window_start
-  AND clea.clea_care_leaver_latest_contact <  @ea_cohort_window_end
+    WHERE clea.clea_care_leaver_latest_contact >= @ea_cohort_window_start
+      AND clea.clea_care_leaver_latest_contact <  @ea_cohort_window_end
 
-    AND (
-         (p.pers_dob IS NOT NULL AND DATEDIFF(year, p.pers_dob, @run_date) BETWEEN 16 AND 25)
-      OR (p.pers_dob IS NULL AND p.pers_expected_dob IS NOT NULL)
-    )
-),
+      AND p.pers_dob IS NOT NULL
+      AND DATEADD(year, 16, p.pers_dob) <  @ea_cohort_window_end    -- classified 16-25 (within window)
+      AND DATEADD(year, 26, p.pers_dob) >= @ea_cohort_window_start  -- classified 16-25 (within window)
+
+      -- AND @run_date >= DATEADD(year, 16, p.pers_dob) -- [REVIEW] classified 16-25 (at run date)
+      -- AND @run_date <  DATEADD(year, 26, p.pers_dob) -- [REVIEW] classified 16-25 (at run date)
+
+      /* Opt, only enable if explicitly want expected DoB inclusion */
+      -- OR (
+      --      p.pers_dob IS NULL
+      --  AND p.pers_expected_dob IS NOT NULL
+      --  AND DATEADD(year, 16, p.pers_expected_dob) <  @ea_cohort_window_end
+      --  AND DATEADD(year, 26, p.pers_expected_dob) >= @ea_cohort_window_start
+      -- )
+  ),
+
 IsDisabled AS (
     /*
       Include if -any- disability code recorded
@@ -713,7 +724,7 @@ RawPayloads AS (
               + ISNULL((
                   SELECT TOP 1
                     ',"care_leavers":{'
-                      + '"contact_date":"' + CONVERT(varchar(10), clea.clea_care_leaver_latest_contact, 23) + '",'                               -- 50
+                      + '"contact_date":"' + CONVERT(varchar(10), clea.clea_care_leaver_latest_contact, 23) + '",'                      -- 50
                       + CASE WHEN NULLIF(LTRIM(RTRIM(clea.clea_care_leaver_activity)), '') IS NOT NULL
                             THEN '"activity":"' + clea.clea_care_leaver_activity + '",' ELSE '' END                                     -- 51
                       + CASE WHEN NULLIF(LTRIM(RTRIM(clea.clea_care_leaver_accommodation)), '') IS NOT NULL
@@ -721,8 +732,11 @@ RawPayloads AS (
                       + '"purge":false}'
                   FROM ssd_care_leavers clea
                   WHERE clea.clea_person_id = p.pers_person_id
-                    AND clea.clea_care_leaver_latest_contact >= @ea_cohort_window_start
-                    AND clea.clea_care_leaver_latest_contact <  @ea_cohort_window_end
+
+                    -- NOTE: cohort gating for care leavers now handled in IsCareLeaver16to25 CTE
+                    -- AND clea.clea_care_leaver_latest_contact >= @ea_cohort_window_start
+                    -- AND clea.clea_care_leaver_latest_contact <  @ea_cohort_window_end
+
                   ORDER BY clea.clea_care_leaver_latest_contact DESC
               ), '')
 
