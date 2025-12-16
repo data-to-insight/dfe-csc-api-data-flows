@@ -117,8 +117,9 @@ DECLARE @ea_cohort_window_end date = DATEADD(day, 1, @run_date) -- today + 1
     /* LA hard cohort filter, used during live pre-alpha cohort testing
        LA to add child IDs here. Remove this line|block for full cohort. */
 
-    -- AND p.pers_person_id IN ('-1')
+    --AND p.pers_person_id IN ('1', '2', '3') 
 
+    /* end pre-alpha cohort (remove this block as required) */
 ),
 
 
