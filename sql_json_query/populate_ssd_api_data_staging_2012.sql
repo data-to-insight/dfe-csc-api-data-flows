@@ -89,17 +89,23 @@ DECLARE @ea_cohort_window_end date = DATEADD(day, 1, @run_date) -- today + 1
 
 ;WITH
 EligibleBySpec AS (
-  /* Age gate 16..25 overlaps window, plus unborn within window
-     Known DoB, include if 16th bday <= window_end and 26th bday > window_start
-     Unborn, include if expected_dob between window_start and window_end
+    /* Include if:
+        - Known DoB and age <=25 inclusive at some point during window(we key off the 26th bday)
+         (26th birthday after window_start) and born by window_end
+        - OR unborn (expected_dob in window)
+        - Deceased included, no death-date filter
+
+    Expected cohort: 
+    children <=25 at any point between @ea_cohort_window_start and @ea_cohort_window_end (dynamic EA window, derived from 24 months back anchored to FY start)
+
   */
   SELECT p.pers_person_id
   FROM ssd_person p
   WHERE
     (
       p.pers_dob IS NOT NULL
-      AND DATEADD(year, 16, p.pers_dob) <= @ea_cohort_window_end
-      AND DATEADD(year, 26, p.pers_dob)  > @ea_cohort_window_start
+      AND p.pers_dob <= @ea_cohort_window_end
+      AND DATEADD(year, 26, p.pers_dob) > @ea_cohort_window_start
     )
     OR
     (
@@ -108,11 +114,15 @@ EligibleBySpec AS (
       AND p.pers_expected_dob BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
     )
 
-    /* hard cohort filter, 
-    used during live pre-alpha cohort testing -> LA to add child IDs here */
-    AND p.pers_person_id IN ('-1') 
+
+    /* LA hard cohort filter, used during live pre-alpha cohort testing
+       LA to add child IDs here. Remove this line|block for full cohort. */
+
+    --AND p.pers_person_id IN ('1', '2', '3') 
+
     /* end pre-alpha cohort (remove this block as required) */
 ),
+
 
 ActiveReferral AS (
     /* episode overlaps window, and open at run_date
@@ -226,10 +236,10 @@ SpecInclusion AS (
   SELECT person_id FROM ActiveReferral
   UNION SELECT person_id FROM WaitingAssessment
   UNION SELECT person_id FROM HasCINPlan
-  UNION SELECT person_id FROM HasCPPlan
+  -- UNION SELECT person_id FROM HasCPPlan
   UNION SELECT person_id FROM HasLAC
   UNION SELECT person_id FROM IsCareLeaver16to25
-  UNION SELECT person_id FROM IsDisabled
+  -- UNION SELECT person_id FROM IsDisabled
 ),
 
 /* ====================== Payload builder, 2012-safe ======================= */
