@@ -28,7 +28,7 @@ can be appended into the main SSD and run as one - insert locations within the S
 
 
 
-DECLARE @VERSION nvarchar(32) = N'0.2.8';
+DECLARE @VERSION nvarchar(32) = N'0.2.9';
 RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 
 
@@ -108,18 +108,19 @@ DECLARE @ea_cohort_window_end date = DATEADD(day, 1, @run_date) -- today + 1
     )
     OR
     (
+      /* fall back to expected DoB */
       p.pers_dob IS NULL
       AND p.pers_expected_dob IS NOT NULL
       AND p.pers_expected_dob BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
     )
 
 
-    /* LA hard cohort filter, used during live pre-alpha cohort testing
-       LA to add child IDs here. Remove this line|block for full cohort. */
+    /* pre-alpha cohort filter (remove this block as required)
+      LA use during live PRE-alpha cohort testing, add known child IDs here (< 20 records) */
 
     --AND p.pers_person_id IN ('1', '2', '3') 
 
-    /* end pre-alpha cohort (remove this block as required) */
+    /* end pre-alpha cohort  */
 ),
 
 
@@ -132,7 +133,7 @@ ActiveReferral AS (
     FROM ssd_cin_episodes cine
     WHERE cine.cine_referral_date <= @ea_cohort_window_end
       AND (cine.cine_close_date IS NULL OR cine.cine_close_date >= @ea_cohort_window_start)
-      AND (cine.cine_close_date IS NULL OR cine.cine_close_date >  @run_date)
+    
 ),
 WaitingAssessment AS (
     /* Open referral episode with no assessment started for that referral (placeholder). */
@@ -228,15 +229,15 @@ IsCareLeaver16to25 AS (
 ),
 
 
-IsDisabled AS (
-    /*
-      Include if -any- disability code recorded
-      No dates, treat as ever recorded
-    */
-    SELECT DISTINCT d.disa_person_id AS person_id
-    FROM ssd_disability d
-    WHERE NULLIF(LTRIM(RTRIM(d.disa_disability_code)), '') IS NOT NULL
-),
+-- IsDisabled AS (
+--     /*
+--       Include if -any- disability code recorded
+--       No dates, treat as ever recorded
+--     */
+--     SELECT DISTINCT d.disa_person_id AS person_id
+--     FROM ssd_disability d
+--     WHERE NULLIF(LTRIM(RTRIM(d.disa_disability_code)), '') IS NOT NULL
+-- ),
 
 SpecInclusion AS (
     /*
@@ -291,7 +292,14 @@ RawPayloads AS (
                         ORDER BY li2.link_valid_from_date DESC
                         ) AS [former_unique_pupil_number],                                          -- 4
 
-                        p.pers_upn_unknown     AS [unique_pupil_number_unknown_reason],             -- 5
+                        CASE
+                            WHEN NULLIF(LTRIM(RTRIM(p.pers_upn_unknown)), '') IS NOT NULL
+                                THEN p.pers_upn_unknown
+                            WHEN UPPER(NULLIF(LTRIM(RTRIM(p.pers_upn)), '')) IN ('UN1','UN2','UN3','UN4','UN5','UN6','UN7','UN8','UN9','UN10')
+                                THEN UPPER(LTRIM(RTRIM(p.pers_upn)))
+                            ELSE NULL
+                        END AS [unique_pupil_number_unknown_reason],                                -- 5
+
                         p.pers_forename        AS [first_name],                                     -- 6
                         p.pers_surname         AS [surname],                                        -- 7
                         CONVERT(varchar(10), p.pers_dob,          23) AS [date_of_birth],           -- 8
@@ -463,6 +471,9 @@ RawPayloads AS (
                           - CP flag parsed from s47e_s47_outcome_json using JSON_VALUE If missing or not Y or N, flag returned as NULL     
                         */
                         JSON_QUERY((
+                          -- [IMPORTANT]
+                          -- There is a known bug impacting the extraction of these data points from MOSAIC 
+                          -- See https://github.com/data-to-insight/ssd-data-model/issues/265 for updates
                             SELECT
                                 CAST(s47e.s47e_s47_enquiry_id AS varchar(36)) AS [section_47_assessment_id],            -- 29 [Mandatory]
                                 CONVERT(varchar(10), s47e.s47e_s47_start_date, 23) AS [start_date],                     -- 30
@@ -550,13 +561,14 @@ RawPayloads AS (
                                     23
                                 ) AS [end_date],                                                                                  -- 42
 
-                                MIN(clae.clae_cla_episode_ceased_reason) AS [end_reason],                                          -- 43
+                                MIN(clae.clae_cla_episode_ceased_reason) AS [end_reason],                                         -- 43
                                 clap.clap_cla_placement_change_reason AS [change_reason],                                         -- 44
                                 CAST(0 AS bit) AS [purge]
                             FROM ssd_cla_episodes clae
                             JOIN ssd_cla_placement clap
                             ON clap.clap_cla_id = clae.clae_cla_id
                             WHERE clae.clae_referral_id = cine.cine_referral_id
+                            -- AND clap.clap_cla_placement_type <> 'T0'    -- IF not reporting some (e.g. TEMP) placements
                             AND clap.clap_cla_placement_start_date <= @ea_cohort_window_end
                             AND (
                                     clap.clap_cla_placement_end_date IS NULL
@@ -630,7 +642,8 @@ RawPayloads AS (
                         */
                         JSON_QUERY((
                             SELECT
-                                CAST(pr.prof_staff_id AS varchar(12)) AS [worker_id],                                       -- 53
+                                -- CAST(pr.prof_staff_id AS varchar(12)) AS [worker_id],                                    -- 53 IF workerID contains only ID's
+                                CAST(pr.prof_social_worker_registration_no AS varchar(12)) AS [worker_id],                  -- 53 IF workerID is username use SWE REG instead
                                 CONVERT(varchar(10), i.invo_involvement_start_date, 23) AS [start_date],                    -- 54
                                 CONVERT(varchar(10), i.invo_involvement_end_date, 23) AS [end_date]                         -- 55
                             FROM ssd_involvements i
@@ -741,6 +754,12 @@ OUTER APPLY (
     WHERE s.person_id = h.person_id
     ORDER BY s.id DESC
 ) AS prev
+
+-- /* Uncomment block to force hard-filter against known Stat-Returns cohort */
+-- INNER JOIN
+--     [dbo].[StoredStatReturnsCohortIdTable] STATfilter -- FAILSAFE STAT RETURN COHORT
+--     ON STATfilter.[person_id] = h.person_id
+
 WHERE prev.current_hash IS NULL             -- first time we've seen this person
    OR prev.current_hash <> h.current_hash;  -- payload has changed
 
@@ -1159,3 +1178,21 @@ select TOP (5) * from ssd_api_data_staging_anon; -- verify inclusion of x3 fake 
 -- FROM WithS47
 -- WHERE has_s47 = 1 OR s47_count > 0
 -- ORDER BY s47_count DESC, payload_chars DESC, id DESC;
+
+
+
+-- -- PAYLOAD VERIFICATION 6 : Show age breakdown of records
+-- SELECT
+--   DATEDIFF(year, p.pers_dob, CONVERT(date, GETDATE()))
+--     - CASE WHEN DATEADD(year, DATEDIFF(year, p.pers_dob, CONVERT(date, GETDATE())), p.pers_dob) > CONVERT(date, GETDATE()) THEN 1 ELSE 0 END
+--     AS age_years,
+--   COUNT(DISTINCT s.person_id) AS people
+-- FROM ssd_api_data_staging s
+-- JOIN ssd_person p
+--   ON p.pers_person_id = s.person_id
+-- WHERE p.pers_dob IS NOT NULL
+--   AND DATEADD(year, 16, p.pers_dob) > CONVERT(date, GETDATE())
+-- GROUP BY
+--   DATEDIFF(year, p.pers_dob, CONVERT(date, GETDATE()))
+--     - CASE WHEN DATEADD(year, DATEDIFF(year, p.pers_dob, CONVERT(date, GETDATE())), p.pers_dob) > CONVERT(date, GETDATE()) THEN 1 ELSE 0 END
+-- ORDER BY age_years;
