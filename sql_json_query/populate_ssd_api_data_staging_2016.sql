@@ -316,10 +316,10 @@ RawPayloads AS (
                             CASE 
                                 WHEN disab.disabilities IS NOT NULL 
                                     THEN disab.disabilities 
-                                ELSE '[]'
+                                ELSE '["NONE"]'
                             END
                         ) AS [disabilities],                                                        -- 12
-
+                                                     
                         (SELECT TOP 1 a.addr_address_postcode
                         FROM ssd_address a
                         WHERE a.addr_person_id = p.pers_person_id
