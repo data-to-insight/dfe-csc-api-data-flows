@@ -395,7 +395,15 @@ RawPayloads AS (
                         -- str(id) for JSON
                         CAST(cine.cine_referral_id AS varchar(36)) AS [social_care_episode_id],                             -- 16  [Mandatory]
                         CONVERT(varchar(10), cine.cine_referral_date, 23) AS [referral_date],                               -- 17
-                        cine.cine_referral_source_code AS [referral_source],                                                -- 18    
+                        CASE
+                          -- this data point being coerced until superceded by change in source data field for systemC users
+                          WHEN cine.cine_referral_source_code IS NULL THEN NULL
+                          WHEN LTRIM(RTRIM(cine.cine_referral_source_code)) LIKE '10%'        THEN '10'
+                          WHEN LTRIM(RTRIM(cine.cine_referral_source_code)) LIKE '[1-3][A-F]%' THEN LEFT(LTRIM(RTRIM(cine.cine_referral_source_code)), 2)
+                          WHEN LTRIM(RTRIM(cine.cine_referral_source_code)) LIKE '5[A-D]%'     THEN LEFT(LTRIM(RTRIM(cine.cine_referral_source_code)), 2)
+                          WHEN LTRIM(RTRIM(cine.cine_referral_source_code)) LIKE '[46789]%'    THEN LEFT(LTRIM(RTRIM(cine.cine_referral_source_code)), 1)
+                          ELSE NULL
+                        END AS [referral_source]                                               -- 18    
 
                         CONVERT(varchar(10), cine.cine_close_date, 23) AS [closure_date],                                   -- 19
                         cine.cine_close_reason AS [closure_reason],                                                         -- 20
@@ -544,8 +552,9 @@ RawPayloads AS (
                             SELECT
                                 CAST(clap.clap_cla_placement_id AS varchar(36)) AS [child_looked_after_placement_id],             -- 37 [Mandatory]
                                 CONVERT(varchar(10), clap.clap_cla_placement_start_date, 23) AS [start_date],                     -- 38
-                                MIN(clae.clae_cla_episode_start_reason)            AS [start_reason],                             -- 39
 
+                                -- this data point being coerced until superceded by change in source data field for systemC users
+                                MIN(LEFT(NULLIF(LTRIM(RTRIM(clae.clae_cla_episode_start_reason)), ''), 1)) AS [start_reason]      -- 39 
                                 
                                 clap.clap_cla_placement_postcode AS [postcode],                                                   -- 40
                                 clap.clap_cla_placement_type AS [placement_type],                                                 -- 41
@@ -561,7 +570,19 @@ RawPayloads AS (
                                     23
                                 ) AS [end_date],                                                                                  -- 42
 
-                                MIN(clae.clae_cla_episode_ceased_reason) AS [end_reason],                                         -- 43
+                                MIN(          -- different approach needed here as needed raw data part has varied length
+                                  NULLIF(     -- this process to be superceded by replacement source field for systemC users
+                                    REPLACE(
+                                      REPLACE(
+                                        REPLACE(
+                                          REPLACE(LEFT(clae.clae_cla_episode_ceased_reason, 3), ' ', ''),   -- remove spaces after max length truncation
+                                        CHAR(9), ''),   -- tabs
+                                      CHAR(10), ''),    -- LF
+                                    CHAR(13), ''),      -- CR
+                                    ''                  -- empty string to NULL
+                                  )
+                                ) AS [end_reason],                                                                                -- 43
+
                                 clap.clap_cla_placement_change_reason AS [change_reason],                                         -- 44
                                 CAST(0 AS bit) AS [purge]
                             FROM ssd_cla_episodes clae
@@ -755,13 +776,13 @@ OUTER APPLY (
     ORDER BY s.id DESC
 ) AS prev
 
--- /* Uncomment block to force hard-filter against known Stat-Returns cohort */
+-- /* Uncomment to force hard-filter against LA known Stat-Returns cohort table*/
 -- INNER JOIN
 --     [dbo].[StoredStatReturnsCohortIdTable] STATfilter -- FAILSAFE STAT RETURN COHORT
 --     ON STATfilter.[person_id] = h.person_id
 
-WHERE prev.current_hash IS NULL             -- first time we've seen this person
-   OR prev.current_hash <> h.current_hash;  -- payload has changed
+WHERE prev.current_hash IS NULL             -- first time we've seen this person record
+   OR prev.current_hash <> h.current_hash;  -- or payload has changed
 
 
 
