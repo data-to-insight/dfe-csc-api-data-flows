@@ -292,13 +292,20 @@ RawPayloads AS (
                         ORDER BY li2.link_valid_from_date DESC
                         ) AS [former_unique_pupil_number],                                          -- 4
 
-                        CASE
-                            WHEN NULLIF(LTRIM(RTRIM(p.pers_upn_unknown)), '') IS NOT NULL
-                                THEN p.pers_upn_unknown
-                            WHEN UPPER(NULLIF(LTRIM(RTRIM(p.pers_upn)), '')) IN ('UN1','UN2','UN3','UN4','UN5','UN6','UN7','UN8','UN9','UN10')
-                                THEN UPPER(LTRIM(RTRIM(p.pers_upn)))
-                            ELSE NULL
-                        END AS [unique_pupil_number_unknown_reason],                                -- 5
+                        LEFT(
+                            NULLIF(
+                                CASE
+                                    WHEN NULLIF(LTRIM(RTRIM(p.pers_upn_unknown)), '') IS NOT NULL
+                                        THEN LTRIM(RTRIM(p.pers_upn_unknown))
+                                    WHEN UPPER(NULLIF(LTRIM(RTRIM(p.pers_upn)), '')) 
+                                        IN ('UN1','UN2','UN3','UN4','UN5','UN6','UN7','UN8','UN9','UN10')
+                                        THEN UPPER(LTRIM(RTRIM(p.pers_upn)))
+                                    ELSE NULL
+                                END,
+                                ''
+                            ),
+                            4
+                        ) AS [unique_pupil_number_unknown_reason]                                   -- 5
 
                         p.pers_forename        AS [first_name],                                     -- 6
                         p.pers_surname         AS [surname],                                        -- 7
