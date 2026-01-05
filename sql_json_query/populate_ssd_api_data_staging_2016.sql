@@ -310,7 +310,7 @@ RawPayloads AS (
                             ELSE 'U' 
                         END AS [sex],                                                               -- 10
 
-                        p.pers_ethnicity AS [ethnicity],                                            -- 11
+                        LEFT(NULLIF(LTRIM(RTRIM(p.pers_ethnicity)), ''), 4) AS [ethnicity]          -- 11
 
                         JSON_QUERY(
                             CASE 
@@ -359,7 +359,7 @@ RawPayloads AS (
                     THEN JSON_QUERY((
                             SELECT
                                 JSON_QUERY(sdq.sdq_assessments_json) AS [sdq_assessments],  -- 45, 46
-                                CAST(0 AS bit)                           AS [purge]
+                                CAST(0 AS bit)                       AS [purge]
                             FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
                           ))
                     ELSE NULL
@@ -726,7 +726,7 @@ RawPayloads AS (
             (
                 SELECT
                     CONVERT(varchar(10), csdq.csdq_sdq_completed_date, 23) AS [date],   -- 45
-                    TRY_CONVERT(int, csdq.csdq_sdq_score)                 AS [score]   -- 46
+                    TRY_CONVERT(int, csdq.csdq_sdq_score)                  AS [score]   -- 46
                 FROM ssd_sdq_scores csdq
                 WHERE csdq.csdq_person_id = p.pers_person_id
                   AND csdq.csdq_sdq_score IS NOT NULL
