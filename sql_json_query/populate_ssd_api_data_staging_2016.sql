@@ -292,6 +292,7 @@ RawPayloads AS (
                         ORDER BY li2.link_valid_from_date DESC
                         ) AS [former_unique_pupil_number],                                          -- 4
 
+                        /* SSD data coerce into API JSON spec */
                         LEFT(
                             NULLIF(
                                 CASE
@@ -317,6 +318,7 @@ RawPayloads AS (
                             ELSE 'U' 
                         END AS [sex],                                                               -- 10
 
+                        /* SSD data coerce into API JSON spec */
                         LEFT(NULLIF(LTRIM(RTRIM(p.pers_ethnicity)), ''), 4) AS [ethnicity]          -- 11
 
                         JSON_QUERY(
@@ -403,6 +405,7 @@ RawPayloads AS (
                         CAST(cine.cine_referral_id AS varchar(36)) AS [social_care_episode_id],                             -- 16  [Mandatory]
                         CONVERT(varchar(10), cine.cine_referral_date, 23) AS [referral_date],                               -- 17
                         CASE
+                          /* SSD data coerce into API JSON spec */
                           -- extracted data being coerced until superceded by change in source SSD data field for systemC users
                           WHEN cine.cine_referral_source_code IS NULL THEN NULL
                           WHEN LTRIM(RTRIM(cine.cine_referral_source_code)) LIKE '10%'        THEN '10'
@@ -560,10 +563,13 @@ RawPayloads AS (
                                 CAST(clap.clap_cla_placement_id AS varchar(36)) AS [child_looked_after_placement_id],             -- 37 [Mandatory]
                                 CONVERT(varchar(10), clap.clap_cla_placement_start_date, 23) AS [start_date],                     -- 38
 
+                                /* SSD data coerce into API JSON spec */
                                 -- this data point being coerced until superceded by change in source data field for systemC users
                                 MIN(LEFT(NULLIF(LTRIM(RTRIM(clae.clae_cla_episode_start_reason)), ''), 1)) AS [start_reason]      -- 39 
                                 
                                 clap.clap_cla_placement_postcode AS [postcode],                                                   -- 40
+                                
+                                /* SSD data coerce into API JSON spec */
                                 LEFT(NULLIF(LTRIM(RTRIM(clap.clap_cla_placement_type)), ''), 2) AS [placement_type],              -- 41
 
                                 CONVERT(
@@ -577,6 +583,7 @@ RawPayloads AS (
                                     23
                                 ) AS [end_date],                                                                                  -- 42
 
+                                /* SSD data coerce into API JSON spec */
                                 MIN(          -- different approach needed here as needed raw data part has varied length
                                   NULLIF(     -- this process to be superceded by replacement source field for systemC users
                                     REPLACE(
@@ -596,7 +603,7 @@ RawPayloads AS (
                             JOIN ssd_cla_placement clap
                             ON clap.clap_cla_id = clae.clae_cla_id
                             WHERE clae.clae_referral_id = cine.cine_referral_id
-                            -- AND clap.clap_cla_placement_type <> 'T0'    -- IF not reporting some (e.g. TEMP) placements
+                            -- AND clap.clap_cla_placement_type <> 'T0'    -- IF LA not reporting some (e.g. TEMP) placements
                             AND clap.clap_cla_placement_start_date <= @ea_cohort_window_end
                             AND (
                                     clap.clap_cla_placement_end_date IS NULL
@@ -670,8 +677,8 @@ RawPayloads AS (
                         */
                         JSON_QUERY((
                             SELECT
-                                -- CAST(pr.prof_staff_id AS varchar(12)) AS [worker_id],                                    -- 53 IF workerID contains only ID's
-                                CAST(pr.prof_social_worker_registration_no AS varchar(12)) AS [worker_id],                  -- 53 IF workerID is username use SWE REG instead
+                                -- CAST(pr.prof_staff_id AS varchar(12)) AS [worker_id],                                    -- 53 IF LA workerID contains only ID's
+                                CAST(pr.prof_social_worker_registration_no AS varchar(12)) AS [worker_id],                  -- 53 IF LA workerID is username use SWE REG instead
                                 CONVERT(varchar(10), i.invo_involvement_start_date, 23) AS [start_date],                    -- 54
                                 CONVERT(varchar(10), i.invo_involvement_end_date, 23) AS [end_date]                         -- 55
                             FROM ssd_involvements i
