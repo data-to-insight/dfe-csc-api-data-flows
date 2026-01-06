@@ -305,7 +305,7 @@ RawPayloads AS (
                                 ''
                             ),
                             4
-                        ) AS [unique_pupil_number_unknown_reason]                                   -- 5
+                        ) AS [unique_pupil_number_unknown_reason],                                  -- 5
 
                         p.pers_forename        AS [first_name],                                     -- 6
                         p.pers_surname         AS [surname],                                        -- 7
@@ -403,14 +403,14 @@ RawPayloads AS (
                         CAST(cine.cine_referral_id AS varchar(36)) AS [social_care_episode_id],                             -- 16  [Mandatory]
                         CONVERT(varchar(10), cine.cine_referral_date, 23) AS [referral_date],                               -- 17
                         CASE
-                          -- this data point being coerced until superceded by change in source data field for systemC users
+                          -- extracted data being coerced until superceded by change in source SSD data field for systemC users
                           WHEN cine.cine_referral_source_code IS NULL THEN NULL
                           WHEN LTRIM(RTRIM(cine.cine_referral_source_code)) LIKE '10%'        THEN '10'
                           WHEN LTRIM(RTRIM(cine.cine_referral_source_code)) LIKE '[1-3][A-F]%' THEN LEFT(LTRIM(RTRIM(cine.cine_referral_source_code)), 2)
                           WHEN LTRIM(RTRIM(cine.cine_referral_source_code)) LIKE '5[A-D]%'     THEN LEFT(LTRIM(RTRIM(cine.cine_referral_source_code)), 2)
                           WHEN LTRIM(RTRIM(cine.cine_referral_source_code)) LIKE '[46789]%'    THEN LEFT(LTRIM(RTRIM(cine.cine_referral_source_code)), 1)
                           ELSE NULL
-                        END AS [referral_source]                                               -- 18    
+                        END AS [referral_source],                                                                           -- 18    
 
                         CONVERT(varchar(10), cine.cine_close_date, 23) AS [closure_date],                                   -- 19
                         cine.cine_close_reason AS [closure_reason],                                                         -- 20
@@ -564,7 +564,7 @@ RawPayloads AS (
                                 MIN(LEFT(NULLIF(LTRIM(RTRIM(clae.clae_cla_episode_start_reason)), ''), 1)) AS [start_reason]      -- 39 
                                 
                                 clap.clap_cla_placement_postcode AS [postcode],                                                   -- 40
-                                clap.clap_cla_placement_type AS [placement_type],                                                 -- 41
+                                LEFT(NULLIF(LTRIM(RTRIM(clap.clap_cla_placement_type)), ''), 2) AS [placement_type],              -- 41
 
                                 CONVERT(
                                     varchar(10),
