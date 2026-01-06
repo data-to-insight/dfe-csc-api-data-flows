@@ -28,7 +28,7 @@ can be appended into the main SSD and run as one - insert locations within the S
 
 
 
-DECLARE @VERSION nvarchar(32) = N'0.2.9';
+DECLARE @VERSION nvarchar(32) = N'0.3.0';
 RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 
 
@@ -319,12 +319,13 @@ RawPayloads AS (
                         END AS [sex],                                                               -- 10
 
                         /* SSD data coerce into API JSON spec */
-                        LEFT(NULLIF(LTRIM(RTRIM(p.pers_ethnicity)), ''), 4) AS [ethnicity]          -- 11
+                        LEFT(NULLIF(LTRIM(RTRIM(p.pers_ethnicity)), ''), 4) AS [ethnicity],         -- 11
 
                         JSON_QUERY(
                             CASE 
                                 WHEN disab.disabilities IS NOT NULL 
                                     THEN disab.disabilities 
+                                -- force ["NONE"] when outer apply returns NULL|no disabilities
                                 ELSE '["NONE"]'
                             END
                         ) AS [disabilities],                                                        -- 12
@@ -565,7 +566,7 @@ RawPayloads AS (
 
                                 /* SSD data coerce into API JSON spec */
                                 -- this data point being coerced until superceded by change in source data field for systemC users
-                                MIN(LEFT(NULLIF(LTRIM(RTRIM(clae.clae_cla_episode_start_reason)), ''), 1)) AS [start_reason]      -- 39 
+                                MIN(LEFT(NULLIF(LTRIM(RTRIM(clae.clae_cla_episode_start_reason)), ''), 1)) AS [start_reason],     -- 39 
                                 
                                 clap.clap_cla_placement_postcode AS [postcode],                                                   -- 40
                                 
@@ -708,30 +709,35 @@ RawPayloads AS (
     JOIN EligibleBySpec elig ON elig.pers_person_id = p.pers_person_id -- either unborn, or 26th bday falls on or after @ea_cohort_window_start (deceased not filtered)
     JOIN SpecInclusion  si   ON si.person_id        = p.pers_person_id -- appearing in ActiveReferral, WaitingAssessment, CIN plan, CP plan, LAC, Care leavers 16 to 25, Disabled
 
-    /* Disabilities array */
+    /* Disabilities array, return NULL when no codes */
     OUTER APPLY (
-        SELECT JSON_QUERY(
-            N'[' +
-            ISNULL(
-                STUFF((
-                    SELECT N',' + QUOTENAME(u.code, '"')
-                    FROM (
-                        SELECT TOP (12) code
-                        FROM (
-                            SELECT DISTINCT
-                                UPPER(LTRIM(RTRIM(d2.disa_disability_code))) AS code
-                            FROM ssd_disability AS d2
-                            WHERE d2.disa_person_id = p.pers_person_id
-                              AND d2.disa_disability_code IS NOT NULL
-                              AND LTRIM(RTRIM(d2.disa_disability_code)) <> ''
-                        ) d
-                        ORDER BY code
-                    ) u
-                    FOR XML PATH(''), TYPE
-                ).value('.', 'nvarchar(max)'), 1, 1, N''),
-                N''
-            ) + N']'
-        ) AS disabilities
+        SELECT
+          CASE
+            WHEN EXISTS (
+              SELECT 1
+              FROM ssd_disability d0
+              WHERE d0.disa_person_id = p.pers_person_id
+                AND NULLIF(LTRIM(RTRIM(d0.disa_disability_code)), '') IS NOT NULL
+            )
+            THEN JSON_QUERY(
+              N'[' +
+              STUFF((
+                  SELECT N',' + QUOTENAME(u.code, '"')
+                  FROM (
+                      SELECT TOP (12)
+                          UPPER(LTRIM(RTRIM(d2.disa_disability_code))) AS code
+                      FROM ssd_disability d2
+                      WHERE d2.disa_person_id = p.pers_person_id
+                        AND NULLIF(LTRIM(RTRIM(d2.disa_disability_code)), '') IS NOT NULL
+                      GROUP BY UPPER(LTRIM(RTRIM(d2.disa_disability_code)))
+                      ORDER BY UPPER(LTRIM(RTRIM(d2.disa_disability_code)))
+                  ) u
+                  FOR XML PATH(''), TYPE
+              ).value('.', 'nvarchar(max)'), 1, 1, N'')
+              + N']'
+            )
+            ELSE NULL
+          END AS disabilities
     ) AS disab
 
     /* SDQ prebuild, reuse once, and flag presence */
