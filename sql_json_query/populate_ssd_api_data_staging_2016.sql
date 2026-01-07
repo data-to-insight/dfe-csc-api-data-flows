@@ -713,7 +713,7 @@ RawPayloads AS (
     JOIN EligibleBySpec elig ON elig.pers_person_id = p.pers_person_id -- either unborn, or 26th bday falls on or after @ea_cohort_window_start (deceased not filtered)
     JOIN SpecInclusion  si   ON si.person_id        = p.pers_person_id -- appearing in ActiveReferral, WaitingAssessment, CIN plan, CP plan, LAC, Care leavers 16 to 25, Disabled
 
-    /* Disabilities array, return NULL when no codes */
+    /* Disabilities array, return NULL when no codes, truncate codes to 4 chars max */
     OUTER APPLY (
         SELECT
           CASE
@@ -729,12 +729,12 @@ RawPayloads AS (
                   SELECT N',' + QUOTENAME(u.code, '"')
                   FROM (
                       SELECT TOP (12)
-                          UPPER(LTRIM(RTRIM(d2.disa_disability_code))) AS code
+                          LEFT(UPPER(LTRIM(RTRIM(d2.disa_disability_code))), 4) AS code
                       FROM ssd_disability d2
                       WHERE d2.disa_person_id = p.pers_person_id
                         AND NULLIF(LTRIM(RTRIM(d2.disa_disability_code)), '') IS NOT NULL
-                      GROUP BY UPPER(LTRIM(RTRIM(d2.disa_disability_code)))
-                      ORDER BY UPPER(LTRIM(RTRIM(d2.disa_disability_code)))
+                      GROUP BY LEFT(UPPER(LTRIM(RTRIM(d2.disa_disability_code))), 4)
+                      ORDER BY LEFT(UPPER(LTRIM(RTRIM(d2.disa_disability_code))), 4)
                   ) u
                   FOR XML PATH(''), TYPE
               ).value('.', 'nvarchar(max)'), 1, 1, N'')
@@ -743,6 +743,7 @@ RawPayloads AS (
             ELSE NULL
           END AS disabilities
     ) AS disab
+
 
     /* SDQ prebuild, reuse once, and flag presence */
     OUTER APPLY (
