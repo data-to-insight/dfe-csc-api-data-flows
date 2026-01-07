@@ -318,7 +318,7 @@ RawPayloads AS (
                             ELSE 'U' 
                         END AS [sex],                                                               -- 10
 
-                        /* SSD data coerce into API JSON spec */
+                        /* SSD data coerce into API JSON spec (Note: Max 12 codes in array! */
                         LEFT(NULLIF(LTRIM(RTRIM(p.pers_ethnicity)), ''), 4) AS [ethnicity],         -- 11
 
                         JSON_QUERY(
@@ -417,7 +417,8 @@ RawPayloads AS (
                         END AS [referral_source],                                                                           -- 18    
 
                         CONVERT(varchar(10), cine.cine_close_date, 23) AS [closure_date],                                   -- 19
-                        cine.cine_close_reason AS [closure_reason],                                                         -- 20
+
+                        LEFT(NULLIF(LTRIM(RTRIM(cine.cine_close_reason)), ''), 3) AS [closure_reason]                       -- 20 
 
                         CASE
                             WHEN TRY_CONVERT(bit, cine.cine_referral_nfa) IS NOT NULL
@@ -441,7 +442,9 @@ RawPayloads AS (
                                 CAST(ca.cina_assessment_id AS varchar(36)) AS [child_and_family_assessment_id],             -- 22 [Mandatory]
                                 CONVERT(varchar(10), ca.cina_assessment_start_date, 23) AS [start_date],                    -- 23
                                 CONVERT(varchar(10), ca.cina_assessment_auth_date, 23)  AS [authorisation_date],            -- 24
+
                                 JSON_QUERY(CASE
+                                    -- Note: Max num of assessment factors defined in spec but not restricted here
                                     WHEN af.cinf_assessment_factors_json IS NULL
                                          OR af.cinf_assessment_factors_json = ''
                                         THEN '[]'
@@ -599,6 +602,7 @@ RawPayloads AS (
                                 ) AS [end_reason],                                                                                -- 43
 
                                 clap.clap_cla_placement_change_reason AS [change_reason],                                         -- 44
+                                
                                 CAST(0 AS bit) AS [purge]
                             FROM ssd_cla_episodes clae
                             JOIN ssd_cla_placement clap
