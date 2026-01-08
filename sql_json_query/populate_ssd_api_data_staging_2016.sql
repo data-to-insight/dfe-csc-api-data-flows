@@ -664,8 +664,8 @@ RawPayloads AS (
                         JSON_QUERY((
                             SELECT TOP 1
                                 CONVERT(varchar(10), clea.clea_care_leaver_latest_contact, 23) AS [contact_date],          -- 50
-                                clea.clea_care_leaver_activity AS [activity],                                              -- 51
-                                clea.clea_care_leaver_accommodation AS [accommodation],                                    -- 52
+                                LEFT(NULLIF(LTRIM(RTRIM(clea.clea_care_leaver_activity)), ''), 2) AS [activity],           -- 51
+                                LEFT(NULLIF(LTRIM(RTRIM(clea.clea_care_leaver_accommodation)), ''), 1) AS [accommodation], -- 52
                                 CAST(0 AS bit) AS [purge]
                               FROM ssd_care_leavers clea
                              WHERE clea.clea_person_id = p.pers_person_id
