@@ -418,7 +418,7 @@ RawPayloads AS (
 
                         CONVERT(varchar(10), cine.cine_close_date, 23) AS [closure_date],                                   -- 19
 
-                        LEFT(NULLIF(LTRIM(RTRIM(cine.cine_close_reason)), ''), 3) AS [closure_reason]                       -- 20 
+                        LEFT(NULLIF(LTRIM(RTRIM(cine.cine_close_reason)), ''), 3) AS [closure_reason],                      -- 20 
 
                         CASE
                             WHEN TRY_CONVERT(bit, cine.cine_referral_nfa) IS NOT NULL
