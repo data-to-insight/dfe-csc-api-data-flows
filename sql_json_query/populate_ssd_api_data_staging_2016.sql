@@ -72,6 +72,7 @@ BEGIN
 END
 
 
+
 /* === EA Spec window (dynamic: 24 months back --> FY start on 1 April) ===  */
 DECLARE @run_date      date = CONVERT(date, GETDATE());
 DECLARE @months_back   int  = 24;
@@ -801,7 +802,8 @@ OUTER APPLY (
     ORDER BY s.id DESC
 ) AS prev
 
--- /* Uncomment to force hard-filter against LA known Stat-Returns cohort table*/
+-- /* Uncomment to force hard-filter against LA known Stat-Returns cohort table
+-- We anticipate/recommend that all LA's do this initially to enable internal cohort auditing for records */
 -- INNER JOIN
 --     [dbo].[StoredStatReturnsCohortIdTable] STATfilter -- FAILSAFE STAT RETURN COHORT
 --     ON STATfilter.[person_id] = h.person_id
@@ -835,40 +837,31 @@ WHERE prev.current_hash IS NULL             -- first time we've seen this person
 -- To be depreciated/removed at any point by the LA; we'd expect this to be after 
 -- the toggle to LIVE sends are initiated to DfE LIVE Pre-Production(PP) and Production(P) endpoints. 
 -- Author: D2I
+-- Pre_Requisite: Requires the ssd_api_data_staging table to already exist
 -- =============================================================================
 
-
--- IF OBJECT_ID('ssd_api_data_staging_anon', 'U') IS NOT NULL DROP TABLE ssd_api_data_staging_anon;
-IF OBJECT_ID(N'ssd_api_data_staging_anon', N'U') IS NULL
+-- create a duplicate copy of the staging table structure for anonymised records/data testing
+IF OBJECT_ID('ssd_api_data_staging_anon', 'U') IS NULL
 BEGIN
-    CREATE TABLE ssd_api_data_staging_anon (
-        id INT IDENTITY(1,1) PRIMARY KEY,           
-        person_id NVARCHAR(48) NULL,                        -- link value (_person_id)
-        previous_json_payload NVARCHAR(MAX) NULL,           -- historic last copy of last payload sent
-        json_payload NVARCHAR(MAX) NOT NULL,                -- current awaiting payload
-        partial_json_payload NVARCHAR(MAX) NULL,            -- current awaiting partial payload
-        current_hash BINARY(32) NULL,                       -- current hash of JSON payload
-        previous_hash BINARY(32) NULL,                      -- previous hash of JSON payload
-        submission_status NVARCHAR(50) DEFAULT 'Pending',   -- Status: Pending, Sent, Error
-        submission_timestamp DATETIME DEFAULT GETDATE(),    -- data submitted timestamp
-        api_response NVARCHAR(MAX) NULL,                    -- API response or error
-        row_state NVARCHAR(10) DEFAULT 'New',               -- record state : New, Updated, Deleted, Unchanged
-        last_updated DATETIME DEFAULT GETDATE()             -- timestamp data update/insertion
-    );
+    SELECT TOP (0) *
+    INTO ssd_api_data_staging_anon
+    FROM ssd_api_data_staging;
+END
+ELSE
+BEGIN
+    -- Wipe any existing rows, identity col reset to 0 so next insert is 1
+    TRUNCATE TABLE ssd_api_data_staging_anon;
 
+    -- or
+    -- DBCC CHECKIDENT ('ssd_api_data_staging_anon', RESEED, 0);
 END
 
-
 GO
--- Wipe existing rows
-DELETE FROM ssd_api_data_staging_anon;
--- reset identity to 0 so next insert is 1
--- DBCC CHECKIDENT ('ssd_api_data_staging_anon', RESEED, 0);
-GO
-
 
 SET NOCOUNT ON;
 
+
+-- Fake example data incoming
 
 --------------------------------------------------------------------------------
 -- Record 1: Pending
