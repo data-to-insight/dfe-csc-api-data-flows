@@ -378,18 +378,18 @@ RawPayloads AS (
 
                 -- /* [REVIEW] - depreciated */
                 -- JSON_QUERY((
-                --     SELECT
-                --         (
-                --             SELECT
-                --                 CONVERT(varchar(10), csdq.csdq_sdq_completed_date, 23) AS [date],   -- 45
-                --                 TRY_CONVERT(int, csdq.csdq_sdq_score)                 AS [score]    -- 46
-                --             FROM ssd_sdq_scores csdq
-                --             WHERE csdq.csdq_person_id = p.pers_person_id
-                --               AND csdq.csdq_sdq_score IS NOT NULL
-                --               AND csdq.csdq_sdq_completed_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
-                --             ORDER BY csdq.csdq_sdq_completed_date DESC
-                --             FOR JSON PATH
-                --         ) AS [sdq_assessments],
+                    -- SELECT
+                    --     (
+                    --         SELECT
+                    --             CONVERT(varchar(10), csdq.csdq_sdq_completed_date, 23) AS [date],   -- 45
+                    --             TRY_CONVERT(int, csdq.csdq_sdq_score)                 AS [score]    -- 46
+                    --         FROM ssd_sdq_scores csdq
+                    --         WHERE csdq.csdq_person_id = p.pers_person_id
+                    --           AND csdq.csdq_sdq_score IS NOT NULL
+                    --           AND csdq.csdq_sdq_completed_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+                    --         ORDER BY csdq.csdq_sdq_completed_date DESC
+                    --         FOR JSON PATH
+                    --     ) AS [sdq_assessments],
                 --         CAST(0 AS bit) AS [purge]
                 --     FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
                 -- )) AS [health_and_wellbeing],
@@ -443,23 +443,24 @@ RawPayloads AS (
                                 CAST(ca.cina_assessment_id AS varchar(36)) AS [child_and_family_assessment_id],             -- 22 [Mandatory]
                                 CONVERT(varchar(10), ca.cina_assessment_start_date, 23) AS [start_date],                    -- 23
                                 CONVERT(varchar(10), ca.cina_assessment_auth_date, 23)  AS [authorisation_date],            -- 24
-
-                                JSON_QUERY(CASE
+                                JSON_QUERY(
+                                    CASE
                                     -- Note: Max num of assessment factors defined in spec but not restricted here
-                                    WHEN af.cinf_assessment_factors_json IS NULL
-                                         OR af.cinf_assessment_factors_json = ''
-                                        THEN '[]'
-                                    ELSE af.cinf_assessment_factors_json
-                                END) AS [factors],                                                                          -- 25
+                                        WHEN af.cinf_assessment_factors_json IS NULL
+                                          OR af.cinf_assessment_factors_json = ''
+                                            THEN '[]'
+                                        ELSE af.cinf_assessment_factors_json
+                                    END
+                                ) AS [factors],                                                                             -- 25
                                 CAST(0 AS bit) AS [purge]
                             FROM ssd_cin_assessments ca
                             LEFT JOIN ssd_assessment_factors af
-                                   ON af.cinf_assessment_id = ca.cina_assessment_id
+                                ON af.cinf_assessment_id = ca.cina_assessment_id
                             WHERE ca.cina_referral_id = cine.cine_referral_id
                               AND (
                                     ca.cina_assessment_start_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
-                                 OR ca.cina_assessment_auth_date  BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
-                                  )
+                                OR ca.cina_assessment_auth_date  BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+                              )
                             FOR JSON PATH
                         )) AS [child_and_family_assessments],
 
