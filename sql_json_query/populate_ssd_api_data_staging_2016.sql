@@ -434,7 +434,8 @@ RawPayloads AS (
                         END AS [referral_no_further_action_flag],                                                           -- 21
 
 
-                        -- [REVIEW] Possible case for inner join, so no assessments without factors, rather than existing CASE? 
+                        -- [REVIEW] Possible case for inner join, so no assessments without factors, rather than existing CASE?
+                        -- [REVIEW] LA confirmation requ regarding cinf_assessment_factors_json structure (field naming is existing D2I ticket)
                         /* ================= child_and_family_assessments (22..25), array (or []) per episode =================
                           - include assessment if start or authorisation date in cohort window
                           - factors passed as JSON array, [] when none
@@ -451,9 +452,7 @@ RawPayloads AS (
                                         WHEN af.cinf_assessment_factors_json IS NULL
                                           OR LTRIM(RTRIM(af.cinf_assessment_factors_json)) IN ('', 'null')
                                         THEN '[]'
-
-
-                                        ELSE af.cinf_assessment_factors_json
+                                        ELSE af.cinf_assessment_factors_json -- assumes source data is already as ["val1", "val2",.. ]
                                     END
                                 ) AS [factors],                                                                             -- 25
                                 CAST(0 AS bit) AS [purge]
