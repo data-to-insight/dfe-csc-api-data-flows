@@ -435,7 +435,7 @@ RawPayloads AS (
 
 
                         -- [REVIEW] Possible case for inner join, so no assessments without factors, rather than existing CASE?
-                        -- [REVIEW] LA confirmation requ regarding cinf_assessment_factors_json structure (field naming is existing D2I ticket)
+                        -- [REVIEW] Known issue https://github.com/data-to-insight/dfe-csc-api-data-flows/issues/73
                         /* ================= child_and_family_assessments (22..25), array (or []) per episode =================
                           - include assessment if start or authorisation date in cohort window
                           - factors passed as JSON array, [] when none
