@@ -434,6 +434,7 @@ RawPayloads AS (
                         END AS [referral_no_further_action_flag],                                                           -- 21
 
 
+                        -- [REVIEW] Possible case for inner join, so no assessments without factors, rather than existing CASE? 
                         /* ================= child_and_family_assessments (22..25), array (or []) per episode =================
                           - include assessment if start or authorisation date in cohort window
                           - factors passed as JSON array, [] when none
@@ -446,9 +447,12 @@ RawPayloads AS (
                                 JSON_QUERY(
                                     CASE
                                     -- Note: Max num of assessment factors defined in spec but not restricted here
+                                    -- null handling as failsafe
                                         WHEN af.cinf_assessment_factors_json IS NULL
-                                          OR af.cinf_assessment_factors_json = ''
-                                            THEN '[]'
+                                          OR LTRIM(RTRIM(af.cinf_assessment_factors_json)) IN ('', 'null')
+                                        THEN '[]'
+
+
                                         ELSE af.cinf_assessment_factors_json
                                     END
                                 ) AS [factors],                                                                             -- 25
