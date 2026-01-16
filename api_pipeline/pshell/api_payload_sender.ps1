@@ -115,31 +115,37 @@ Write-Host ("CSC API staging build: v{0}" -f $VERSION)
 
 # ----------- LA DfE Config START -----------
 
-# LA's to replace details in quotes below with your LA's credentials as supplied by DfE API portal
-# from https://pp-find-and-use-an-api.education.gov.uk/ (once logged in), transfer the following details into the quotes:
+# LA's to replace the following details(in quotes) with your LA's credentials as supplied by DfE API portal
+# from https://pp-find-and-use-an-api.education.gov.uk/ (logged in)
+
+# Base URL TEST
+$api_endpoint = "https://pp-api.education.gov.uk/children-in-social-care-data-receiver-test/1" 
+
+# Base URL PP/Live (switch over only when sending live records)
+# $api_endpoint = "https://pp-api.education.gov.uk/children-in-social-care-data-receiver/1"
 
 
-$api_endpoint = "https://pp-api.education.gov.uk/children-in-social-care-data-receiver-test/1" # 'Base URL' -test set as default, change when moving to PP/Production
+# 'Subscription key' block
+$supplier_key    = "SUBSCRIPTION_PRIMARY_KEY_CODE"       # 'Primary key' or 'Secondary key'
 
-# From the 'Native OAuth Application-flow' block
+# 'Native OAuth Application-flow' block
+$token_endpoint  = "OAUTH_TOKEN_ENDPOINT"                # 'OAuth token endpoint'
+
 $client_id       = "OAUTH_CLIENT_ID_CODE"                # 'OAuth Client ID'
-$client_secret   = "NATIVE_OAUTH_PRIMARY_KEY_CODE"       # 'Native OAuth Application-flow' - 'Primary key' or 'Secondary key'
+$client_secret   = "NATIVE_OAUTH_PRIMARY_KEY_CODE"       # 'Primary key' or 'Secondary key'
 $scope           = "OAUTH_SCOPE_LINK"                    # 'OAuth Scope'
-$token_endpoint  = "OAUTH_TOKEN_ENDPOINT"                # From the 'Native OAuth Application-flow' block - 'OAuth token endpoint'
-
-# From 'subscription key' block
-$supplier_key    = "SUBSCRIPTION_PRIMARY_KEY_CODE"       # From the 'subscription key' block - 'Primary key' or 'Secondary key'
-
 
 # -- DfE Config END --
 
 # LA specifics
 $la_code  = "000"     # Change to your 3 digit LA code(within quotes)
-$la_proxy = $null     # LA default proxy ($null or '' disables, or http://proxy.myLA.local:8080)
 
 # LA SQL Server target
 $server   = "ESLLREPORTS04V" # example
 $database = "HDM_Local" # SystemC default
+
+# Only some LAs will need to set this
+$la_proxy = $null     # LA default proxy ($null or '' disables, or use such as "http://proxy.myLA.local:8080")
 
 # payload table (_anon is non-live default)
 $api_data_staging_table = "ssd_api_data_staging_anon"  # live: ssd_api_data_staging | test: _anon
