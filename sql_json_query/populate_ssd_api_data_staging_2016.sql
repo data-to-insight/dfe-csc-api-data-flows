@@ -913,7 +913,7 @@ DECLARE @p1 NVARCHAR(MAX) = N'{
           "end_reason": "E17",
           "placement_type": "U4",
           "postcode": "BN14 7ES",
-          "change_reason": "SSD_PH",
+          "change_reason": "",
           "purge": false
         }
       ],
