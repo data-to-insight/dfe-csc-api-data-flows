@@ -438,7 +438,7 @@ RawPayloads AS (
                         -- [REVIEW] Known issue https://github.com/data-to-insight/dfe-csc-api-data-flows/issues/73
                         /* ================= child_and_family_assessments (22..25), array (or []) per episode =================
                           - include assessment if start or authorisation date in cohort window
-                          - factors passed as JSON array, [] when none
+                          - factors passed as JSON array, payload returns [] when none
                         */
                         JSON_QUERY((
                             SELECT
