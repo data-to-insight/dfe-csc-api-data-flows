@@ -1,6 +1,6 @@
 # CSC API Sender Script - User Guide
 
-_script : phase_1_api_payload.ps1 (v0.4.2)_
+_script : api_payload_sender.ps1 (v0.4.2)_
 
 This guide attempts to explain what the script does, how to run it safely, and how to choose options for test and live-like runs. Written for colleagues|pilot teams.
 ---
@@ -109,12 +109,12 @@ Skips all outbound web calls. Useful to check database reads and batching logic
 ### 1) Default run with Windows auth to SQL and no proxy
 Reads from `ssd_api_data_staging_anon`, sends full(non-delta) payloads, batch size 100
 ```powershell
-.\phase_1_api_payload.ps1
+.\api_payload_sender.ps1
 ```
 
 ### 2) Explicit Windows auth to SQL and full mode
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\phase_1_api_payload.ps1 `
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 `
   -Phase full `
   -BatchSize 100 `
   -ApiTimeout 30 `
@@ -124,42 +124,42 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\phase_1_api_payload.ps
 
 ### 3) Deltas mode from _anon table
 ```powershell
-.\phase_1_api_payload.ps1 -Phase deltas
+.\api_payload_sender.ps1 -Phase deltas
 ```
 
 ### 4) Hard-coded fake test record sent to API
 No database read(s). Useful for connectivity checks
 ```powershell
-.\phase_1_api_payload.ps1 -UseTestRecord
+.\api_payload_sender.ps1 -UseTestRecord
 ```
 
 ### 5) Dry run with real DB records
 No API calls made
 ```powershell
-.\phase_1_api_payload.ps1 -InternalTest
+.\api_payload_sender.ps1 -InternalTest
 ```
 
 ### 6) SQL authentication to DB
 Provide credentials or rely on environment variables
 ```powershell
 # using explicit parameters
-.\phase_1_api_payload.ps1 -UseIntegratedSecurityDbConnection:$false -DbUser my_user -DbPassword 'P@ssw0rd!'
+.\api_payload_sender.ps1 -UseIntegratedSecurityDbConnection:$false -DbUser my_user -DbPassword 'P@ssw0rd!'
 
 # or using environment variables set beforehand
 $env:DB_USER = 'my_user'
 $env:DB_PASSWORD = 'P@ssw0rd!'
-.\phase_1_api_payload.ps1 -UseIntegratedSecurityDbConnection:$false
+.\api_payload_sender.ps1 -UseIntegratedSecurityDbConnection:$false
 ```
 
 ### 7) Proxy with default user credentials
 ```powershell
-.\phase_1_api_payload.ps1 -Proxy 'http://proxy.example.local:8080' -ProxyUseDefaultCredentials
+.\api_payload_sender.ps1 -Proxy 'http://proxy.example.local:8080' -ProxyUseDefaultCredentials
 ```
 
 ### 8) Proxy with explicit credentials
 ```powershell
 $cred = Get-Credential   # supply proxy user and password
-.\phase_1_api_payload.ps1 -Proxy 'http://proxy.example.local:8080' -ProxyCredential $cred
+.\api_payload_sender.ps1 -Proxy 'http://proxy.example.local:8080' -ProxyCredential $cred
 ```
 
 ---

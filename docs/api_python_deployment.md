@@ -9,6 +9,8 @@ It also describes a **two‑stage rollout**: Analyst local tests → Server/over
 
 > If you do not want to install Python on servers, you can use the packaged **Windows `.exe`** (see *API Download* and *API PowerShell Deployment* for scheduling patterns).
 
+> Note: As the project remains in pilot/alpha stage(s), there may have been changes in released/current code that differs from or is not reflected in some parts of the documentation detail. Colleague observations and feedback welcomed towards improving this for everyone.
+
 ---
 
 ## Log SSD/API support tickets  

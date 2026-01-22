@@ -8,6 +8,9 @@ _Note: We believe that access to MS Powershell within LA's is more commonplace, 
 
 _The exploratory nature of this pilot, equates to some as-yet-unknowns to both the anticipated tech stack and implementation requirements. D2I have developed towards a Python driven solution that can function across both Phase 1 and Phase 2. Previous development has enabled a Powershell version that we can test with LA's locally whilst the technical questions around deploying Python are reviewed by IT/infrastructure services/compliance_
 
+
+> Note: As the project remains in pilot/alpha stage(s), there may have been changes in released/current code that differs from or is not reflected in some parts of the documentation detail. Colleague observations and feedback welcomed towards improving this for everyone.  
+
 ---
 
 ## Log SSD/API support tickets  
@@ -25,8 +28,8 @@ _The exploratory nature of this pilot, equates to some as-yet-unknowns to both t
   ```powershell
   Install-Module -Name SqlServer -AllowClobber -Scope CurrentUser
   ```
-- Network access to reporting DB and outbound to DfE token/API endpoints.
-- DfE credentials (see **API Configuration**).
+- Network access to reporting DB and outbound to DfE token/API endpoints
+- DfE credentials see [API Configuration](https://data-to-insight.github.io/dfe-csc-api-data-flows/api_config/)
 
 ---
 
@@ -34,7 +37,7 @@ _The exploratory nature of this pilot, equates to some as-yet-unknowns to both t
 
 From the project release bundle (`release.zip`) or repo `scripts/` (if provided). Example filenames:
 
-- `phase_1_api_payload.ps1` *(testing-mode friendly)*
+- `api_payload_sender.ps1` *(testing-mode friendly)*
 - `ssd_json_payload-sql-server-agent_vX.Y.Z.ps1` *(production‑leaning)*
 
 > Filenames may vary slightly during the pilot – follow the same variable names and flags described below.
@@ -48,17 +51,9 @@ Open the script and set variables (or pass as parameters):
 ```powershell
 $testingMode   = $true        # true = simulate/no external send
 $server        = "ESLLREPORTS00X"
-$database      = "HDM_Local"
-
-$tokenEndpoint = "..."        # from DfE
-$apiEndpoint   = "..."
-$clientId      = "..."
-$clientSecret  = "..."
-$scope         = "..."
-$supplierKey   = "..."
+# etc...
 ```
-
-For table expectations and flag semantics see **API Configuration**.
+See the remaining needed var config and flag sematics on [API Configuration](https://data-to-insight.github.io/dfe-csc-api-data-flows/api_config/)
 
 ---
 
@@ -67,14 +62,14 @@ For table expectations and flag semantics see **API Configuration**.
 Run from an elevated PowerShell prompt in a working directory with write permissions:
 
 ```powershell
-.\phase_1_api_payload.ps1
+.\api_payload_sender.ps1
 ```
 
 
 Check:
 - console/log output
-- changes to `submission_status` and `row_state` in staging tables
-- when `testingMode = $true`, ensure **no external** submission occurs
+- changes to `submission_status` and `row_state` in staging table
+- when `testingMode = $true`, **no external** submission occurs but table shold still update(for some flags)
 
 ---
 
@@ -84,7 +79,7 @@ Set:
 ```powershell
 $testingMode = $false
 ```
-Re-run the script. Confirm that eligible records are submitted and statuses change to `sent` (on success) or `error` (after retries).
+Re-run the script. Confirm that eligible records are submitted and record level statuses in the staging table change to `sent` (on success) or `error` (after retries). You should also see that both the row_status, submission_status and the reponse field have been updated. 
 
 ---
 
@@ -101,7 +96,7 @@ Fully implemented scheduling will only be in place once the refresh mechanisms a
 ### Option B – Windows Task Scheduler
 
 - **Action:** `powershell.exe`
-- **Arguments:** `-ExecutionPolicy Bypass -File "C:\path\phase_1_api_payload.ps1"`
+- **Arguments:** `-ExecutionPolicy Bypass -File "C:\path\api_payload_sender.ps1"`
 - **Start in:** working folder containing any local config
 - **Triggers:** Overnight window
 - **Run as:** Service account with DB/API access
@@ -122,7 +117,7 @@ Stop-Transcript
 
 Or use:
 ```powershell
-.\phase_1_api_payload.ps1 *>> "C:\logs\csc_api_pipeline\$(Get-Date -Format yyyy-MM-dd).log"
+.\api_payload_sender.ps1 *>> "C:\logs\csc_api_pipeline\$(Get-Date -Format yyyy-MM-dd).log"
 ```
 
 ---
