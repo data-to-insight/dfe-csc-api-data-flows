@@ -31,11 +31,11 @@ prune api_pipeline/scripts
 
 # Package data to ship inside wheel and sdist
 graft api_pipeline/notebooks
-graft api_pipeline/pshell
+graft api_pipeline/pshell_api_sender
 
 # SQL helpers at repo root, include .sql, drop dev bucket
-recursive-include sql_json_query *.sql
-prune sql_json_query/dev
+recursive-include build_dfe_payload_staging *.sql
+prune build_dfe_payload_staging/dev
 
 # Root level dev files not needed in sdist
 exclude mkdocs.yml
