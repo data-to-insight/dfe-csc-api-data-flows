@@ -29,10 +29,10 @@ sccm_graph_static.svg                export-ignore
 
 # -------- Keep only *current* SQL helper  ------------------
 # Exclude dev-only SQL
-sql_json_query/dev/  export-ignore
+build_dfe_payload_staging/dev/  export-ignore
 
 # NOTE: do NOT mark these paths with export-ignore:
 #   api_pipeline/**                               - keep package source
 #   api_pipeline_pshell/api_payload_sender.ps1   - keep helper
-#   sql_json_query/populate_ssd_api_data_staging_*.sql  - keep helper
+#   build_dfe_payload_staging/populate_ssd_api_data_staging_*.sql  - keep helper
 #   LICENSE, README.md, pyproject.toml, MANIFEST.in          - keep root essentials

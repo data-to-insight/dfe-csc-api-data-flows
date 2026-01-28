@@ -100,12 +100,15 @@ jobs:
             "dist\csc_api_pipeline.exe",
             "README.md",
             "api_pipeline\.env.example",
-            "api_pipeline\pshell\api_payload_sender.ps1",
+            "api_pipeline\pshell_api_sender\api_payload_sender.ps1",
             "pre_flight_checks\api_credentials_smoke_test.ps1",
-            "sql_json_query\populate_ssd_api_data_staging_2012.sql",
-            "sql_json_query\populate_ssd_api_data_staging_2016.sql",
+            "build_dfe_payload_staging\populate_ssd_api_data_staging_2016.sql",
             "pre_flight_checks\ssd_vw_csc_api_schema_checks.sql"
           )
+          # Also require at least one top-level .py in api_pipeline
+          if (-not (Get-ChildItem -Path "api_pipeline" -Filter *.py -File -ErrorAction SilentlyContinue)) {
+            $required += "api_pipeline\*.py"
+          }
           $missing = @()
           foreach ($p in $required) { if (-not (Test-Path $p)) { $missing += $p } }
           if ($missing.Count -gt 0) {
@@ -120,17 +123,26 @@ jobs:
         run: |
           New-Item -ItemType Directory -Path release_bundle | Out-Null
           New-Item -ItemType Directory -Path release_bundle\notebooks | Out-Null
+          New-Item -ItemType Directory -Path release_bundle\api_pipeline | Out-Null
 
           Copy-Item README.md -Destination release_bundle\
           Copy-Item api_pipeline\.env.example -Destination release_bundle\
+
           # PowerShell scripts 
-          Copy-Item api_pipeline\pshell\api_payload_sender.ps1 -Destination release_bundle\
+          Copy-Item api_pipeline\pshell_api_sender\api_payload_sender.ps1 -Destination release_bundle\
+
           # SQL files, legacy and current 
-          Copy-Item sql_json_query\populate_ssd_api_data_staging_2012.sql -Destination release_bundle\
-          Copy-Item sql_json_query\populate_ssd_api_data_staging_2016.sql -Destination release_bundle\
-          Copy-Item sql_json_query\populate_ssd_api_data_staging_postgres.sql -Destination release_bundle\
+          Copy-Item build_dfe_payload_staging\populate_ssd_api_data_staging_2016.sql -Destination release_bundle\
+          Copy-Item build_dfe_payload_staging\populate_ssd_api_data_staging_postgres.sql -Destination release_bundle\
+
           # Notebooks
           Copy-Item api_pipeline\notebooks\* -Destination release_bundle\notebooks\ -Recurse -Force
+
+          # Python modules, top level only
+          Get-ChildItem -Path api_pipeline -Filter *.py -File | ForEach-Object {
+            Copy-Item $_.FullName -Destination release_bundle\api_pipeline\
+          }
+
           Compress-Archive -Path release_bundle\* -DestinationPath release.zip -Force
 
 
@@ -157,11 +169,11 @@ jobs:
           Get-ChildItem -Path dist -File | Format-Table Length, Name
 
         # # parked from published assets list
-        # api_pipeline/pshell/api_payload_sender.ps1
+        # api_pipeline/pshell_api_sender/api_payload_sender.ps1
         # pre_flight_checks/api_credentials_smoke_test.ps1
-        # sql_json_query/populate_ssd_api_data_staging_2012.sql
-        # sql_json_query/populate_ssd_api_data_staging_2016.sql
-        # sql_json_query/populate_ssd_api_data_staging_postgres.sql
+        # build_dfe_payload_staging/populate_ssd_api_data_staging_2012.sql
+        # build_dfe_payload_staging/populate_ssd_api_data_staging_2016.sql
+        # build_dfe_payload_staging/populate_ssd_api_data_staging_postgres.sql
         # pre_flight_checks/ssd_vw_csc_api_schema_checks.sql
         # README.md
         # api_pipeline/.env.example
