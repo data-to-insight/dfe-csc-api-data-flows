@@ -14,7 +14,7 @@ on:
       - 'scripts/**'
       - '.github/workflows/release-and-docs.yml'
       - 'release.sh'
-      - 'sql_json_query/**'
+      - 'build_dfe_payload_staging/**'
 
 concurrency:
   group: package-pr-${{ github.ref }}
