@@ -18,6 +18,18 @@
 set -euo pipefail
 shopt -s nullglob
 
+# --- args
+PREVIEW_ONLY=false
+AUTO_YES=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -n|--preview) PREVIEW_ONLY=true; shift;;
+    -y|--yes)     AUTO_YES=true; shift;;
+    *) echo "Unknown arg: $1"; exit 2;;
+  esac
+done
+
+
 # read pyproject.toml ver
 get_version(){ grep -E '^version\s*=\s*"' pyproject.toml | sed -E 's/.*"([^"]+)".*/\1/'; }
 
@@ -25,12 +37,14 @@ get_version(){ grep -E '^version\s*=\s*"' pyproject.toml | sed -E 's/.*"([^"]+)"
 echo "CSC API Pipeline Release Script"
 echo "----------------------------------"
 
-# --- Safety: ensure on main
+# --- Safety: ensure on main, unless preview build
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-if [[ "$CURRENT_BRANCH" != "main" ]]; then
+if [[ "$CURRENT_BRANCH" != "main" && "$PREVIEW_ONLY" != true ]]; then
   echo "Releases must be made from the 'main' branch (current: $CURRENT_BRANCH)"
+  echo "Tip: run './release.sh --preview' to do a local dry run on this branch"
   exit 1
 fi
+
 
 # --- Determine default next tag
 LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
@@ -125,23 +139,34 @@ if [ -d pre_flight_checks ]; then
   fi
 fi
 
+# require at least one top level .py under api_pipeline
+if ! compgen -G "api_pipeline/*.py" >/dev/null; then
+  missing+=("api_pipeline/*.py")
+fi
+
 # --- Bundle for upload (CI assemble artifacts)
 echo "Creating release zip..."
 mkdir -p release_bundle
 mkdir -p release_bundle/notebooks
+
 cp dist/* release_bundle/ || true
 cp README.md api_pipeline/.env.example release_bundle/ || true
 
+# copy only top level .py in api_pipeline, keep tree clean
+cp api_pipeline/*.py release_bundle/api_pipeline/ || true
+# if you also want the package README alongside, uncomment:
+# cp api_pipeline/README.md release_bundle/ || true
+
 # PShell API - main sender
-cp api_pipeline/pshell/api_payload_sender.ps1 release_bundle/ || true
+cp api_pipeline/pshell_api_sender/api_payload_sender.ps1 release_bundle/ || true
 
 # SQL files - DfE Cohort payload extracts
 # # legacy
-# cp sql_json_query/populate_ssd_api_data_staging_2012.sql release_bundle/ || true
+# cp build_dfe_payload_staging/populate_ssd_api_data_staging_2012.sql release_bundle/ || true
 # current
-cp sql_json_query/populate_ssd_api_data_staging_2016.sql release_bundle/ || true
+cp build_dfe_payload_staging/populate_ssd_api_data_staging_2016.sql release_bundle/ || true
 # postgres
-cp sql_json_query/populate_ssd_api_data_staging_postgres.sql release_bundle/ || true
+cp build_dfe_payload_staging/populate_ssd_api_data_staging_postgres.sql release_bundle/ || true
 
 # bundle notebooks into .zip also
 cp -R api_pipeline/notebooks/* release_bundle/notebooks/ || true
@@ -149,7 +174,15 @@ cp -R api_pipeline/notebooks/* release_bundle/notebooks/ || true
 zip -r release.zip release_bundle/
 
 # --- Tag and push release
-read -p "Push Git tag $VERSION_TAG and trigger release? (y/n): " CONFIRM
+if [[ "${PREVIEW_ONLY:-false}" == true ]]; then
+  echo "Preview mode, skipping tag push."
+  CONFIRM="n"
+elif [[ "${AUTO_YES:-false}" == true ]]; then
+  CONFIRM="y"
+else
+  read -p "Push Git tag $VERSION_TAG and trigger release? (y/n): " CONFIRM
+fi
+
 if [[ $CONFIRM == "y" ]]; then
   # --- After confirm, bump version and rebuild to match the tag
   echo "Updating pyproject.toml version to $VERSION_PEP440..."
@@ -161,23 +194,23 @@ if [[ $CONFIRM == "y" ]]; then
   fi
 
   # --- Update CHANGELOG.md, manual and idempotent
-CHANGELOG="CHANGELOG.md"
-RELEASE_DATE="$(date -u +%Y-%m-%d)"
-VERSION_HEAD="## [$VERSION_PEP440] - $RELEASE_DATE"
+  CHANGELOG="CHANGELOG.md"
+  RELEASE_DATE="$(date -u +%Y-%m-%d)"
+  VERSION_HEAD="## [$VERSION_PEP440] - $RELEASE_DATE"
 
-# bootstrap file if missing
-if [ ! -f "$CHANGELOG" ]; then
+  # bootstrap file if missing
+  if [ ! -f "$CHANGELOG" ]; then
 cat > "$CHANGELOG" <<'EOF'
 # Changelog
 
 ## [Unreleased]
 
 EOF
-fi
+  fi
 
-# only insert if version section not existing
-if ! grep -q "^## \[$VERSION_PEP440\]" "$CHANGELOG"; then
-tmp_chlog="$(mktemp)"
+  # only insert if version section not existing
+  if ! grep -q "^## \[$VERSION_PEP440\]" "$CHANGELOG"; then
+    tmp_chlog="$(mktemp)"
 cat > "$tmp_chlog" <<EOF
 $VERSION_HEAD
 ### Added
@@ -196,15 +229,14 @@ $VERSION_HEAD
 - 
 
 EOF
-# insert new section right after Unreleased header
-awk -v RS="\n\n" -v ORS="\n\n" -v add="$(cat "$tmp_chlog")" '
-  NR==1 { print; print add; next } { print }
-' "$CHANGELOG" > "$CHANGELOG.tmp" && mv "$CHANGELOG.tmp" "$CHANGELOG"
-rm -f "$tmp_chlog"
-else
-  echo "CHANGELOG already contains section for $VERSION_PEP440, leaving as is"
-fi
-
+    # insert new section right after Unreleased header
+    awk -v RS="\n\n" -v ORS="\n\n" -v add="$(cat "$tmp_chlog")" '
+      NR==1 { print; print add; next } { print }
+    ' "$CHANGELOG" > "$CHANGELOG.tmp" && mv "$CHANGELOG.tmp" "$CHANGELOG"
+    rm -f "$tmp_chlog"
+  else
+    echo "CHANGELOG already contains section for $VERSION_PEP440, leaving as is"
+  fi
 
   # --- git-cliff generated changelog, commented until switch-over (tbc)
   # if ! command -v git-cliff >/dev/null 2>&1; then
@@ -218,7 +250,9 @@ fi
 
   # Rebuild pre_flight_checks.zip for release commit
   rm -f pre_flight_checks.zip
-  zip -r pre_flight_checks.zip pre_flight_checks
+  if [ -d pre_flight_checks ] && find pre_flight_checks -maxdepth 1 -type f -print -quit | grep -q .; then
+    zip -r pre_flight_checks.zip pre_flight_checks
+  fi
 
   # rebuild clean artifacts with the bumped version, replace preview bundle
   rm -rf dist release_bundle release.zip
@@ -227,13 +261,18 @@ fi
 
   mkdir -p release_bundle
   mkdir -p release_bundle/notebooks
+
   cp dist/* release_bundle/ || true
   cp README.md api_pipeline/.env.example release_bundle/ || true
-  cp api_pipeline/pshell/api_payload_sender.ps1 release_bundle/ || true
-  # cp sql_json_query/populate_ssd_api_data_staging_2012.sql release_bundle/ || true
-  cp sql_json_query/populate_ssd_api_data_staging_2016.sql release_bundle/ || true
-  cp sql_json_query/populate_ssd_api_data_staging_postgres.sql release_bundle/ || true
+  cp api_pipeline/pshell_api_sender/api_payload_sender.ps1 release_bundle/ || true
+  # cp build_dfe_payload_staging/populate_ssd_api_data_staging_2012.sql release_bundle/ || true
+  cp build_dfe_payload_staging/populate_ssd_api_data_staging_2016.sql release_bundle/ || true
+  cp build_dfe_payload_staging/populate_ssd_api_data_staging_postgres.sql release_bundle/ || true
   cp -R api_pipeline/notebooks/* release_bundle/notebooks/ || true
+  # include api_pipeline Python modules in the bundle
+  mkdir -p release_bundle/api_pipeline
+  cp api_pipeline/*.py release_bundle/api_pipeline/ || true
+
   zip -r release.zip release_bundle/
 
   # Create or update tag to current HEAD
@@ -247,6 +286,7 @@ else
   echo "Preview build complete, no tag created."
   echo "Artifacts were built as v$CURR_VER, planned tag was $VERSION_TAG."
 fi
+
 
 
 # --- Summary
