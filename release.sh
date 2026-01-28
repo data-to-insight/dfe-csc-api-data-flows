@@ -148,6 +148,7 @@ fi
 echo "Creating release zip..."
 mkdir -p release_bundle
 mkdir -p release_bundle/notebooks
+mkdir -p release_bundle/api_pipeline
 
 cp dist/* release_bundle/ || true
 cp README.md api_pipeline/.env.example release_bundle/ || true
@@ -261,6 +262,7 @@ EOF
 
   mkdir -p release_bundle
   mkdir -p release_bundle/notebooks
+  mkdir -p release_bundle/api_pipeline
 
   cp dist/* release_bundle/ || true
   cp README.md api_pipeline/.env.example release_bundle/ || true
@@ -269,8 +271,8 @@ EOF
   cp build_dfe_payload_staging/populate_ssd_api_data_staging_2016.sql release_bundle/ || true
   cp build_dfe_payload_staging/populate_ssd_api_data_staging_postgres.sql release_bundle/ || true
   cp -R api_pipeline/notebooks/* release_bundle/notebooks/ || true
+
   # include api_pipeline Python modules in the bundle
-  mkdir -p release_bundle/api_pipeline
   cp api_pipeline/*.py release_bundle/api_pipeline/ || true
 
   zip -r release.zip release_bundle/
