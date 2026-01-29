@@ -152,11 +152,12 @@ mkdir -p release_bundle/api_pipeline
 
 cp dist/* release_bundle/ || true
 cp README.md api_pipeline/.env.example release_bundle/ || true
+# if package README additionally needed - 
+cp api_pipeline/README-CLI.md release_bundle/ || true # cli/py seperate deployment specific detail
 
 # copy only top level .py in api_pipeline, keep tree clean
 cp api_pipeline/*.py release_bundle/api_pipeline/ || true
-# if you also want the package README alongside, uncomment:
-# cp api_pipeline/README.md release_bundle/ || true
+
 
 # PShell API - main sender
 cp api_pipeline/pshell_api_sender/api_payload_sender.ps1 release_bundle/ || true
@@ -266,6 +267,8 @@ EOF
 
   cp dist/* release_bundle/ || true
   cp README.md api_pipeline/.env.example release_bundle/ || true
+  cp api_pipeline/README-CLI.md release_bundle/ || true # cli/py seperate deployment specific detail
+
   cp api_pipeline/pshell_api_sender/api_payload_sender.ps1 release_bundle/ || true
   # cp build_dfe_payload_staging/populate_ssd_api_data_staging_2012.sql release_bundle/ || true
   cp build_dfe_payload_staging/populate_ssd_api_data_staging_2016.sql release_bundle/ || true

@@ -1,6 +1,7 @@
 # Core metadata and docs for PyPI
 include LICENSE
 include README.md
+include api_pipeline/README-CLI.md
 include pyproject.toml
 include api_pipeline/README.md
 include api_pipeline/.env.example
