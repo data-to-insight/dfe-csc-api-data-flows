@@ -198,8 +198,12 @@ if (-not $UseIntegratedSecurityDbConnection) {
 # ------------------------------------------------------------------------------
 
 
-# ---- TLS for older hosts ----
+# ---- TLS for older hosts - Incl reduce extra HTTP friction on older stacks (PShell 5.1) ----
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+[System.Net.ServicePointManager]::Expect100Continue = $false 
+[System.Net.ServicePointManager]::DefaultConnectionLimit = 10
+
+
 
 # ---- Decide final Proxy first (include $la_proxy fallback) ----
 # If caller did not pass -Proxy, but LA has a default proxy, use it.
@@ -278,8 +282,6 @@ $timeoutSec        = $ApiTimeout
 
 
 
-# ---- TLS for older hosts ----
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 # ---- Proxy auto-defaults + align .NET default proxy ---- 
 # uses # $la_proxy optional set in config above
