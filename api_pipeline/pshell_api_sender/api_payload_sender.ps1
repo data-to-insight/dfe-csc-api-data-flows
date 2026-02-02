@@ -607,10 +607,25 @@ function Send-ApiBatch {
         Handle-BatchFailure -batch $batch -connectionString $connectionString -tableName $tableName -errorMessage $apiMsg -detailedError $detail -statusCode $httpStatus
         break
       } else {
-        # Backoff with random jitter
-        $delay = [Math]::Min(30, ([int]$delay * 2)) + (Get-Random -Minimum 0 -Maximum 3)
-        W-Info ("Retry in {0}s..." -f $delay)
-        Start-Sleep -Seconds $delay
+
+        # use server guidance if available
+        $retryAfterSec = $null
+        try {
+          $ra = $_.Exception.Response.Headers["Retry-After"]
+          if ($ra) { $retryAfterSec = [int]$ra }
+        } catch { }
+
+        if ($retryAfterSec) {
+          W-Info ("Server Retry-After seen, sleeping {0}s..." -f $retryAfterSec)
+          Start-Sleep -Seconds $retryAfterSec
+        } else {
+          # Exponential backoff + jitter, raise cap for 403 - common WAF shaping
+          $cap = if ($httpStatus -eq 403) { 120 } else { 30 }
+          $delay = [Math]::Min($cap, ([int]$delay * 2)) + (Get-Random -Minimum 0 -Maximum 3)
+          W-Info ("Retry in {0}s..." -f $delay)
+          Start-Sleep -Seconds $delay
+        }
+
         $retryCount++
         continue  # next loop attempt
       }
@@ -1060,7 +1075,7 @@ if ($useTestRecord) {
 }
 
 W-Info ("records in API payload: {0}" -f $JsonArray.Count)
-# we don't eed to process anything if there is nothing returned from db
+# No need to process anything if there is nothing returned from db
 
 if (-not $JsonArray -or $JsonArray.Count -eq 0) { W-Ok "no valid records to send. skipping API submission."; $swScript.Stop(); exit 0 }
 
@@ -1069,6 +1084,24 @@ $totalRecords = $JsonArray.Count
 $batchSize = $BatchSize
 $totalBatches = [math]::Ceiling($totalRecords / $batchSize)
 $cumulativeDbWriteTime = 0.0 # reset db write stopwatch
+
+# ---- sender-side pacing (proactive rate limiting) ----
+$minGapMs = 400   # def 400ms. Or LA tune 250..1500 depending on DfE response/fail behaviour
+$script:lastPostAt = [datetime]::MinValue
+
+function Wait-MinGap {
+  param([int]$gapMs)
+
+  $now = Get-Date
+  $elapsed = ($now - $script:lastPostAt).TotalMilliseconds
+  if ($elapsed -lt $gapMs) {
+    Start-Sleep -Milliseconds ([int]($gapMs - $elapsed))
+  }
+
+  # jitter so doesn't align with gateway windows
+  Start-Sleep -Milliseconds (Get-Random -Minimum 25 -Maximum 150)
+  $script:lastPostAt = Get-Date
+}
 
 # Continue send logic
 for ($batchIndex = 0; $batchIndex -lt $totalBatches; $batchIndex++) {
