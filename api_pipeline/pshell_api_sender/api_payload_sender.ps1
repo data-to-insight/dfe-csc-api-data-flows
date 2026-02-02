@@ -1152,6 +1152,9 @@ for ($batchIndex = 0; $batchIndex -lt $totalBatches; $batchIndex++) {
   ## output entire payload for verification 
   #Write-Host "final payload $($finalPayload)"   # DEBUG
 
+  Wait-MinGap -gapMs $minGapMs # proactive pacing (incl when no errors)
+
+
   Send-ApiBatch -batch $batchSlice `
     -endpoint $api_endpoint_with_lacode `
     -headers $headers `
