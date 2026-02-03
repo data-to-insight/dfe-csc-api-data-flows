@@ -582,6 +582,11 @@ function Send-ApiBatch {
         $detail = $reader.ReadToEnd()
       }
 
+      # avoid carrying stale vals
+      $retryAllowed = $true
+      $apiMsg = ""
+
+
       # retry based on status
       switch ($httpStatus) {
         204 { $apiMsg = "No content";              $retryAllowed = $false }
