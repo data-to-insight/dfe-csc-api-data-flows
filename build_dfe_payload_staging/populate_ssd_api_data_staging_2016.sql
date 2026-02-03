@@ -895,7 +895,7 @@ BEGIN
     -- DBCC CHECKIDENT ('ssd_api_data_staging_anon', RESEED, 0);
 END
 
-GO
+-- GO
 
 SET NOCOUNT ON;
 
