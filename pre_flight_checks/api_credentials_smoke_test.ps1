@@ -85,7 +85,7 @@ param(
 
 $timeoutSec = $ApiTimeout
 
-$VERSION = '0.4.4' # bumped from 3.0 to align with main script
+$VERSION = '0.4.6' # bumped from 3.0 to align with main script
 Write-Host ("CSC API staging build: v{0}" -f $VERSION)
 
 # Some LA users may need to temporarily alter session PShell permissions 
