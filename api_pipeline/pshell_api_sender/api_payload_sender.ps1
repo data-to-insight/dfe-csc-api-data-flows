@@ -48,44 +48,49 @@
   Requires: PowerShell 5.1+
   TLS: script forces TLS 1.2
   Retries: up to 3 with exponential backoff (not retried: 204, 400, 413)
-  Legacy mappings retained: $usePartialPayload, $internalTesting, $useTestRecord, $batchSize, $timeoutSec
+  Legacy mappings: $usePartialPayload, $internalTesting, $useTestRecord, $batchSize, $timeoutSec
   Proxy defaults: if -Proxy not provided and $la_proxy is set, that proxy is used; if no proxy creds flags are passed, defaults to current Windows logon
+
+  May require user to set pc/user Powershell policy before running allowed:
+  In Powershell, type:
+  Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+  .\api_payload_sender.ps1
 
 .EXAMPLE
   # Smallest: use built-in hard-coded record and POST to API
-  powershell -NoProfile -File .\phase_1_api_payload.ps1 -UseTestRecord -Phase full -BatchSize 1
+  powershell -NoProfile -File .\api_payload_sender.ps1 -UseTestRecord -Phase full -BatchSize 1
 
 .EXAMPLE
   # With LA proxy using Windows creds
-  powershell -NoProfile -File .\phase_1_api_payload.ps1 -UseTestRecord `
+  powershell -NoProfile -File .\api_payload_sender.ps1 -UseTestRecord `
     -Proxy 'http://proxy.myLA.local:8080' -ProxyUseDefaultCredentials
 
 .EXAMPLE
   # With explicit proxy creds
-  powershell -NoProfile -File .\phase_1_api_payload.ps1 -UseTestRecord `
+  powershell -NoProfile -File .\api_payload_sender.ps1 -UseTestRecord `
     -Proxy 'http://proxy.myLA.local:8080' -ProxyUseDefaultCredentials:$false `
     -ProxyCredential (Get-Credential)
 
 .EXAMPLE
   # Full send, Windows auth to SQL (no proxy)
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\phase_1_api_payload.ps1 `
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 `
     -Phase full -UseIntegratedSecurityDbConnection
 
 .EXAMPLE
   # Deltas, SQL auth to DB using env vars, with LA proxy and default creds
   $env:DB_USER = "svc_csc"; $env:DB_PASSWORD = "P@ssw0rd!"
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\phase_1_api_payload.ps1 `
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 `
     -Phase deltas -Proxy http://proxy.myLA.local:8080 -ProxyUseDefaultCredentials
 
 .EXAMPLE
   # Full send with explicit proxy credential and custom timeout
   $pcred = Get-Credential
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\phase_1_api_payload.ps1 `
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 `
     -Phase full -Proxy http://proxy.myLA.local:8080 -ProxyCredential $pcred -ApiTimeout 45
 
 .EXAMPLE
   # Dry run with hard-coded test record
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\phase_1_api_payload.ps1 `
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 `
     -Phase full -UseTestRecord -InternalTest
 
 # Save as UTF-8 with BOM in VS Code if non ASCII symbols present
@@ -106,7 +111,7 @@ param(
   [switch]$UseIntegratedSecurityDbConnection               # use Windows auth when present
 )
 
-$VERSION = '0.4.5'
+$VERSION = '0.4.6'
 Write-Host ("CSC API staging build: v{0}" -f $VERSION)
 
 
@@ -118,7 +123,7 @@ Write-Host ("CSC API staging build: v{0}" -f $VERSION)
 # LA's to replace the following details(in quotes) with your LA's credentials as supplied by DfE API portal
 # from https://pp-find-and-use-an-api.education.gov.uk/ (logged in)
 
-# Base URL TEST
+# Base URL (default:TEST)
 $api_endpoint = "https://pp-api.education.gov.uk/children-in-social-care-data-receiver-test/1" 
 
 # Base URL PP/Live (switch over only when sending live records)
@@ -135,7 +140,7 @@ $client_id       = "OAUTH_CLIENT_ID_CODE"                # 'OAuth Client ID'
 $client_secret   = "NATIVE_OAUTH_PRIMARY_KEY_CODE"       # 'Primary key' or 'Secondary key'
 $scope           = "OAUTH_SCOPE_LINK"                    # 'OAuth Scope'
 
-# -- DfE Config END --
+# ----------- LA DfE Config END -----------
 
 # LA specifics
 $la_code  = "000"     # Change to your 3 digit LA code(within quotes)

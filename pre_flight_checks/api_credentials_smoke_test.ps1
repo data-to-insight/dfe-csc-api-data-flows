@@ -25,7 +25,7 @@
   Overrides -ProxyUseDefaultCredentials when provided
 
 .NOTES
-  File    : phase_1_api_credentials_smoke_test.ps1
+  File    : api_credentials_smoke_test.ps1
   Author  : D2I
   Date    : 16/10/2025
   TLS     : script forces TLS 1.2
@@ -35,24 +35,24 @@
 .EXAMPLE
   # Direct (no proxy), default timeout
   powershell.exe -NoProfile -ExecutionPolicy Bypass `
-    -File .\phase_1_api_credentials_smoke_test.ps1
+    -File .\api_credentials_smoke_test.ps1
 
 .EXAMPLE
   # Direct with custom timeout (60s)
   powershell.exe -NoProfile -ExecutionPolicy Bypass `
-    -File .\phase_1_api_credentials_smoke_test.ps1 -ApiTimeout 60
+    -File .\api_credentials_smoke_test.ps1 -ApiTimeout 60
 
 .EXAMPLE
   # Use explicit proxy with current Windows credentials
   powershell.exe -NoProfile -ExecutionPolicy Bypass `
-    -File .\phase_1_api_credentials_smoke_test.ps1 `
+    -File .\api_credentials_smoke_test.ps1 `
     -Proxy http://proxy.myLA.local:8080 -ProxyUseDefaultCredentials
 
 .EXAMPLE
   # Use explicit proxy with interactive credentials (prompts once)
   powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
     "& { $cred = Get-Credential; `
-         .\phase_1_api_credentials_smoke_test.ps1 `
+         .\api_credentials_smoke_test.ps1 `
            -Proxy http://proxy.myLA.local:8080 -ProxyCredential $cred }"
 
 .EXAMPLE
@@ -60,12 +60,12 @@
   powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
     "& { $sec = ConvertTo-SecureString 'P@ssw0rd!' -AsPlainText -Force; `
          $cred = New-Object System.Management.Automation.PSCredential('MYDOMAIN\jdoe',$sec); `
-         .\phase_1_api_credentials_smoke_test.ps1 `
+         .\api_credentials_smoke_test.ps1 `
            -Proxy http://proxy.myLA.local:8080 -ProxyCredential $cred }"
 
 .EXAMPLE
   # PowerShell 7+ (pwsh) with proxy and custom timeout
-  pwsh -NoProfile -File ./phase_1_api_credentials_smoke_test.ps1 `
+  pwsh -NoProfile -File ./api_credentials_smoke_test.ps1 `
     -Proxy http://proxy.myLA.local:8080 -ProxyUseDefaultCredentials -ApiTimeout 45
 
 # If your org sets a system proxy (PAC or manual), the script records .NET DefaultWebProxy in diagnostics
@@ -87,6 +87,11 @@ $timeoutSec = $ApiTimeout
 
 $VERSION = '0.4.4' # bumped from 3.0 to align with main script
 Write-Host ("CSC API staging build: v{0}" -f $VERSION)
+
+# Some LA users may need to temporarily alter session PShell permissions 
+# Get-ExecutionPolicy -List 
+# Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+# Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope CurrentUser
 
 # ----------- LA DfE Config START -----------
 # REQUIRED, replace the details in quotes below with your LA's credentials as supplied by DfE
