@@ -695,6 +695,16 @@ if ($script:DiagData -and $script:DiagData.Ran) {
 Write-Host "===== END D2I COPY BLOCK =====" -ForegroundColor Cyan
 Write-Host ""
 
-# CI / calling shell exit
+# CI / calling shell exit (but not in ISE)
 if ($null -eq $exitCode) { $exitCode = 1 }
-exit $exitCode
+$exitCode = [int]$exitCode
+
+$inISE    = $null -ne $psISE
+$inVSCode = $env:TERM_PROGRAM -eq 'vscode'
+
+if ($inISE -or $inVSCode) {
+  $global:LASTEXITCODE = $exitCode
+  return
+} else {
+  exit $exitCode
+}
