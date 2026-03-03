@@ -112,7 +112,7 @@ $supplier_key    = "SUBSCRIPTION_PRIMARY_KEY_CODE"       # From the 'subscriptio
 
 # ----------- LA Internal Config START -----------
 $la_code         = "000" # Change to your 3 digit LA code(within quotes)
-$la_proxy = $null # LA default proxy ($null or '' disables)
+$la_proxy = $null # LA default proxy ($null or '' disables, or add LA proxy: "http://proxy.example.gov.uk:8080")
 # ----------- LA Internal Config END -----------
 
 
@@ -128,7 +128,7 @@ $la_proxy = $null # LA default proxy ($null or '' disables)
 # diag opts1
 $ENABLE_DIAGNOSTICS = $true
 $DIAG_ON_HTTP_CODES = @(204,401,403,407,408,413,415,429,500,502,503,504)  # when to run diags even if HTTP reached
-$DIAG_HTTP_PROBE    = $true  # do quick HEAD probes as part of diagnostic
+$DIAG_HTTP_PROBE    = $false  # do quick HEAD probes as part of diagnostic
 
 # diag opts2
 $DIAG_PRINT   = $false   # live spam off; print inside COPY block instead
@@ -458,10 +458,10 @@ function Get-ConnectivityDiagnostics {
       $rootResp = Invoke-WebRequest -Uri $rootUrl -Method Head -UseBasicParsing -TimeoutSec 10 @ProxyArgs -ErrorAction Stop
       $info.HeadRoot = ("{0} -> {1}" -f $rootUrl,$rootResp.StatusCode); _p ("HTTP  : HEAD {0}" -f $info.HeadRoot)
     } catch { $info.HeadRoot = ("{0} FAILED ({1})" -f $rootUrl,$_.Exception.Message); _p ("HTTP  : HEAD {0}" -f $info.HeadRoot) Yellow }
-    try {
-      $pathResp = Invoke-WebRequest -Uri $Url -Method Head -UseBasicParsing -TimeoutSec 10 @ProxyArgs -ErrorAction Stop
-      $info.HeadPath = ("{0} -> {1}" -f $Url,$pathResp.StatusCode); _p ("HTTP  : HEAD {0}" -f $info.HeadPath)
-    } catch { $info.HeadPath = ("{0} FAILED ({1})" -f $Url,$_.Exception.Message); _p ("HTTP  : HEAD {0}" -f $info.HeadPath) Yellow }
+    # try {
+    #   $pathResp = Invoke-WebRequest -Uri $Url -Method Head -UseBasicParsing -TimeoutSec 10 @ProxyArgs -ErrorAction Stop
+    #   $info.HeadPath = ("{0} -> {1}" -f $Url,$pathResp.StatusCode); _p ("HTTP  : HEAD {0}" -f $info.HeadPath)
+    # } catch { $info.HeadPath = ("{0} FAILED ({1})" -f $Url,$_.Exception.Message); _p ("HTTP  : HEAD {0}" -f $info.HeadPath) Yellow }
   }
 
   _p "------------------------------------" Cyan
