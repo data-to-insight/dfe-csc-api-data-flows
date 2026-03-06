@@ -131,6 +131,7 @@ $DIAG_ON_HTTP_CODES = @(204,401,403,407,408,413,415,429,500,502,503,504)  # when
 $DIAG_HTTP_PROBE    = $false  # do quick HEAD probes as part of diagnostic
 
 # diag opts2
+$PRINT_PROXY_STATUS = $false
 $DIAG_PRINT   = $false   # live spam off; print inside COPY block instead
 $DIAG_CAPTURE = $true
 $script:DiagData = $null
@@ -196,7 +197,9 @@ if ($Proxy) {
   Write-Host ("Proxy enabled: {0}  (DefaultCreds={1}, ExplicitCreds={2})" -f `
       $Proxy, ($ProxyArgs.ContainsKey('ProxyUseDefaultCredentials')), ($ProxyArgs.ContainsKey('ProxyCredential'))) -ForegroundColor DarkGray
 } else {
-  Write-Host "Proxy disabled (no -Proxy provided)." -ForegroundColor DarkGray
+  if ($PRINT_PROXY_STATUS) {
+    Write-Host "Proxy disabled (no -Proxy provided)." -ForegroundColor DarkGray
+  }
 }
 
 
