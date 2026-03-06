@@ -1,5 +1,5 @@
 -- define as required 
-use HDM_Local; -- Note: LA should change to bespoke or remove - HDM_Local is SystemC/LLogic default
+-- use HDM_Local; -- Note: LA should change to bespoke or remove - HDM_Local is SystemC/LLogic default
 
 /* ==========================================================================
    D2I CSC API Payload Builder, SQL Server 2016+ compatible
@@ -28,7 +28,7 @@ can be appended into the main SSD and run as one - insert locations within the S
 
 
 
-DECLARE @VERSION nvarchar(32) = N'0.3.2';
+DECLARE @VERSION nvarchar(32) = N'A.3.2';
 RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 
 
