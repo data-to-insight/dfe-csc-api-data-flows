@@ -53,6 +53,7 @@ The SSD was developed together with a large number of LA colleagues accross the 
 | ssd_s47_enquiry | READ | s47e_referral_id; s47e_s47_enquiry_id; s47e_s47_start_date; s47e_s47_end_date; s47e_s47_outcome_json |
 | ssd_sdq_scores | READ | csdq_person_id; csdq_sdq_completed_date; csdq_sdq_score |
 
+N.B *We're hoping to add the explicit link-backs from this table to the needed scripts in the ssd repo to simplify the process of identifying the needed files. Apologies in advance for any confusion in this aspect of the split deployment repos/file naming.*
 
 ---
 
