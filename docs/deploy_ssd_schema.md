@@ -7,7 +7,7 @@ Ensure that the [minimum system requirements](system_requirements.md) are alread
 ## SSD : Overview
 
 A more complete overview of the SSD schema is available [SSD documentation](https://data-to-insight.github.io/ssd-data-model), note that **we are in the process of porting to a [new SSD front-end and site](https://data-to-insight.github.io/ssd-data-model-next/)** that some might find easier to navigate.
-DEpending on your CMS type, the SSD is deployed using 1+ SQL scripts; which create and populate a new schema of approx 45 tables within sight of your existing CMS database. The script(s) require no elevated priviledges, are non-destructive and can be run against the database by anyone with SELECT/CREATE permissions.   
+Depending on your CMS type, the SSD is deployed using 1+ SQL scripts; which create and populate a new schema of approx 45 tables within sight of your existing CMS database. The script(s) require no elevated priviledges, are non-destructive and can be run against the database by anyone with SELECT/CREATE permissions.   
 This new SSD schema acts as a standardised middleware between your CMS and other possible services or common LA reporting; including the potential for the DfE API feeding into the Private Dashboard. 
 
 ---
@@ -24,6 +24,35 @@ This new SSD schema acts as a standardised middleware between your CMS and other
 **Deploy ssd_api_data_staging table**:
 
    In order to enable storing the needed data payload for the DfE's API data flow, we've added an additional non-core table to the core SSD specification. This, and all needed changes to the SSD will be packaged within the initial set up scripts and there is nothing additional that requires action. The ssd_api_data_staging table enables change tracking and the storing of the API submission/status reponses. All related set up and configuration will be supplied by D2I to populate this table with the pending JSON payloads.
+
+
+**Minimal SSD**
+
+The SSD was developed together with a large number of LA colleagues accross the sector as a basis for much wider LA based reporting and stat-returns than the EA API project 'needs'. If useful to know, the following are considered to be the priority|essential|minimal schema needed by the project and the payload-staging table builder. LA colleagues are encouraged to focus efforts here if they wish to reduce deployment/data sense checks overheads. 
+
+| table_name | usage | columns_used |
+|---|---|---|
+| ssd_person | READ | pers_person_id; pers_legacy_id; pers_dob; pers_expected_dob; pers_upn; pers_upn_unknown; pers_forename; pers_surname; pers_sex; pers_ethnicity |
+| ssd_address | READ | addr_person_id; addr_address_postcode; addr_address_start_date |
+| ssd_disability | READ | disa_person_id; disa_disability_code |
+| ssd_immigration_status | READ | immi_person_id; immi_immigration_status; immi_immigration_status_start_date; immi_immigration_status_end_date |
+| **ssd_api_data_staging (live data only)** | READ_WRITE | id; person_id; legacy_id; previous_json_payload; json_payload; current_hash; previous_hash; submission_status; row_state; last_updated |
+| **ssd_api_data_staging_anon (test data only)** | READ_WRITE | id; person_id; legacy_id; previous_json_payload; json_payload; current_hash; previous_hash; submission_status; row_state; last_updated |
+| ssd_assessment_factors | READ | cinf_assessment_id; cinf_assessment_factors_json |
+| ssd_care_leavers | READ | clea_person_id; clea_care_leaver_latest_contact; clea_care_leaver_activity; clea_care_leaver_accommodation |
+| ssd_cin_assessments | READ | cina_assessment_id; cina_referral_id; cina_assessment_start_date; cina_assessment_auth_date |
+| ssd_cin_episodes | READ | cine_person_id; cine_referral_id; cine_referral_date; cine_close_date; cine_referral_source_code; cine_close_reason; cine_referral_nfa |
+| ssd_cin_plans | READ | cinp_cin_plan_id; cinp_person_id; cinp_referral_id; cinp_cin_plan_start_date; cinp_cin_plan_end_date |
+| ssd_cla_episodes | READ | clae_person_id; clae_referral_id; clae_cla_id; clae_cla_episode_start_reason; clae_cla_episode_ceased_reason |
+| ssd_cla_placement | READ | clap_cla_placement_id; clap_cla_id; clap_cla_placement_start_date; clap_cla_placement_end_date; clap_cla_placement_postcode; clap_cla_placement_type; clap_cla_placement_change_reason |
+| ssd_cp_plans | READ | cppl_cp_plan_id; cppl_person_id; cppl_referral_id; cppl_cp_plan_start_date; cppl_cp_plan_end_date |
+| ssd_initial_cp_conference | READ | icpc_s47_enquiry_id; icpc_icpc_date |
+| ssd_involvements | READ | invo_referral_id; invo_professional_id; invo_involvement_start_date; invo_involvement_end_date |
+| ssd_permanence | READ | perm_person_id; perm_cla_id; perm_adm_decision_date; perm_matched_date; perm_placed_for_adoption_date |
+| ssd_professionals | READ | prof_professional_id; prof_social_worker_registration_no |
+| ssd_s47_enquiry | READ | s47e_referral_id; s47e_s47_enquiry_id; s47e_s47_start_date; s47e_s47_end_date; s47e_s47_outcome_json |
+| ssd_sdq_scores | READ | csdq_person_id; csdq_sdq_completed_date; csdq_sdq_score |
+
 
 ---
 
