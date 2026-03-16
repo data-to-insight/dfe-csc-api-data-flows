@@ -28,7 +28,7 @@ This new SSD schema acts as a standardised middleware between your CMS and other
 
 **Minimal SSD**
 
-The SSD was developed together with a large number of LA colleagues accross the sector as a basis for much wider LA based reporting and stat-returns than the EA API project 'needs'. If useful to know, the following are considered to be the priority|essential|minimal schema needed by the project and the payload-staging table builder. LA colleagues are encouraged to focus efforts here if they wish to reduce deployment/data sense checks overheads. 
+The SSD was developed together with a large number of LA colleagues accross the sector as a basis for much wider LA based reporting and stat-returns than the EA API project 'needs'. If useful to know, the following are considered to be the priority|essential|minimal schema needed by this particular EA project because they're directly used by the payload-staging table builder(direct link to sql, also included within the release files zip: [SSD-API-payload staging table creator](https://github.com/data-to-insight/dfe-csc-api-data-flows/tree/main/build_dfe_payload_staging)). LA colleagues are encouraged to focus efforts around the priority tables if they wish to reduce wider SSD deployment/data sense checks overheads. 
 
 | table_name | usage | columns_used |
 |---|---|---|
