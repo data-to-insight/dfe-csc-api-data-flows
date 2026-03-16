@@ -209,6 +209,12 @@ if (-not $UseIntegratedSecurityDbConnection) {
 [System.Net.ServicePointManager]::DefaultConnectionLimit = 10
 
 
+# ---- Default HTTP method safety guards ----
+# Force any Invoke-WebRequest/Invoke-RestMethod without -Method to default to POST
+# Note that if set - these will persist for session, they're not later reset back to user default 
+$PSDefaultParameterValues['Invoke-WebRequest:Method'] = 'Post'
+$PSDefaultParameterValues['Invoke-RestMethod:Method'] = 'Post'
+
 
 # ---- Decide final Proxy first (include $la_proxy fallback) ----
 # If caller did not pass -Proxy, but LA has a default proxy, use it.
