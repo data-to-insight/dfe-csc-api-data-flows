@@ -1,8 +1,11 @@
 # JSON Payload Structure
 
-For your reference only. The following represents the JSON structure expected for payload data. 
+For colleague reference only. The following represents the JSON structure expected for DfE EA api payload data. 
 Visual representation variations shown here in case useful for wider team(s). 
 
+## ssd_api_data_staging 
+
+The SSD schema was developed with and for LAs/CSC Data colleagues, with varied use-cases. Including having the potential and scope to add tools to it. The additional [ssd_api_data_staging table](https://github.com/data-to-insight/dfe-csc-api-data-flows/tree/main/build_dfe_payload_staging) is added to enable this EA-API project, and this table forms the staging area, i.e. table, with the relevant JSON structured child cohort specific to this project. The ssd_api_data_staging.json_payload field contains child records in the following structure as defined by the DfE; full details of which can be viewed at[openapi.json - use-an-api.education.gov.uk.](https://pp-find-and-use-an-api.education.gov.uk/api/83)
 
 ## JSON Overview:
 
@@ -42,7 +45,7 @@ Dev ref: Structure based on DfE specification v0.7
             "sdq_assessments": [
                 {
                     "date": "YYYY-MM-DD",
-                    "score": 20
+                    "score": Integer e.g. 20
                 }
             ],
             "purge": false
