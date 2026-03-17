@@ -1,11 +1,11 @@
 # JSON Payload Structure
 
-For colleague reference only. The following represents the JSON structure expected for DfE EA api payload data. 
-Visual representation variations shown here in case useful for wider team(s). 
+For colleague reference only. There are no actionable steps on this page.
+The following represents the JSON structure expected by the API endpoint for DfE EA API payload data. 
 
 ## ssd_api_data_staging 
 
-The SSD schema was developed with and for LAs/CSC Data colleagues, with varied use-cases. Including having the potential and scope to add tools to it. The additional [ssd_api_data_staging table](https://github.com/data-to-insight/dfe-csc-api-data-flows/tree/main/build_dfe_payload_staging) is added to enable this EA-API project, and this table forms the staging area, i.e. table, with the relevant JSON structured child cohort specific to this project. The ssd_api_data_staging.json_payload field contains child records in the following structure as defined by the DfE; full details of which can be viewed at[openapi.json - use-an-api.education.gov.uk.](https://pp-find-and-use-an-api.education.gov.uk/api/83)
+The SSD schema was developed with and for LAs/CSC Data colleagues, with varied use-cases. Including having the potential and scope to add tools to it. The additional [ssd_api_data_staging table](https://github.com/data-to-insight/dfe-csc-api-data-flows/tree/main/build_dfe_payload_staging) is added to enable this EA-API project, and this table forms the staging area, i.e. table, with the relevant JSON structured child cohort specific to this project. The ssd_api_data_staging.json_payload field contains child records in the following structure as defined by the DfE. Full details of which can be viewed via the DfE API portal : [openapi.json - use-an-api.education.gov.uk.](https://pp-find-and-use-an-api.education.gov.uk/api/83)
 
 ## JSON Overview:
 
