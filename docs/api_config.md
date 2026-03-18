@@ -9,7 +9,7 @@ Use this page as the single source of truth for api sender configuration, regard
 ## Required Values (DfE / Environment)
 
 Access and obtain the following credentials from the DfE API Portal:
-- [test.education.gov.uk/find-an-api](https://pp-find-and-use-an-api.education.gov.uk/find-an-api)(**Test data only**) 
+- [test.education.gov.uk/find-an-api](https://pp-find-and-use-an-api.education.gov.uk/api/children-in-social-care-data-receiver-test-1)(**Test data only**) 
 - [prod.education.gov.uk/find-an-api](https://beta-find-and-use-an-api.education.gov.uk/find-an-api) (**Live data only**)
 
 - `API_ENDPOINT` 
