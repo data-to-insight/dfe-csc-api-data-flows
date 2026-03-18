@@ -14,7 +14,7 @@ Last updated: 18/09/25
 ### **Stage 0 - Project Prep - Roles and Access (Week 0)**
 **Suggested project team preparation by role**  
 **CSC Analyst/Data Lead**  
-> - Register with and obtain DfE API credentials via [education.gov.uk/find-an-api](https://pp-find-and-use-an-api.education.gov.uk/find-an-api)  
+> - Register with and obtain DfE API credentials via [test.education.gov.uk/find-an-api](https://pp-find-and-use-an-api.education.gov.uk/find-an-api)(**for TEST**) and [prod.education.gov.uk/find-an-api] (**for Production**)
  - Agree a safe _team accessible_ location to save the DfE API credentials
  - Confirm you have read access to source CMS reporting views/tables  
  - Obtain write access|permission to run `CREATE TABLE` on reporting instance(dev or existing data team reporting instance is ideal)  

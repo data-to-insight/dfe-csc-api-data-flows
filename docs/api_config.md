@@ -8,7 +8,9 @@ Use this page as the single source of truth for api sender configuration, regard
 
 ## Required Values (DfE / Environment)
 
-You will receive, or have access to the following from the [DfE API Portal](https://pp-find-and-use-an-api.education.gov.uk/api/83):
+Access and obtain the following credentials from the DfE API Portal:
+- [test.education.gov.uk/find-an-api](https://pp-find-and-use-an-api.education.gov.uk/find-an-api)(**Test data only**) 
+- [prod.education.gov.uk/find-an-api](https://beta-find-and-use-an-api.education.gov.uk/find-an-api) (**Live data only**)
 
 - `API_ENDPOINT` 
 - `SUPPLIER_KEY`  
@@ -17,7 +19,7 @@ You will receive, or have access to the following from the [DfE API Portal](http
 - `CLIENT_SECRET`  
 - `SCOPE` 
 
-You must also define a database connection to your reporting instance or SSD clone:
+You must also define, if required, the database connection to your reporting instance or SSD clone:
 
 - `DB_CONNECTION_STRING` (for Python), or `Server`/`Database` values (for PowerShell)
 
