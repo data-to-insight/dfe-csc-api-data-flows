@@ -200,7 +200,6 @@ HasLAC AS (
 ),
 
 
-
 IsCareLeaver16to25 AS (
     /*
       Include if care leaver latest contact in window [REVIEW]
@@ -213,21 +212,38 @@ IsCareLeaver16to25 AS (
     */
   SELECT DISTINCT p.pers_person_id AS person_id
   FROM ssd_person p
+  
+  -- -- [REVIEW] alternative/additional robustness towards issue 81
+  -- JOIN ActiveReferral ar
+  --   ON ar.person_id = p.pers_person_id
+
   WHERE p.pers_dob IS NOT NULL
+
+    -- [REVIEW] See below for alternative run-date classification
     AND DATEADD(year, 16, p.pers_dob) <  @ea_cohort_window_end    -- classified 16-25 (within window)
     AND DATEADD(year, 26, p.pers_dob) >= @ea_cohort_window_start  -- classified 16-25 (within window)
 
+
+    -- in-window care leaver contact
     AND EXISTS (
       SELECT 1
       FROM ssd_care_leavers clea
       WHERE clea.clea_person_id = p.pers_person_id
-
         -- [REVIEW] Opt: gate on latest contact being within cohort window
         AND clea.clea_care_leaver_latest_contact >= @ea_cohort_window_start
         AND clea.clea_care_leaver_latest_contact <  @ea_cohort_window_end
 
         -- [REVIEW] Opt: require they are considered in touch
         -- AND NULLIF(LTRIM(RTRIM(clea.clea_care_leaver_in_touch)), '') IS NOT NULL
+    )
+
+    -- and also OPEN social care episode
+    AND EXISTS (
+      SELECT 1
+      FROM ssd_cin_episodes cine
+      WHERE cine.cine_person_id = p.pers_person_id
+        AND cine.cine_referral_date <= @ea_cohort_window_end
+        AND cine.cine_close_date IS NULL
     )
 
     -- AND @run_date >= DATEADD(year, 16, p.pers_dob) -- [REVIEW] classified 16-25 (at run date)
@@ -258,6 +274,7 @@ SpecInclusion AS (
     UNION SELECT person_id FROM IsCareLeaver16to25
     -- UNION SELECT person_id FROM IsDisabled
 ),
+
 
 /* === Payload builder 2016Sp1+/Azure SQL compatible === */
 RawPayloads AS (
