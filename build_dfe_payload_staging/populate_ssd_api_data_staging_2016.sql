@@ -28,7 +28,7 @@ can be appended into the main SSD and run as one - insert locations within the S
 
 
 
-DECLARE @VERSION nvarchar(32) = N'0.3.2';
+DECLARE @VERSION nvarchar(32) = N'0.4.2';
 RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 
 
@@ -46,14 +46,9 @@ RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 
 
 -- IF OBJECT_ID('ssd_api_data_staging', 'U') IS NOT NULL DROP TABLE ssd_api_data_staging;
-IF OBJECT_ID('ssd_api_data_staging') IS NOT NULL
-BEGIN
-    IF EXISTS (SELECT 1 FROM ssd_api_data_staging)
-        TRUNCATE TABLE ssd_api_data_staging; -- clear existing if any rows
-END
-     
+IF OBJECT_ID('ssd_api_data_staging') IS NULL
+
 -- META-ELEMENT: {"type": "create_table"}
-ELSE
 BEGIN
     CREATE TABLE ssd_api_data_staging (
         id INT IDENTITY(1,1) PRIMARY KEY,           
@@ -73,6 +68,7 @@ BEGIN
     );
 
 END
+
 
 
 
@@ -825,7 +821,6 @@ RawPayloads AS (
 
 ),   -- close RawPayloads CTE
   
-
 /* hash payload + compare, de-dup by person_id and payload content
    Note: SHA2_256 used for change detection only
 */
@@ -837,36 +832,124 @@ Hashed AS (
         HASHBYTES('SHA2_256', CAST(json_payload AS NVARCHAR(MAX))) AS current_hash
     FROM RawPayloads
 )
-INSERT INTO ssd_api_data_staging
-    (person_id, legacy_id, previous_json_payload, json_payload, current_hash, previous_hash,
-     submission_status, row_state, last_updated)
-SELECT
-    h.person_id,
-    h.legacy_id,
-    prev.json_payload AS previous_json_payload,
-    h.json_payload,
-    h.current_hash,
-    prev.current_hash AS previous_hash,
-    'Pending' AS submission_status,
-    CASE WHEN prev.current_hash IS NULL THEN 'New' ELSE 'Updated' END AS row_state,
-    GETDATE() AS last_updated
-FROM Hashed h
-OUTER APPLY (
-    SELECT TOP (1) s.json_payload, s.current_hash
-    FROM ssd_api_data_staging s
-    WHERE s.person_id = h.person_id
-    ORDER BY s.id DESC
-) AS prev
 
--- /* Uncomment to force hard-filter against LA known Stat-Returns cohort table
--- We anticipate/recommend that all LA's do this initially to enable internal cohort auditing for records */
--- INNER JOIN
---     [dbo].[StoredStatReturnsCohortIdTable] STATfilter -- FAILSAFE STAT RETURN COHORT
---     ON STATfilter.[person_id] = h.person_id
+MERGE ssd_api_data_staging AS tgt
+-- MERGE semantics are:
+-- SOURCE = rows produced by this subquery
+-- TARGET = rows currently in ssd_api_data_staging
 
-WHERE prev.current_hash IS NULL             -- first time we've seen this person record
-   OR prev.current_hash <> h.current_hash;  -- or payload has changed
+USING (
+    SELECT h.*
+    FROM Hashed h
 
+    -- /* Uncomment to force hard-filter against LA known Stat-Returns cohort table
+    -- We anticipate/recommend that all LA's do this initially to enable internal cohort auditing for records 
+    -- Anyone not in the STAT table treated as 'not found in source' and becomes Deleted 
+    -- Not in STAT table --> not in SOURCE == soft-deleted in staging tbl */
+    -- INNER JOIN
+    --     [dbo].[StoredStatReturnsCohortIdTable] STATfilter -- FAILSAFE STAT RETURN COHORT
+    --     ON STATfilter.[person_id] = h.person_id
+
+) AS src
+    ON tgt.person_id = src.person_id
+
+/* match: update in place */
+WHEN MATCHED THEN
+    UPDATE SET
+        /* 
+           Preserve prev payload ONLY when real change detected
+           allows before/after compare and supports re-submit logic
+        */
+        tgt.previous_json_payload =
+            CASE WHEN tgt.current_hash <> src.current_hash
+                 THEN tgt.json_payload          -- last-sent payload
+                 ELSE tgt.previous_json_payload -- leave untouched if no change
+            END,
+
+        /*
+           Replace current payload ONLY when hash differs
+           minimise rewrites & keep JSON stable over runs
+        */
+        tgt.json_payload =
+            CASE WHEN tgt.current_hash <> src.current_hash
+                 THEN src.json_payload
+                 ELSE tgt.json_payload
+            END,
+
+        /*
+           Rotate hash in lockstep with payload rotation
+           previous_hash reflects hash of previous_json_payload
+        */
+        tgt.previous_hash =
+            CASE WHEN tgt.current_hash <> src.current_hash
+                 THEN tgt.current_hash
+                 ELSE tgt.previous_hash
+            END,
+
+        /*
+           Update current_hash when content changed
+        */
+        tgt.current_hash =
+            CASE WHEN tgt.current_hash <> src.current_hash
+                 THEN src.current_hash
+                 ELSE tgt.current_hash
+            END,
+
+        /*
+           Reset submission status ONLY when sthing new to submit
+           Unchanged records keep prior status (e.g. Sent / Error)
+        */
+        tgt.submission_status =
+            CASE WHEN tgt.current_hash <> src.current_hash
+                 THEN 'Pending'
+                 ELSE tgt.submission_status
+            END,
+
+        /*
+           Row-level state classification:
+             - Updated    : same person payload changed
+             - Unchanged  : same person payload identical
+        */
+        tgt.row_state =
+            CASE
+                WHEN tgt.current_hash <> src.current_hash THEN 'Updated'
+                ELSE 'Unchanged'
+            END,
+
+        /*
+           Always touch last_updated on matched row to show evaluated
+           even if no actual data change occurred
+        */
+        tgt.last_updated = GETDATE()
+
+
+/* new|not seen before person */
+WHEN NOT MATCHED BY TARGET
+THEN INSERT (
+     person_id,
+     legacy_id,
+     json_payload,
+     current_hash,
+     submission_status,
+     row_state,
+     last_updated
+)
+VALUES (
+     src.person_id,
+     src.legacy_id,
+     src.json_payload,
+     src.current_hash,
+     'Pending',
+     'New',
+     GETDATE()
+)
+
+/* soft delete: person no longer in cohort */
+WHEN NOT MATCHED BY SOURCE
+THEN UPDATE SET
+     tgt.row_state    = 'Deleted',
+     tgt.last_updated = GETDATE()
+;
 
 
 -- -- -- Optional
@@ -878,7 +961,6 @@ WHERE prev.current_hash IS NULL             -- first time we've seen this person
 -- -- CREATE INDEX IX_ssd_sdq_date                ON ssd_sdq_scores(csdq_person_id, csdq_sdq_completed_date);
 
 -- -- CREATE UNIQUE INDEX UX_ssd_api_person_hash ON ssd_api_data_staging(person_id, current_hash);
-
 
 
 
