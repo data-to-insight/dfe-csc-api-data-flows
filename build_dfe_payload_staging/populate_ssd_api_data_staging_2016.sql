@@ -2,33 +2,98 @@
 use HDM_Local; -- Note: LA should change to bespoke or remove - HDM_Local is SystemC/LLogic default
 
 /* ==========================================================================
-   D2I CSC API Payload Builder, SQL Server 2016+ compatible
+   D2I CSC API Payload Builder
+   SQL Server 2016+ compatible
    ========================================================================== */
 
 
-/* Note for: Daily Data Flows Early Adopters
-The following table definitions (and populating) can only be run <after> the main SSD script, OR the following definitions
-can be appended into the main SSD and run as one - insert locations within the SSD are marked via the meta tags of:
+/*
+===============================================================================
+ssd_api_data_staging — SCD Type‑1 “Current State” Payload Store
+-------------------------------------------------------------------------------
 
--- META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging"}
--- =============================================================================
-&
--- META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging_anon"}
--- =============================================================================
+Purpose:
+--------
+This table stores the most recent|current CSC API payload per person to support
+daily incremental refresh using hash‑based change detection. Designed
+to act as persistent state table not transient staging table
 
+Design pattern:
+---------------
+Slowly Changing Dimension — Type 1 (SCD‑1)
+
+• One row per person_id represents current authoritative payload
+• Payload changes overwrite current version in-place
+• Limited history (previous payload + hash) kept for audit/debug
+
+Core mechanics:
+---------------
+• SOURCE rows come from the derived cohort (RawPayloads / Hashed)
+• TARGET rows live in ssd_api_data_staging
+• Changes detected using SHA2_256 hash of JSON payload
+
+Row lifecycle:
+--------------
+NEW        -> first time a person appears in the cohort
+UPDATED    -> payload content changed (hash delta detected)
+UNCHANGED  -> payload identical to previous run
+DELETED    -> person no longer present in the authoritative SOURCE set
+
+Change handling:
+----------------
+• On payload change:
+    - json_payload is replaced
+    - previous_json_payload and previous_hash are preserved
+    - submission_status reset to 'Pending'
+• On no change:
+    - row preserved as-is
+    - timestamps intentionally not churned
+
+Soft delete semantics:
+----------------------
+• Rows NOT MATCHED BY SOURCE are soft-deleted
+• row_state set to 'Deleted'
+• No physical deletes performed
+
+Optional cohort restriction:
+----------------------------
+• An optional STAT return filter may be enabled in the MERGE SOURCE
+• When enabled any person_id NOT in STAT table is treated as
+  'not in source'”' and therefore soft-deleted
+
+Timestamp semantics:
+--------------------
+• last_updated represents the last *material payload change*
+• Unchanged rows preserve last_updated across runs
+• Deleted rows update last_updated when deletion happens
+
+Operational notes:
+------------------
+• This table is stateful and MUST NOT be truncated between runs
+• MERGE logic assumes 1 row per person_id
+• UNIQUE idx on person_id required to enforce this
+
+===============================================================================
 */
 
 
--- Data pre/smoke test validator(s) (optional) --
--- D2I offers a seperate <simplified> validation VIEW towards your local data verification checks,
--- this offers some pre-process comparison between your data and the DfE API payload schema 
--- File: (T-SQL 2016+ only)https://github.com/data-to-insight/dfe-csc-api-data-flows/tree/main/pre_flight_checks/ssd_vw_csc_api_schema_checks.sql
--- -- 
+/* =============================================================================
+   Data pre/smoke test validator(s) (optional)
+   =============================================================================
+   D2I offers a seperate <simplified> validation VIEW towards your local data
+   verification checks.
+
+   This provides pre‑process comparison between local SSD data and 
+   DfE CSC API payload schema to help identify mapping, format, or completeness
+   issues pre-payload construction.
+
+   File: (T‑SQL 2016+ only)
+   https://github.com/data-to-insight/dfe-csc-api-data-flows/tree/main/pre_flight_checks/ssd_vw_csc_api_schema_checks.sql
+   =============================================================================
+*/
 
 
-
-
-DECLARE @VERSION nvarchar(32) = N'0.3.2';
+DECLARE @VERSION nvarchar(32) = N'0.4.2';
 RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 
 
@@ -37,23 +102,9 @@ RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 -- DROP TABLE IF EXISTS ssd_api_data_staging;
 -- GO
 
+IF OBJECT_ID('ssd_api_data_staging') IS NULL
 
--- META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging"}
--- =============================================================================
--- Description: Table for API payload and logging. 
--- Author: D2I
--- =============================================================================
-
-
--- IF OBJECT_ID('ssd_api_data_staging', 'U') IS NOT NULL DROP TABLE ssd_api_data_staging;
-IF OBJECT_ID('ssd_api_data_staging') IS NOT NULL
-BEGIN
-    IF EXISTS (SELECT 1 FROM ssd_api_data_staging)
-        TRUNCATE TABLE ssd_api_data_staging; -- clear existing if any rows
-END
-     
 -- META-ELEMENT: {"type": "create_table"}
-ELSE
 BEGIN
     CREATE TABLE ssd_api_data_staging (
         id INT IDENTITY(1,1) PRIMARY KEY,           
@@ -73,6 +124,7 @@ BEGIN
     );
 
 END
+
 
 
 
@@ -825,7 +877,6 @@ RawPayloads AS (
 
 ),   -- close RawPayloads CTE
   
-
 /* hash payload + compare, de-dup by person_id and payload content
    Note: SHA2_256 used for change detection only
 */
@@ -837,36 +888,137 @@ Hashed AS (
         HASHBYTES('SHA2_256', CAST(json_payload AS NVARCHAR(MAX))) AS current_hash
     FROM RawPayloads
 )
-INSERT INTO ssd_api_data_staging
-    (person_id, legacy_id, previous_json_payload, json_payload, current_hash, previous_hash,
-     submission_status, row_state, last_updated)
-SELECT
-    h.person_id,
-    h.legacy_id,
-    prev.json_payload AS previous_json_payload,
-    h.json_payload,
-    h.current_hash,
-    prev.current_hash AS previous_hash,
-    'Pending' AS submission_status,
-    CASE WHEN prev.current_hash IS NULL THEN 'New' ELSE 'Updated' END AS row_state,
-    GETDATE() AS last_updated
-FROM Hashed h
-OUTER APPLY (
-    SELECT TOP (1) s.json_payload, s.current_hash
-    FROM ssd_api_data_staging s
-    WHERE s.person_id = h.person_id
-    ORDER BY s.id DESC
-) AS prev
 
--- /* Uncomment to force hard-filter against LA known Stat-Returns cohort table
--- We anticipate/recommend that all LA's do this initially to enable internal cohort auditing for records */
--- INNER JOIN
---     [dbo].[StoredStatReturnsCohortIdTable] STATfilter -- FAILSAFE STAT RETURN COHORT
---     ON STATfilter.[person_id] = h.person_id
+MERGE ssd_api_data_staging AS tgt
+-- MERGE semantics are:
+-- SOURCE = rows produced by this subquery
+-- TARGET = rows currently in ssd_api_data_staging
 
-WHERE prev.current_hash IS NULL             -- first time we've seen this person record
-   OR prev.current_hash <> h.current_hash;  -- or payload has changed
+USING (
+    SELECT h.*
+    FROM Hashed h
 
+    -- /* Uncomment to force hard-filter against LA known Stat-Returns cohort table
+    -- We anticipate/recommend that all LA's do this initially to enable internal cohort auditing for records 
+    -- Anyone not in the STAT table treated as 'not found in source' and becomes Deleted 
+    -- Not in STAT table --> not in SOURCE == soft-deleted in staging tbl */
+    -- INNER JOIN
+    --     [dbo].[StoredStatReturnsCohortIdTable] STATfilter -- FAILSAFE STAT RETURN COHORT
+    --     ON STATfilter.[person_id] = h.person_id
+
+) AS src
+    ON tgt.person_id = src.person_id
+
+/* match: update in place */
+WHEN MATCHED THEN
+    UPDATE SET
+        /* 
+           Preserve prev payload ONLY when real change detected
+           allows before/after compare and supports re-submit logic
+        */
+        tgt.previous_json_payload =
+            CASE WHEN tgt.current_hash <> src.current_hash
+                 THEN tgt.json_payload          -- last-sent payload
+                 ELSE tgt.previous_json_payload -- leave untouched if no change
+            END,
+
+        /*
+           Replace current payload ONLY when hash differs
+           minimise rewrites & keep JSON stable
+        */
+        tgt.json_payload =
+            CASE WHEN tgt.current_hash <> src.current_hash
+                 THEN src.json_payload
+                 ELSE tgt.json_payload
+            END,
+
+        /*
+           Rotate hash in lockstep with payload rotation
+           previous_hash reflects hash of previous_json_payload
+        */
+        tgt.previous_hash =
+            CASE WHEN tgt.current_hash <> src.current_hash
+                 THEN tgt.current_hash
+                 ELSE tgt.previous_hash
+            END,
+
+        /*
+           Update current_hash when content changed
+        */
+        tgt.current_hash =
+            CASE WHEN tgt.current_hash <> src.current_hash
+                 THEN src.current_hash
+                 ELSE tgt.current_hash
+            END,
+
+        /*
+           Reset submission status ONLY when sthing new to submit
+           Unchanged records keep prior status (e.g. Sent / Error)
+        */
+        tgt.submission_status =
+            CASE WHEN tgt.current_hash <> src.current_hash
+                 THEN 'Pending'
+                 ELSE tgt.submission_status
+            END,
+
+        /*
+           Row-level state classes:
+             - Updated    : same person payload changed
+             - Unchanged  : same person payload identical
+        */
+        tgt.row_state =
+            CASE
+                WHEN tgt.current_hash <> src.current_hash THEN 'Updated'
+                ELSE 'Unchanged'
+            END,
+
+        -- /* Alternative approach if LA prefers
+        --    Always touch last_updated on matched row to show evaluated
+        --    even if no actual data change occurred
+        -- */
+        -- tgt.last_updated = GETDATE()
+
+        /* 
+           NOTE: last_updated advanced ONLY when genuine
+           payload change detected, to suppress timestamp churn
+           on unchanged records over daily runs
+        */
+        tgt.last_updated =
+            CASE
+                WHEN tgt.current_hash <> src.current_hash THEN GETDATE()
+                ELSE tgt.last_updated
+            END
+
+
+
+
+/* new|not seen before person */
+WHEN NOT MATCHED BY TARGET
+THEN INSERT (
+     person_id,
+     legacy_id,
+     json_payload,
+     current_hash,
+     submission_status,
+     row_state,
+     last_updated
+)
+VALUES (
+     src.person_id,
+     src.legacy_id,
+     src.json_payload,
+     src.current_hash,
+     'Pending',
+     'New',
+     GETDATE()
+)
+
+/* soft delete: person no longer in cohort */
+WHEN NOT MATCHED BY SOURCE
+THEN UPDATE SET
+     tgt.row_state    = 'Deleted',
+     tgt.last_updated = GETDATE()
+;
 
 
 -- -- -- Optional
@@ -878,7 +1030,6 @@ WHERE prev.current_hash IS NULL             -- first time we've seen this person
 -- -- CREATE INDEX IX_ssd_sdq_date                ON ssd_sdq_scores(csdq_person_id, csdq_sdq_completed_date);
 
 -- -- CREATE UNIQUE INDEX UX_ssd_api_person_hash ON ssd_api_data_staging(person_id, current_hash);
-
 
 
 
