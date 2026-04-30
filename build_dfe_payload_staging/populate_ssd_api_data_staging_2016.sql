@@ -2,30 +2,95 @@
 use HDM_Local; -- Note: LA should change to bespoke or remove - HDM_Local is SystemC/LLogic default
 
 /* ==========================================================================
-   D2I CSC API Payload Builder, SQL Server 2016+ compatible
+   D2I CSC API Payload Builder
+   SQL Server 2016+ compatible
    ========================================================================== */
 
 
-/* Note for: Daily Data Flows Early Adopters
-The following table definitions (and populating) can only be run <after> the main SSD script, OR the following definitions
-can be appended into the main SSD and run as one - insert locations within the SSD are marked via the meta tags of:
+/*
+===============================================================================
+ssd_api_data_staging — SCD Type‑1 “Current State” Payload Store
+-------------------------------------------------------------------------------
 
--- META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging"}
--- =============================================================================
-&
--- META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging_anon"}
--- =============================================================================
+Purpose:
+--------
+This table stores the most recent|current CSC API payload per person to support
+daily incremental refresh using hash‑based change detection. Designed
+to act as persistent state table not transient staging table
 
+Design pattern:
+---------------
+Slowly Changing Dimension — Type 1 (SCD‑1)
+
+• One row per person_id represents current authoritative payload
+• Payload changes overwrite current version in-place
+• Limited history (previous payload + hash) kept for audit/debug
+
+Core mechanics:
+---------------
+• SOURCE rows come from the derived cohort (RawPayloads / Hashed)
+• TARGET rows live in ssd_api_data_staging
+• Changes detected using SHA2_256 hash of JSON payload
+
+Row lifecycle:
+--------------
+NEW        -> first time a person appears in the cohort
+UPDATED    -> payload content changed (hash delta detected)
+UNCHANGED  -> payload identical to previous run
+DELETED    -> person no longer present in the authoritative SOURCE set
+
+Change handling:
+----------------
+• On payload change:
+    - json_payload is replaced
+    - previous_json_payload and previous_hash are preserved
+    - submission_status reset to 'Pending'
+• On no change:
+    - row preserved as-is
+    - timestamps intentionally not churned
+
+Soft delete semantics:
+----------------------
+• Rows NOT MATCHED BY SOURCE are soft-deleted
+• row_state set to 'Deleted'
+• No physical deletes performed
+
+Optional cohort restriction:
+----------------------------
+• An optional STAT return filter may be enabled in the MERGE SOURCE
+• When enabled any person_id NOT in STAT table is treated as
+  'not in source'”' and therefore soft-deleted
+
+Timestamp semantics:
+--------------------
+• last_updated represents the last *material payload change*
+• Unchanged rows preserve last_updated across runs
+• Deleted rows update last_updated when deletion happens
+
+Operational notes:
+------------------
+• This table is stateful and MUST NOT be truncated between runs
+• MERGE logic assumes 1 row per person_id
+• UNIQUE idx on person_id required to enforce this
+
+===============================================================================
 */
 
 
--- Data pre/smoke test validator(s) (optional) --
--- D2I offers a seperate <simplified> validation VIEW towards your local data verification checks,
--- this offers some pre-process comparison between your data and the DfE API payload schema 
--- File: (T-SQL 2016+ only)https://github.com/data-to-insight/dfe-csc-api-data-flows/tree/main/pre_flight_checks/ssd_vw_csc_api_schema_checks.sql
--- -- 
+/* =============================================================================
+   Data pre/smoke test validator(s) (optional)
+   =============================================================================
+   D2I offers a seperate <simplified> validation VIEW towards your local data
+   verification checks.
 
+   This provides pre‑process comparison between local SSD data and 
+   DfE CSC API payload schema to help identify mapping, format, or completeness
+   issues pre-payload construction.
 
+   File: (T‑SQL 2016+ only)
+   https://github.com/data-to-insight/dfe-csc-api-data-flows/tree/main/pre_flight_checks/ssd_vw_csc_api_schema_checks.sql
+   =============================================================================
+*/
 
 
 DECLARE @VERSION nvarchar(32) = N'0.4.2';
@@ -37,15 +102,6 @@ RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 -- DROP TABLE IF EXISTS ssd_api_data_staging;
 -- GO
 
-
--- META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging"}
--- =============================================================================
--- Description: Table for API payload and logging. 
--- Author: D2I
--- =============================================================================
-
-
--- IF OBJECT_ID('ssd_api_data_staging', 'U') IS NOT NULL DROP TABLE ssd_api_data_staging;
 IF OBJECT_ID('ssd_api_data_staging') IS NULL
 
 -- META-ELEMENT: {"type": "create_table"}
@@ -868,7 +924,7 @@ WHEN MATCHED THEN
 
         /*
            Replace current payload ONLY when hash differs
-           minimise rewrites & keep JSON stable over runs
+           minimise rewrites & keep JSON stable
         */
         tgt.json_payload =
             CASE WHEN tgt.current_hash <> src.current_hash
@@ -906,7 +962,7 @@ WHEN MATCHED THEN
             END,
 
         /*
-           Row-level state classification:
+           Row-level state classes:
              - Updated    : same person payload changed
              - Unchanged  : same person payload identical
         */
@@ -916,11 +972,24 @@ WHEN MATCHED THEN
                 ELSE 'Unchanged'
             END,
 
-        /*
-           Always touch last_updated on matched row to show evaluated
-           even if no actual data change occurred
+        -- /* Alternative approach if LA prefers
+        --    Always touch last_updated on matched row to show evaluated
+        --    even if no actual data change occurred
+        -- */
+        -- tgt.last_updated = GETDATE()
+
+        /* 
+           NOTE: last_updated advanced ONLY when genuine
+           payload change detected, to suppress timestamp churn
+           on unchanged records over daily runs
         */
-        tgt.last_updated = GETDATE()
+        tgt.last_updated =
+            CASE
+                WHEN tgt.current_hash <> src.current_hash THEN GETDATE()
+                ELSE tgt.last_updated
+            END
+
+
 
 
 /* new|not seen before person */
