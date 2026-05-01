@@ -1,5 +1,6 @@
 -- define as required 
-use HDM_Local; -- Note: LA should change to bespoke or remove - HDM_Local is SystemC/LLogic default
+use HDM_Local;  -- LA should change to bespoke or remove 
+                -- HDM_Local is SystemC/LLogic default
 
 /* ==========================================================================
    D2I CSC API Payload Builder
@@ -8,9 +9,10 @@ use HDM_Local; -- Note: LA should change to bespoke or remove - HDM_Local is Sys
 
 
 /*
-===============================================================================
-ssd_api_data_staging — SCD Type‑1 “Current State” Payload Store
--------------------------------------------------------------------------------
+=============================================================================
+META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging"}
+=============================================================================
+ssd_api_data_staging - SCD Type‑1 Current State Payload Store
 
 Purpose:
 --------
@@ -20,58 +22,57 @@ to act as persistent state table not transient staging table
 
 Design pattern:
 ---------------
-Slowly Changing Dimension — Type 1 (SCD‑1)
+Slowly Changing Dimension - Type 1 (SCD‑1)
 
-• One row per person_id represents current authoritative payload
-• Payload changes overwrite current version in-place
-• Limited history (previous payload + hash) kept for audit/debug
+- One row per person_id represents current authoritative payload
+- Payload changes overwrite current version in-place
+- Limited history (previous payload + hash) kept for audit/debug
 
 Core mechanics:
 ---------------
-• SOURCE rows come from the derived cohort (RawPayloads / Hashed)
-• TARGET rows live in ssd_api_data_staging
-• Changes detected using SHA2_256 hash of JSON payload
+- SOURCE rows come from the derived cohort (RawPayloads / Hashed)
+- TARGET rows live in ssd_api_data_staging
+- Changes detected using SHA2_256 hash of JSON payload
 
 Row lifecycle:
 --------------
 NEW        -> first time a person appears in the cohort
 UPDATED    -> payload content changed (hash delta detected)
 UNCHANGED  -> payload identical to previous run
-DELETED    -> person no longer present in the authoritative SOURCE set
+DELETED    -> person no longer present in SOURCE set(SSD/STAT)
 
 Change handling:
 ----------------
-• On payload change:
+- On payload change:
     - json_payload is replaced
     - previous_json_payload and previous_hash are preserved
     - submission_status reset to 'Pending'
-• On no change:
+- On no change:
     - row preserved as-is
     - timestamps intentionally not churned
 
 Soft delete semantics:
 ----------------------
-• Rows NOT MATCHED BY SOURCE are soft-deleted
-• row_state set to 'Deleted'
-• No physical deletes performed
+- Rows NOT MATCHED BY SOURCE are soft-deleted
+- row_state set to 'Deleted'
+- No physical deletes performed
 
 Optional cohort restriction:
 ----------------------------
-• An optional STAT return filter may be enabled in the MERGE SOURCE
-• When enabled any person_id NOT in STAT table is treated as
-  'not in source'”' and therefore soft-deleted
+- An optional STAT return filter may be enabled in the MERGE SOURCE
+- When enabled any person_id NOT in STAT table is treated as
+  'not in source' and therefore soft-deleted
 
 Timestamp semantics:
 --------------------
-• last_updated represents the last *material payload change*
-• Unchanged rows preserve last_updated across runs
-• Deleted rows update last_updated when deletion happens
+- last_updated represents the last *material payload change*
+- Unchanged rows preserve last_updated across runs
+- Deleted rows update last_updated when deletion happens
 
 Operational notes:
 ------------------
-• This table is stateful and MUST NOT be truncated between runs
-• MERGE logic assumes 1 row per person_id
-• UNIQUE idx on person_id required to enforce this
+- This table is stateful and SHOULD NOT be truncated between runs
+- UNIQUE idx on person_id required to enforce singular records
 
 ===============================================================================
 */
@@ -93,7 +94,7 @@ Operational notes:
 */
 
 
-DECLARE @VERSION nvarchar(32) = N'0.4.2';
+DECLARE @VERSION nvarchar(32) = N'0.4.3';
 RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 
 
@@ -102,8 +103,10 @@ RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 -- DROP TABLE IF EXISTS ssd_api_data_staging;
 -- GO
 
-IF OBJECT_ID('ssd_api_data_staging') IS NULL
+-- Pre-clean up
+IF OBJECT_ID('tempdb..#Hashed') IS NOT NULL DROP TABLE #Hashed;
 
+IF OBJECT_ID('ssd_api_data_staging') IS NULL
 -- META-ELEMENT: {"type": "create_table"}
 BEGIN
     CREATE TABLE ssd_api_data_staging (
@@ -128,7 +131,12 @@ END
 
 
 
-/* === EA Spec window (dynamic: 24 months back --> FY start on 1 April) ===  */
+
+/*
+=============================================================================
+EA Spec window (dynamic: 24 months back -> FY start on 1 April)
+=============================================================================
+*/
 DECLARE @run_date      date = CONVERT(date, GETDATE());
 DECLARE @months_back   int  = 24;
 DECLARE @fy_start_month int = 4;  -- April
@@ -141,8 +149,12 @@ DECLARE @ea_cohort_window_end date = DATEADD(day, 1, @run_date) -- today + 1
 
 
 
-/* === Cohort CTEs, 2016+ compatible === */
 
+/*
+=============================================================================
+Cohort CTEs (SQL Server 2016+ compatible)
+=============================================================================
+*/
 ;WITH EligibleBySpec AS (
   /* Include if:
         - Known DoB and age <=25 inclusive at some point during window(we key off the 26th bday)
@@ -183,8 +195,8 @@ DECLARE @ea_cohort_window_end date = DATEADD(day, 1, @run_date) -- today + 1
 
 
 ActiveReferral AS (
-  /* episode overlaps window, and open at run_date
-     overlap, referral_date <= window_end and (close_date null or close_date >= window_start)
+  /* CIN episode overlaps cohort window */
+  /* open at run_date overlap, referral_date <= window_end and (close_date null or close_date >= window_start)
      open, close_date null or close_date > run_date
   */
     SELECT DISTINCT cine.cine_person_id AS person_id
@@ -194,7 +206,7 @@ ActiveReferral AS (
     
 ),
 WaitingAssessment AS (
-    /* Open referral episode with no assessment started for that referral (placeholder). */
+    /* Open referral episode with no assessment started for that referral (placeholder) */
     SELECT DISTINCT cine.cine_person_id AS person_id
     FROM ssd_cin_episodes cine
     WHERE cine.cine_close_date IS NULL
@@ -315,16 +327,23 @@ IsCareLeaver16to25 AS (
 
 SpecInclusion AS (
     /*
-      Union of inclusion sets per spec
-      de-dup across groups
+      Combined inclusion sets per spec
     */
-    SELECT person_id FROM ActiveReferral
-    UNION SELECT person_id FROM WaitingAssessment
-    UNION SELECT person_id FROM HasCINPlan
-    -- UNION SELECT person_id FROM HasCPPlan
-    UNION SELECT person_id FROM HasLAC
-    UNION SELECT person_id FROM IsCareLeaver16to25
-    -- UNION SELECT person_id FROM IsDisabled
+
+    SELECT DISTINCT person_id
+    FROM (
+        SELECT person_id FROM ActiveReferral
+        UNION ALL
+        SELECT person_id FROM WaitingAssessment
+        UNION ALL
+        SELECT person_id FROM HasCINPlan
+        -- UNION ALL SELECT person_id FROM HasCPPlan
+        UNION ALL
+        SELECT person_id FROM HasLAC
+        UNION ALL
+        SELECT person_id FROM IsCareLeaver16to25
+        -- UNION ALL SELECT person_id FROM IsDisabled
+    ) AS all_included
 ),
 
 
@@ -875,181 +894,150 @@ RawPayloads AS (
             ) THEN 1 ELSE 0 END AS has_sdq
     ) AS sdq
 
-),   -- close RawPayloads CTE
+)   -- close RawPayloads CTE
   
-/* hash payload + compare, de-dup by person_id and payload content
-   Note: SHA2_256 used for change detection only
+
+/*
+=============================================================================
+Build payload content and compute hash
+=============================================================================
 */
-Hashed AS (
-    SELECT
-        person_id,
-        legacy_id,
-        json_payload,
-        HASHBYTES('SHA2_256', CAST(json_payload AS NVARCHAR(MAX))) AS current_hash
-    FROM RawPayloads
+SELECT
+    rp.person_id,
+    rp.legacy_id,
+    rp.json_payload,
+    HASHBYTES('SHA2_256', CAST(rp.json_payload AS NVARCHAR(MAX))) AS current_hash
+INTO #Hashed
+FROM RawPayloads rp
+
+
+/* 
+  Uncomment the below to force hard-filter against LA known Stat-Returns cohort table
+   We anticipate / recommend that all LAs do this initially to enable internal cohort auditing
+   for records.
+   Behaviour:
+   - SOURCE is restricted to people present in the STAT cohort table
+   - Anyone already in the staging table who subsequently is not in STAT table
+     is treated as 'not found in source'
+   - Not in STAT table --> not in SOURCE --> soft-deleted in staging table i.e. marked Deleted
+*/
+-- INNER JOIN dbo.StoredStatReturnsCohortIdTable STATfilter
+--     ON STATfilter.person_id = rp.person_id;
+
+
+
+
+
+
+/*
+=============================================================================
+Apply SCD‑1 merge semantics (split UPDATE / INSERT / DELETE)
+=============================================================================
+*/
+
+/* Update changed rows */
+UPDATE tgt
+SET
+    tgt.previous_json_payload = tgt.json_payload,
+    tgt.json_payload          = src.json_payload,
+    tgt.previous_hash         = tgt.current_hash,
+    tgt.current_hash          = src.current_hash,
+    tgt.submission_status     = 'Pending',
+    tgt.row_state             = 'Updated',
+    tgt.last_updated          = GETDATE()
+FROM ssd_api_data_staging tgt
+JOIN #Hashed src
+  ON src.person_id = tgt.person_id
+WHERE tgt.current_hash <> src.current_hash;
+
+/* Insert new rows */
+INSERT INTO ssd_api_data_staging (
+    person_id,
+    legacy_id,
+    json_payload,
+    current_hash,
+    submission_status,
+    row_state,
+    last_updated
 )
+SELECT
+    src.person_id,
+    src.legacy_id,
+    src.json_payload,
+    src.current_hash,
+    'Pending',
+    'New',
+    GETDATE()
+FROM #Hashed src
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM ssd_api_data_staging tgt
+    WHERE tgt.person_id = src.person_id
+);
 
-MERGE ssd_api_data_staging AS tgt
--- MERGE semantics are:
--- SOURCE = rows produced by this subquery
--- TARGET = rows currently in ssd_api_data_staging
+/* Soft delete: person no longer in cohort and/or LA STAT table*/
+UPDATE tgt
+SET
+    row_state = 'Deleted',
+    last_updated = GETDATE()
+FROM ssd_api_data_staging tgt
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM #Hashed src
+    WHERE src.person_id = tgt.person_id
+);
 
-USING (
-    SELECT h.*
-    FROM Hashed h
-
-    -- /* Uncomment to force hard-filter against LA known Stat-Returns cohort table
-    -- We anticipate/recommend that all LA's do this initially to enable internal cohort auditing for records 
-    -- Anyone not in the STAT table treated as 'not found in source' and becomes Deleted 
-    -- Not in STAT table --> not in SOURCE == soft-deleted in staging tbl */
-    -- INNER JOIN
-    --     [dbo].[StoredStatReturnsCohortIdTable] STATfilter -- FAILSAFE STAT RETURN COHORT
-    --     ON STATfilter.[person_id] = h.person_id
-
-) AS src
-    ON tgt.person_id = src.person_id
-
-/* match: update in place */
-WHEN MATCHED THEN
-    UPDATE SET
-        /* 
-           Preserve prev payload ONLY when real change detected
-           allows before/after compare and supports re-submit logic
-        */
-        tgt.previous_json_payload =
-            CASE WHEN tgt.current_hash <> src.current_hash
-                 THEN tgt.json_payload          -- last-sent payload
-                 ELSE tgt.previous_json_payload -- leave untouched if no change
-            END,
-
-        /*
-           Replace current payload ONLY when hash differs
-           minimise rewrites & keep JSON stable
-        */
-        tgt.json_payload =
-            CASE WHEN tgt.current_hash <> src.current_hash
-                 THEN src.json_payload
-                 ELSE tgt.json_payload
-            END,
-
-        /*
-           Rotate hash in lockstep with payload rotation
-           previous_hash reflects hash of previous_json_payload
-        */
-        tgt.previous_hash =
-            CASE WHEN tgt.current_hash <> src.current_hash
-                 THEN tgt.current_hash
-                 ELSE tgt.previous_hash
-            END,
-
-        /*
-           Update current_hash when content changed
-        */
-        tgt.current_hash =
-            CASE WHEN tgt.current_hash <> src.current_hash
-                 THEN src.current_hash
-                 ELSE tgt.current_hash
-            END,
-
-        /*
-           Reset submission status ONLY when sthing new to submit
-           Unchanged records keep prior status (e.g. Sent / Error)
-        */
-        tgt.submission_status =
-            CASE WHEN tgt.current_hash <> src.current_hash
-                 THEN 'Pending'
-                 ELSE tgt.submission_status
-            END,
-
-        /*
-           Row-level state classes:
-             - Updated    : same person payload changed
-             - Unchanged  : same person payload identical
-        */
-        tgt.row_state =
-            CASE
-                WHEN tgt.current_hash <> src.current_hash THEN 'Updated'
-                ELSE 'Unchanged'
-            END,
-
-        -- /* Alternative approach if LA prefers
-        --    Always touch last_updated on matched row to show evaluated
-        --    even if no actual data change occurred
-        -- */
-        -- tgt.last_updated = GETDATE()
-
-        /* 
-           NOTE: last_updated advanced ONLY when genuine
-           payload change detected, to suppress timestamp churn
-           on unchanged records over daily runs
-        */
-        tgt.last_updated =
-            CASE
-                WHEN tgt.current_hash <> src.current_hash THEN GETDATE()
-                ELSE tgt.last_updated
-            END
-
-
-
-
-/* new|not seen before person */
-WHEN NOT MATCHED BY TARGET
-THEN INSERT (
-     person_id,
-     legacy_id,
-     json_payload,
-     current_hash,
-     submission_status,
-     row_state,
-     last_updated
+-- -- Optional
+-- CREATE UNIQUE INDEX UX_ssd_api_data_staging_person ON ssd_api_data_staging(person_id);
+IF NOT EXISTS (
+    -- to avoid issues on re-runs
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'UX_ssd_api_data_staging_person'
+      AND object_id = OBJECT_ID('ssd_api_data_staging')
 )
-VALUES (
-     src.person_id,
-     src.legacy_id,
-     src.json_payload,
-     src.current_hash,
-     'Pending',
-     'New',
-     GETDATE()
-)
-
-/* soft delete: person no longer in cohort */
-WHEN NOT MATCHED BY SOURCE
-THEN UPDATE SET
-     tgt.row_state    = 'Deleted',
-     tgt.last_updated = GETDATE()
-;
-
-
--- -- -- Optional
--- -- CREATE INDEX IX_ssd_cin_episodes_dates      ON ssd_cin_episodes(cine_person_id, cine_referral_date, cine_close_date);
--- -- CREATE INDEX IX_ssd_cin_plans_dates         ON ssd_cin_plans(cinp_person_id, cinp_cin_plan_start_date, cinp_cin_plan_end_date);
--- -- CREATE INDEX IX_ssd_cp_plans_dates          ON ssd_cp_plans(cppl_person_id, cppl_cp_plan_start_date, cppl_cp_plan_end_date);
--- -- CREATE INDEX IX_ssd_cla_placements_dates    ON ssd_cla_placement(clap_cla_id, clap_cla_placement_start_date, clap_cla_placement_end_date);
--- -- CREATE INDEX IX_ssd_care_leavers_date       ON ssd_care_leavers(clea_person_id, clea_care_leaver_latest_contact);
--- -- CREATE INDEX IX_ssd_sdq_date                ON ssd_sdq_scores(csdq_person_id, csdq_sdq_completed_date);
-
--- -- CREATE UNIQUE INDEX UX_ssd_api_person_hash ON ssd_api_data_staging(person_id, current_hash);
+BEGIN
+    CREATE UNIQUE INDEX UX_ssd_api_data_staging_person
+    ON ssd_api_data_staging(person_id)
+    INCLUDE (current_hash);
+END;
 
 
 
+
+/* =============================================================================
+SECTION: TESTING / VERIFICATION SUPPORT (NON-LIVE)
+============================================================================= */
+
+/*
+SUBSECTION: Anonymised / Test Staging Table
+-------------------------------------------
+Table for TEST|ANON API payload and logging
+
+Purpose:
+--------
+This table is NON-live and solely for pre-live data/API testing.
+
+- Data from this table sent only to tCSC TEST receiver endpoint
+- Intended for schema, payload and API contract validation
+- Safe to truncate, reseed or delete at any time
+
+Lifecycle:
+----------
+- Expected to be deprecated / removed by the LA once LIVE submissions
+  to DfE Pre‑Production / Production endpoints are enabled.
+
+Pre‑Requisite:
+--------------
+- Requires ssd_api_data_staging to already exist
+*/
 
 -- META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging_anon"}
--- =============================================================================
--- Description: Table for TEST|ANON API payload and logging 
--- This table is NON-live and solely for the pre-live data/api testing. 
 
--- Table data sent only to Children in Social Care Data Receiver (TEST)
 
--- To be depreciated/removed at any point by the LA; we'd expect this to be after 
--- the toggle to LIVE sends are initiated to DfE LIVE Pre-Production(PP) and Production(P) endpoints. 
--- Author: D2I
--- Pre_Requisite: Requires the ssd_api_data_staging table to already exist
--- =============================================================================
-
--- create a duplicate copy of the staging table structure for anonymised records/data testing
 IF OBJECT_ID('ssd_api_data_staging_anon', 'U') IS NULL
 BEGIN
+    -- create a structural clone only (no data)
     SELECT TOP (0) *
     INTO ssd_api_data_staging_anon
     FROM ssd_api_data_staging;
@@ -1059,8 +1047,10 @@ BEGIN
     -- Wipe any existing rows, identity col reset to 0 so next insert is 1
     TRUNCATE TABLE ssd_api_data_staging_anon;
 
-    -- or
+
+    -- alternative (if TRUNCATE not permitted)
     -- DBCC CHECKIDENT ('ssd_api_data_staging_anon', RESEED, 0);
+
 END
 
 -- GO
@@ -1068,10 +1058,148 @@ END
 SET NOCOUNT ON;
 
 
--- Fake example data incoming
+
 
 --------------------------------------------------------------------------------
--- Record 1: Pending
+/*
+SUBSECTION: Sample Payload Injection (Example Records)
+------------------------------------------------------
+Records simulate upstream API states for integration testing and UI validation
+
+Record types:
+Record 0 --> Spec reference / maximal
+Record 1 --> New --> Pending
+Record 2 --> New --> Error
+Record 3 --> Existing --> Sent --> Unchanged
+Record 4 --> Existing --> Updated --> Re‑submit
+*/
+
+
+--------------------------------------------------------------------------------
+-- Sample Record 0: Fully Populated (spec-maximal / reference payload)
+--------------------------------------------------------------------------------
+-- Full payload
+--------------------------------------------------------------------------------
+DECLARE @p0 NVARCHAR(MAX) = N'{
+  "la_child_id": "Child0000",
+  "mis_child_id": "Supplier-Child-0000",
+  "purge": false,
+
+  "child_details": {
+    "unique_pupil_number": "ABC0123456789",
+    "former_unique_pupil_number": "DEF0123456789",
+    "unique_pupil_number_unknown_reason": "UN1",
+    "first_name": "Jordan",
+    "surname": "Goldstandard",
+    "date_of_birth": "2007-06-14",
+    "expected_date_of_birth": "2007-06-14",
+    "sex": "M",
+    "ethnicity": "WBRI",
+    "disabilities": ["HAND", "VIS"],
+    "postcode": "AB12 3DE",
+    "uasc_flag": true,
+    "uasc_end_date": "2022-06-14",
+    "purge": false
+  },
+
+  "health_and_wellbeing": {
+    "sdq_assessments": [
+      { "date": "2022-06-14", "score": 20 }
+    ],
+    "purge": false
+  },
+
+  "social_care_episodes": [
+    {
+      "social_care_episode_id": "ABC123456",
+      "referral_date": "2022-06-14",
+      "referral_source": "1C",
+      "referral_no_further_action_flag": false,
+
+      "care_worker_details": [
+        {
+          "worker_id": "ABC123",
+          "start_date": "2022-06-14",
+          "end_date": "2023-01-01"
+        }
+      ],
+
+      "child_and_family_assessments": [
+        {
+          "child_and_family_assessment_id": "ABC123456",
+          "start_date": "2022-06-14",
+          "authorisation_date": "2022-06-14",
+          "factors": ["1C", "4A"],
+          "purge": false
+        }
+      ],
+
+      "child_in_need_plans": [
+        {
+          "child_in_need_plan_id": "ABC123456",
+          "start_date": "2022-06-14",
+          "end_date": "2023-06-14",
+          "purge": false
+        }
+      ],
+
+      "section_47_assessments": [
+        {
+          "section_47_assessment_id": "ABC123456",
+          "start_date": "2022-06-14",
+          "icpc_required_flag": true,
+          "icpc_date": "2022-06-14",
+          "end_date": "2022-09-01",
+          "purge": false
+        }
+      ],
+
+      "child_protection_plans": [
+        {
+          "child_protection_plan_id": "ABC123456",
+          "start_date": "2022-09-01",
+          "end_date": "2023-09-01",
+          "purge": false
+        }
+      ],
+
+      "child_looked_after_placements": [
+        {
+          "child_looked_after_placement_id": "ABC123456",
+          "start_date": "2022-06-14",
+          "start_reason": "S",
+          "placement_type": "K1",
+          "postcode": "AB12 3DE",
+          "end_date": "2023-03-01",
+          "end_reason": "E3",
+          "change_reason": "CHILD",
+          "purge": false
+        }
+      ],
+
+      "adoption": {
+        "initial_decision_date": "2022-06-14",
+        "matched_date": "2023-01-15",
+        "placed_date": "2023-03-20",
+        "purge": false
+      },
+
+      "care_leavers": {
+        "contact_date": "2024-02-01",
+        "activity": "F2",
+        "accommodation": "D",
+        "purge": false
+      },
+
+      "closure_date": "2023-09-01",
+      "closure_reason": "RC7",
+      "purge": false
+    }
+  ]
+}';
+
+--------------------------------------------------------------------------------
+-- Sample Record 1: Pending (New Awaiting First Submission)
 --------------------------------------------------------------------------------
 DECLARE @p1 NVARCHAR(MAX) = N'{
   "la_child_id": "Child2234",
@@ -1080,7 +1208,10 @@ DECLARE @p1 NVARCHAR(MAX) = N'{
   "child_details": {
     "unique_pupil_number": "JKL0123456789",
     "former_unique_pupil_number": "MNO0123456789",
+    "first_name": "Alice",
+    "surname": "Testchild",
     "date_of_birth": "2004-09-23",
+    "expected_date_of_birth": "2004-09-23",
     "sex": "F",
     "ethnicity": "B2",
     "postcode": "BN14 7ES",
@@ -1162,8 +1293,9 @@ VALUES
     GETDATE()
 );
 
+
 --------------------------------------------------------------------------------
--- Record 2: Error
+-- Sample Record 2: Error (New, Submission Failed)
 --------------------------------------------------------------------------------
 DECLARE @p2 NVARCHAR(MAX) = N'{
   "la_child_id": "Child3234",
@@ -1172,7 +1304,10 @@ DECLARE @p2 NVARCHAR(MAX) = N'{
   "child_details": {
     "unique_pupil_number": "PQR0123456789",
     "former_unique_pupil_number": "STU0123456789",
+    "first_name": "Ben",
+    "surname": "Example",
     "date_of_birth": "2005-10-10",
+    "expected_date_of_birth": "2005-10-10",
     "sex": "M",
     "ethnicity": "C3",
     "postcode": "BN14 7ES",
@@ -1240,8 +1375,9 @@ VALUES
     GETDATE()
 );
 
+
 --------------------------------------------------------------------------------
--- Record 3: Sent (with previous payload + hash)
+-- Sample Record 3: Sent (Existing, Unchanged)
 --------------------------------------------------------------------------------
 DECLARE @prev3 NVARCHAR(MAX) = N'{
   "la_child_id": "Child4234",
@@ -1253,15 +1389,20 @@ DECLARE @p3 NVARCHAR(MAX) = N'{
   "la_child_id": "Child4234",
   "mis_child_id": "Supplier-Child-4234",
   "purge": false,
+  
   "child_details": {
     "unique_pupil_number": "VWX0123456789",
     "former_unique_pupil_number": "YZA0123456789",
+    "first_name": "Carl",
+    "surname": "Sample",
     "date_of_birth": "2006-05-05",
+    "expected_date_of_birth": "2006-05-05",
     "sex": "M",
     "ethnicity": "D4",
     "postcode": "BN14 7ES",
     "purge": false
-  },
+  }
+
   "health_and_wellbeing": { "purge": false },
   "social_care_episodes": [
     {
@@ -1315,24 +1456,127 @@ VALUES
     GETDATE()
 );
 
+
+--------------------------------------------------------------------------------
+-- Sample Record 4: Updated (existing record, payload changed)
+--------------------------------------------------------------------------------
+DECLARE @prev4 NVARCHAR(MAX) = N'{
+  "la_child_id": "Child5234",
+  "mis_child_id": "Supplier-Child-5234",
+  "purge": false,
+  "child_details": {
+    "unique_pupil_number": "XYZ0123456789",
+    "first_name": "Daisy",
+    "surname": "Updatecase",
+    "date_of_birth": "2005-03-15",
+    "expected_date_of_birth": "2005-03-15",
+    "sex": "F",
+    "ethnicity": "A1",
+    "postcode": "BN15 9AA",
+    "purge": false
+  }
+  "social_care_episodes": [
+    {
+      "social_care_episode_id": "43423",
+      "referral_date": "2010-06-01",
+      "care_worker_details": [
+        { "worker_id": "X1111111", "start_date": "2022-04-01" }
+      ],
+      "purge": false
+    }
+  ]
+}';
+
+DECLARE @p4 NVARCHAR(MAX) = N'{
+  "la_child_id": "Child5234",
+  "mis_child_id": "Supplier-Child-5234",
+  "purge": false,
+  "child_details": {
+    "unique_pupil_number": "XYZ0123456789",
+    "date_of_birth": "2005-03-15",
+    "sex": "F",
+    "ethnicity": "A1",
+    "postcode": "BN15 9AA",
+    "purge": false
+  },
+  "social_care_episodes": [
+    {
+      "social_care_episode_id": "43423",
+      "referral_date": "2010-06-01",
+      "care_worker_details": [
+        { "worker_id": "X1111111", "start_date": "2022-04-01" },
+        { "worker_id": "Y2222222", "start_date": "2024-02-10" }
+      ],
+      "purge": false
+    }
+  ]
+}';
+
+INSERT INTO ssd_api_data_staging_anon
+(
+    person_id,
+    legacy_id,
+    previous_json_payload,
+    json_payload,
+    partial_json_payload,
+    previous_hash,
+    current_hash,
+    row_state,
+    last_updated,
+    submission_status,
+    api_response,
+    submission_timestamp
+)
+VALUES
+(
+    N'C004',
+    N'L004',
+    @prev4,
+    @p4,
+    NULL,
+    HASHBYTES('SHA2_256', CAST(@prev4 AS NVARCHAR(4000))),
+    HASHBYTES('SHA2_256', CAST(@p4   AS NVARCHAR(4000))),
+    N'Updated',
+    GETDATE(),
+    N'Pending',
+    NULL,
+    GETDATE()
+);
+
+
 SET NOCOUNT OFF;
 
 
-/* 
-SAMPLE LIVE PAYLOAD VERIFICATION OUTPUTS
-Check table(s) populated
+
+--------------------------------------------------------------------------------
+/*
+SECTION: Payload Verification Queries
+===============================================================================
+Optional queries support manual inspection of payload content and
+shape after staging run
+
+All below queries read-only
+*/
+--------------------------------------------------------------------------------
+
+
+
+/*
+SUBSECTION: Basic Sanity Checks
+--------------------------------
+Verify recent rows exist in staging tables.
 */
 select TOP (5) * from ssd_api_data_staging;
 select TOP (5) * from ssd_api_data_staging_anon; -- verify inclusion of x3 fake records added above 
 
 
+--------------------------------------------------------------------------------
+/*
+SUBSECTION: Extended Payload Size Inspection
+----------------------------------------------
+Return records with large or deeply nested payloads - to view full structure records
+*/
 
--- /* 
--- SAMPLE LIVE PAYLOAD VERIFICATION OUTPUTS
--- */
-
-
--- -- PAYLOAD VERIFICATION 1 : Show records with with extended/nested payload (if available)
 -- SELECT TOP (3)
 --     person_id,
 --     LEN(json_payload)        AS payload_chars,
@@ -1342,7 +1586,13 @@ select TOP (5) * from ssd_api_data_staging_anon; -- verify inclusion of x3 fake 
 
 
 
--- -- PAYLOAD VERIFICATION 2 : Show records with health&wellbeing data available
+
+--------------------------------------------------------------------------------
+/*
+SUBSECTION: Health & Wellbeing / SDQ Presence
+----------------------------------------------
+Identify records with SDQ assessments and approximate counts
+*/
 -- ;WITH WithCounts AS (
 --     SELECT
 --         s.person_id,
@@ -1382,7 +1632,13 @@ select TOP (5) * from ssd_api_data_staging_anon; -- verify inclusion of x3 fake 
 -- -- ORDER BY DATALENGTH(json_payload) DESC, id DESC;
 
 
--- -- PAYLOAD VERIFICATION 3 : Show records with adoption data available
+
+--------------------------------------------------------------------------------
+/*
+SUBSECTION: Adoption Payload Presence
+-------------------------------------
+Identify records where adoption data exists
+*/
 -- SELECT TOP (3)
 --     person_id,
 --     LEN(json_payload) AS payload_chars,
@@ -1394,7 +1650,13 @@ select TOP (5) * from ssd_api_data_staging_anon; -- verify inclusion of x3 fake 
 -- ORDER BY DATALENGTH(json_payload) DESC, id DESC;
 
 
--- -- PAYLOAD VERIFICATION 4 : S47 records where an ICPC date exists
+
+--------------------------------------------------------------------------------
+/*
+SUBSECTION: Section 47 / ICPC Indicators
+----------------------------------------
+Identify records containing S47 assessments and ICPC dates
+*/
 -- -- spot episodes with conference activity recorded
 -- SELECT TOP (5)
 --     person_id,
@@ -1407,8 +1669,13 @@ select TOP (5) * from ssd_api_data_staging_anon; -- verify inclusion of x3 fake 
 
 
 
--- -- PAYLOAD VERIFICATION 5 : Show records with S47 assessments
--- -- S47 presence and s47s count per record in order
+
+--------------------------------------------------------------------------------
+/*
+SUBSECTION: Section 47 Assessment Presence and Counts
+-----------------------------------------------------
+Show records with Section 47 (S47) assessments present in the payload
+*/
 -- ;WITH WithS47 AS (
 --     SELECT
 --         s.person_id,
@@ -1433,7 +1700,12 @@ select TOP (5) * from ssd_api_data_staging_anon; -- verify inclusion of x3 fake 
 
 
 
--- -- PAYLOAD VERIFICATION 6 : Show age breakdown of records
+--------------------------------------------------------------------------------
+/*
+SUBSECTION: Age Distribution (Derived)
+---------------------------------------
+Quick age band check for records in staging
+*/
 -- SELECT
 --   DATEDIFF(year, p.pers_dob, CONVERT(date, GETDATE()))
 --     - CASE WHEN DATEADD(year, DATEDIFF(year, p.pers_dob, CONVERT(date, GETDATE())), p.pers_dob) > CONVERT(date, GETDATE()) THEN 1 ELSE 0 END
@@ -1448,3 +1720,13 @@ select TOP (5) * from ssd_api_data_staging_anon; -- verify inclusion of x3 fake 
 --   DATEDIFF(year, p.pers_dob, CONVERT(date, GETDATE()))
 --     - CASE WHEN DATEADD(year, DATEDIFF(year, p.pers_dob, CONVERT(date, GETDATE())), p.pers_dob) > CONVERT(date, GETDATE()) THEN 1 ELSE 0 END
 -- ORDER BY age_years;
+
+
+
+
+--------------------------------------------------------------------------------
+/*
+SECTION: Cleanup
+===============================================================================
+*/
+IF OBJECT_ID('tempdb..#Hashed') IS NOT NULL DROP TABLE #Hashed;
