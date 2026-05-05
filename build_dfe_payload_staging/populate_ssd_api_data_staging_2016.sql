@@ -12,37 +12,31 @@ use HDM_Local;  -- LA should change to bespoke or remove
 =============================================================================
 META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging"}
 =============================================================================
-ssd_api_data_staging - SCD Type‑1 Current State Payload Store
+ssd_api_data_staging - SCD Type-1 Current State Payload Store
 
 Purpose:
---------
 This table stores the most recent|current CSC API payload per person to support
-daily incremental refresh using hash‑based change detection. Designed
+(daily) incremental refresh using hash-based change detection. Designed
 to act as persistent state table not transient staging table
 
 Design pattern:
----------------
-Slowly Changing Dimension - Type 1 (SCD‑1)
-
+Slowly Changing Dimension - Type 1 (SCD-1)
 - One row per person_id represents current authoritative payload
 - Payload changes overwrite current version in-place
 - Limited history (previous payload + hash) kept for audit/debug
 
 Core mechanics:
----------------
 - SOURCE rows come from the derived cohort (RawPayloads / Hashed)
 - TARGET rows live in ssd_api_data_staging
 - Changes detected using SHA2_256 hash of JSON payload
 
 Row lifecycle:
---------------
-NEW        -> first time a person appears in the cohort
+NEW        -> first time person appears in cohort
 UPDATED    -> payload content changed (hash delta detected)
 UNCHANGED  -> payload identical to previous run
 DELETED    -> person no longer present in SOURCE set(SSD/STAT)
 
 Change handling:
-----------------
 - On payload change:
     - json_payload is replaced
     - previous_json_payload and previous_hash are preserved
@@ -52,27 +46,23 @@ Change handling:
     - timestamps intentionally not churned
 
 Soft delete semantics:
-----------------------
 - Rows NOT MATCHED BY SOURCE are soft-deleted
 - row_state set to 'Deleted'
-- No physical deletes performed
+- No physical deletes performed on ssd api staging table
 
-Optional cohort restriction:
-----------------------------
+Opt cohort restriction:
 - An optional STAT return filter may be enabled in the MERGE SOURCE
 - When enabled any person_id NOT in STAT table is treated as
   'not in source' and therefore soft-deleted
 
 Timestamp semantics:
---------------------
 - last_updated represents the last *material payload change*
 - Unchanged rows preserve last_updated across runs
 - Deleted rows update last_updated when deletion happens
 
-Operational notes:
-------------------
-- This table is stateful and SHOULD NOT be truncated between runs
-- UNIQUE idx on person_id required to enforce singular records
+Op notes:
+- Table is stateful and SHOULD NOT be truncated between runs
+- UNIQUE idx on person_id enforces singular records
 
 ===============================================================================
 */
@@ -84,17 +74,17 @@ Operational notes:
    D2I offers a seperate <simplified> validation VIEW towards your local data
    verification checks.
 
-   This provides pre‑process comparison between local SSD data and 
+   This provides pre-process comparison between local SSD data and 
    DfE CSC API payload schema to help identify mapping, format, or completeness
    issues pre-payload construction.
 
-   File: (T‑SQL 2016+ only)
+   File: (T-SQL 2016+ only)
    https://github.com/data-to-insight/dfe-csc-api-data-flows/tree/main/pre_flight_checks/ssd_vw_csc_api_schema_checks.sql
    =============================================================================
 */
 
 
-DECLARE @VERSION nvarchar(32) = N'0.4.3';
+DECLARE @VERSION nvarchar(32) = N'0.4.4';
 RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 
 
@@ -324,6 +314,112 @@ IsCareLeaver16to25 AS (
 --     FROM ssd_disability d
 --     WHERE NULLIF(LTRIM(RTRIM(d.disa_disability_code)), '') IS NOT NULL
 -- ),
+
+
+SemanticHashPayload AS (
+  
+  /*
+  Semantic hash strategy:
+  Payload change detection is semantic projection of CSC data,
+  >>excluding<< system-generated ids that may change (e.g. SystemC) 
+  between runs without representing material change in the payload|record
+
+  Full API JSON payload retained ready for submission
+  */
+
+    SELECT
+        p.pers_person_id AS person_id,
+
+        (
+            SELECT
+                /* === child semantics === */
+                CONVERT(varchar(10), p.pers_dob, 23)          AS date_of_birth,
+                CONVERT(varchar(10), p.pers_expected_dob, 23) AS expected_date_of_birth,
+                p.pers_sex                                    AS sex,
+                LEFT(NULLIF(LTRIM(RTRIM(p.pers_ethnicity)), ''), 4) AS ethnicity,
+
+                /* UASC semantics */
+                CASE 
+                    WHEN EXISTS (
+                        SELECT 1
+                        FROM ssd_immigration_status s
+                        WHERE s.immi_person_id = p.pers_person_id
+                          AND ISNULL(s.immi_immigration_status, '')
+                              COLLATE Latin1_General_CI_AI LIKE '%UASC%'
+                    )
+                    THEN 1 ELSE 0
+                END AS uasc_flag,
+
+                /* === episode semantics === */
+                (
+                    SELECT
+                        CONVERT(varchar(10), cine.cine_referral_date, 23) AS referral_date,
+                        CONVERT(varchar(10), cine.cine_close_date, 23)    AS closure_date,
+                        LEFT(NULLIF(LTRIM(RTRIM(cine.cine_close_reason)), ''), 3) AS closure_reason,
+
+                        /* NFA flag (semantic, not ID) */
+                        CASE
+                            WHEN TRY_CONVERT(bit, cine.cine_referral_nfa) IS NOT NULL
+                                THEN TRY_CONVERT(bit, cine.cine_referral_nfa)
+                            WHEN UPPER(LTRIM(RTRIM(cine.cine_referral_nfa))) IN ('Y','T','1','TRUE')
+                                THEN CAST(1 AS bit)
+                            WHEN UPPER(LTRIM(RTRIM(cine.cine_referral_nfa))) IN ('N','F','0','FALSE')
+                                THEN CAST(0 AS bit)
+                            ELSE NULL
+                        END AS referral_no_further_action_flag,
+
+                        /* === care worker semantics === */
+                        (
+                            SELECT
+                                pr.prof_social_worker_registration_no AS worker_id,
+                                CONVERT(varchar(10), i.invo_involvement_start_date, 23) AS start_date,
+                                CONVERT(varchar(10), i.invo_involvement_end_date,   23) AS end_date
+                            FROM ssd_involvements i
+                            JOIN ssd_professionals pr
+                              ON pr.prof_professional_id = i.invo_professional_id
+                            WHERE i.invo_referral_id = cine.cine_referral_id
+                            FOR JSON PATH
+                        ) AS care_workers,
+
+                        /* === presence flags (semantic) === */
+                        CASE WHEN EXISTS (
+                            SELECT 1
+                            FROM ssd_cin_assessments ca
+                            WHERE ca.cina_referral_id = cine.cine_referral_id
+                        ) THEN 1 ELSE 0 END AS has_assessment,
+
+                        CASE WHEN EXISTS (
+                            SELECT 1
+                            FROM ssd_cin_plans cp
+                            WHERE cp.cinp_referral_id = cine.cine_referral_id
+                        ) THEN 1 ELSE 0 END AS has_cin_plan,
+
+                        CASE WHEN EXISTS (
+                            SELECT 1
+                            FROM ssd_cp_plans cpp
+                            WHERE cpp.cppl_referral_id = cine.cine_referral_id
+                        ) THEN 1 ELSE 0 END AS has_cp_plan,
+
+                        CASE WHEN EXISTS (
+                            SELECT 1
+                            FROM ssd_cla_episodes clae
+                            WHERE clae.clae_referral_id = cine.cine_referral_id
+                        ) THEN 1 ELSE 0 END AS has_lac
+
+                    FROM ssd_cin_episodes cine
+                    WHERE cine.cine_person_id = p.pers_person_id
+                      AND cine.cine_referral_date <= @ea_cohort_window_end
+                      AND (cine.cine_close_date IS NULL
+                           OR cine.cine_close_date >= @ea_cohort_window_start)
+                    FOR JSON PATH
+                ) AS episodes
+
+            FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
+        ) AS semantic_hash_payload
+
+    FROM ssd_person p
+),
+
 
 SpecInclusion AS (
     /*
@@ -906,9 +1002,16 @@ SELECT
     rp.person_id,
     rp.legacy_id,
     rp.json_payload,
-    HASHBYTES('SHA2_256', CAST(rp.json_payload AS NVARCHAR(MAX))) AS current_hash
+
+    HASHBYTES(
+        'SHA2_256',
+        CAST(shp.semantic_hash_payload AS NVARCHAR(MAX))
+    ) AS current_hash
+
 INTO #Hashed
 FROM RawPayloads rp
+JOIN SemanticHashPayload shp
+  ON shp.person_id = rp.person_id;
 
 
 /* 
@@ -931,7 +1034,7 @@ FROM RawPayloads rp
 
 /*
 =============================================================================
-Apply SCD‑1 merge semantics (split UPDATE / INSERT / DELETE)
+Apply SCD-1 merge semantics (split UPDATE / INSERT / DELETE)
 =============================================================================
 */
 
@@ -1006,30 +1109,24 @@ END;
 
 
 /* =============================================================================
-SECTION: TESTING / VERIFICATION SUPPORT (NON-LIVE)
+SECTION: TESTING / VERIFICATION SUPPORT (NON-LIVE|TEST)
 ============================================================================= */
 
 /*
-SUBSECTION: Anonymised / Test Staging Table
--------------------------------------------
-Table for TEST|ANON API payload and logging
+SUBSECTION: Anonymised / TEST|ANON API payload and logging
+----------------------------------------------------------
 
 Purpose:
---------
 This table is NON-live and solely for pre-live data/API testing.
 
-- Data from this table sent only to tCSC TEST receiver endpoint
+- Data from this table sent only to CSC TEST receiver endpoint
 - Intended for schema, payload and API contract validation
 - Safe to truncate, reseed or delete at any time
 
 Lifecycle:
-----------
 - Expected to be deprecated / removed by the LA once LIVE submissions
-  to DfE Pre‑Production / Production endpoints are enabled.
+  to DfE Pre-Production / Production endpoints are enabled.
 
-Pre‑Requisite:
---------------
-- Requires ssd_api_data_staging to already exist
 */
 
 -- META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging_anon"}
@@ -1062,23 +1159,21 @@ SET NOCOUNT ON;
 
 --------------------------------------------------------------------------------
 /*
-SUBSECTION: Sample Payload Injection (Example Records)
-------------------------------------------------------
+SUBSECTION: Sample Payload Injection (!Send only to TEST!)
+----------------------------------------------------------
 Records simulate upstream API states for integration testing and UI validation
 
 Record types:
-Record 0 --> Spec reference / maximal
-Record 1 --> New --> Pending
-Record 2 --> New --> Error
-Record 3 --> Existing --> Sent --> Unchanged
-Record 4 --> Existing --> Updated --> Re‑submit
+Record0 --> Spec reference / maximal
+Record1 --> New --> Pending
+Record2 --> New --> Error
+Record3 --> Existing --> Sent --> Unchanged
+Record4 --> Existing --> Updated --> Re-submit
 */
 
 
 --------------------------------------------------------------------------------
 -- Sample Record 0: Fully Populated (spec-maximal / reference payload)
---------------------------------------------------------------------------------
--- Full payload
 --------------------------------------------------------------------------------
 DECLARE @p0 NVARCHAR(MAX) = N'{
   "la_child_id": "Child0000",
@@ -1295,7 +1390,7 @@ VALUES
 
 
 --------------------------------------------------------------------------------
--- Sample Record 2: Error (New, Submission Failed)
+-- Sample Record 2: Error (New, & Submission Failed)
 --------------------------------------------------------------------------------
 DECLARE @p2 NVARCHAR(MAX) = N'{
   "la_child_id": "Child3234",
