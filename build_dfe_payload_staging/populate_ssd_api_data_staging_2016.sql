@@ -1109,7 +1109,7 @@ END;
 
 
 /* =============================================================================
-SECTION: TESTING / VERIFICATION SUPPORT (NON-LIVE)
+SECTION: TESTING / VERIFICATION SUPPORT (NON-LIVE|TEST)
 ============================================================================= */
 
 /*
@@ -1159,8 +1159,8 @@ SET NOCOUNT ON;
 
 --------------------------------------------------------------------------------
 /*
-SUBSECTION: Sample Payload Injection (Example Records)
-------------------------------------------------------
+SUBSECTION: Sample Payload Injection (!Send only to TEST!)
+----------------------------------------------------------
 Records simulate upstream API states for integration testing and UI validation
 
 Record types:
@@ -1390,7 +1390,7 @@ VALUES
 
 
 --------------------------------------------------------------------------------
--- Sample Record 2: Error (New, Submission Failed)
+-- Sample Record 2: Error (New, & Submission Failed)
 --------------------------------------------------------------------------------
 DECLARE @p2 NVARCHAR(MAX) = N'{
   "la_child_id": "Child3234",
