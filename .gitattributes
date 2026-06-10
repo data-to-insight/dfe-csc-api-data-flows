@@ -1,6 +1,6 @@
 # Exclude from Git Source code (zip/tar.gz) archive
 
-# -------- dev/CI/docs dirs ----------
+# -------- dev/CI/docs dirs ---------------------
 .github/                             export-ignore
 docs/                                export-ignore
 site/                                export-ignore
@@ -13,7 +13,7 @@ release_bundle/                      export-ignore
 csc_api_pipeline.egg-info/           export-ignore
 release.zip                          export-ignore
 
-# # -------- Notebooks & tests ----------------------------------------------
+# # -------- Notebooks & tests --------------------
 # notebooks/                           export-ignore
 # tests/                               export-ignore
 
@@ -27,7 +27,7 @@ pytest.ini                           export-ignore
 sccm.yml                             export-ignore
 sccm_graph_static.svg                export-ignore
 
-# -------- Keep only *current* SQL helper  ------------------
+# -------- Keep only *current* SQL helper  --------
 # Exclude dev-only SQL
 build_dfe_payload_staging/dev/  export-ignore
 
