@@ -317,8 +317,7 @@ IsCareLeaver16to25 AS (
 
 
 SemanticHashPayload AS (
-  
-  /*
+    /*
   Semantic hash strategy:
   Payload change detection is semantic projection of CSC data,
   >>excluding<< system-generated ids that may change (e.g. SystemC) 
@@ -326,7 +325,6 @@ SemanticHashPayload AS (
 
   Full API JSON payload retained ready for submission
   */
-
     SELECT
         p.pers_person_id AS person_id,
 
@@ -338,7 +336,7 @@ SemanticHashPayload AS (
                 p.pers_sex                                    AS sex,
                 LEFT(NULLIF(LTRIM(RTRIM(p.pers_ethnicity)), ''), 4) AS ethnicity,
 
-                /* UASC semantics */
+                /* === UASC semantics === */
                 CASE 
                     WHEN EXISTS (
                         SELECT 1
@@ -354,10 +352,14 @@ SemanticHashPayload AS (
                 (
                     SELECT
                         CONVERT(varchar(10), cine.cine_referral_date, 23) AS referral_date,
+
+                        /* include referral_source */
+                        LEFT(NULLIF(LTRIM(RTRIM(cine.cine_referral_source_code)), ''), 2) AS referral_source,
+
                         CONVERT(varchar(10), cine.cine_close_date, 23)    AS closure_date,
                         LEFT(NULLIF(LTRIM(RTRIM(cine.cine_close_reason)), ''), 3) AS closure_reason,
 
-                        /* NFA flag (semantic, not ID) */
+                        /* NFA flag */
                         CASE
                             WHEN TRY_CONVERT(bit, cine.cine_referral_nfa) IS NOT NULL
                                 THEN TRY_CONVERT(bit, cine.cine_referral_nfa)
@@ -381,7 +383,17 @@ SemanticHashPayload AS (
                             FOR JSON PATH
                         ) AS care_workers,
 
-                        /* === presence flags (semantic) === */
+                        /* include assessments detail */
+                        (
+                            SELECT
+                                CONVERT(varchar(10), ca.cina_assessment_start_date, 23) AS start_date,
+                                CONVERT(varchar(10), ca.cina_assessment_auth_date, 23)  AS auth_date
+                            FROM ssd_cin_assessments ca
+                            WHERE ca.cina_referral_id = cine.cine_referral_id
+                            FOR JSON PATH
+                        ) AS assessments,
+
+                        /* === presence flags (opt) === */
                         CASE WHEN EXISTS (
                             SELECT 1
                             FROM ssd_cin_assessments ca
