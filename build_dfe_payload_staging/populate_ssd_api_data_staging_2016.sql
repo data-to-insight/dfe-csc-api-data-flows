@@ -1317,7 +1317,7 @@ DECLARE @p1 NVARCHAR(MAX) = N'{
     {
       "social_care_episode_id": "13423",
       "referral_date": "2005-02-11",
-      "referral_source": "10",
+      "referral_source": "BB",
       "care_worker_details": [
         { "worker_id": "X3323345", "start_date": "2024-01-11" },
         { "worker_id": "Y2234567", "start_date": "2022-01-22" },
@@ -1342,7 +1342,7 @@ DECLARE @p1 NVARCHAR(MAX) = N'{
           "end_reason": "E17",
           "placement_type": "U4",
           "postcode": "BN14 7ES",
-          "change_reason": "",
+          "change_reason": "CHILD", 
           "purge": false
         }
       ],
@@ -1413,7 +1413,7 @@ DECLARE @p2 NVARCHAR(MAX) = N'{
     {
       "social_care_episode_id": "23423",
       "referral_date": "2006-03-01",
-      "referral_source": "20",
+      "referral_source": "ZZ",
       "care_worker_details": [
         { "worker_id": "X4323345", "start_date": "2023-01-11" },
         { "worker_id": "Y3234567", "start_date": "2022-02-22" }
@@ -1466,7 +1466,7 @@ VALUES
     N'New',
     GETDATE(),
     N'Error',
-    N'HTTP 400: Validation failed - missing expected field',
+    N'HTTP 400: Validation failed - missing expected field - invalid referral_source code',
     GETDATE()
 );
 
@@ -1496,14 +1496,14 @@ DECLARE @p3 NVARCHAR(MAX) = N'{
     "ethnicity": "D4",
     "postcode": "BN14 7ES",
     "purge": false
-  }
+  },
 
   "health_and_wellbeing": { "purge": false },
   "social_care_episodes": [
     {
       "social_care_episode_id": "33423",
       "referral_date": "2007-01-15",
-      "referral_source": "30",
+      "referral_source": "AA",
       "care_worker_details": [
         { "worker_id": "X5323345", "start_date": "2024-01-11" }
       ],
@@ -1569,7 +1569,7 @@ DECLARE @prev4 NVARCHAR(MAX) = N'{
     "ethnicity": "A1",
     "postcode": "BN15 9AA",
     "purge": false
-  }
+  },
   "social_care_episodes": [
     {
       "social_care_episode_id": "43423",
@@ -1588,6 +1588,8 @@ DECLARE @p4 NVARCHAR(MAX) = N'{
   "purge": false,
   "child_details": {
     "unique_pupil_number": "XYZ0123456789",
+    "first_name": "Daisy",
+    "surname": "Updatecase",
     "date_of_birth": "2005-03-15",
     "sex": "F",
     "ethnicity": "A1",
