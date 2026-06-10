@@ -796,7 +796,7 @@ RawPayloads AS (
                                 clap.clap_cla_placement_postcode AS [postcode],                                                   -- 40 [903]
                                 
                                 /* SSD data coerce into API JSON spec */
-                                LEFT(NULLIF(LTRIM(RTRIM(clap.clap_cla_placement_type)), ''), 2) AS [placement_type],              -- 41 [903]
+                                LEFT(NULLIF(LTRIM(RTRIM(clap.clap_cla_placement_type)), ''), 3) AS [placement_type],              -- 41 [903]
 
                                 CONVERT(
                                     varchar(10),
