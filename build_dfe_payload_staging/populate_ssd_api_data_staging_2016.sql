@@ -101,7 +101,7 @@ IF OBJECT_ID('ssd_api_data_staging') IS NULL
 BEGIN
     CREATE TABLE ssd_api_data_staging (
         id INT IDENTITY(1,1) PRIMARY KEY,           
-        person_id NVARCHAR(36) NULL,                        -- link value (_person_id)
+        person_id NVARCHAR(20) NULL,                        -- link value (_person_id)
         legacy_id NVARCHAR(36) NULL,                        -- link value (_mis or _legacy_id)
 
         previous_json_payload NVARCHAR(MAX) NULL,           -- historic last copy of last payload sent
@@ -566,7 +566,7 @@ RawPayloads AS (
             -- DfE payload start 
             SELECT
                 -- (Spec attribute numbers 2..55 commented)
-                CAST(p.pers_person_id AS varchar(36)) AS [la_child_id],                             -- 2 :str(id) [Mandatory]
+                CAST(p.pers_person_id AS varchar(20)) AS [la_child_id],                             -- 2 :str(id) [Mandatory]
                 CAST( 
                   LEFT(NULLIF(LTRIM(RTRIM(p.pers_legacy_id)), ''), 36)
                   AS varchar(36)
@@ -1289,8 +1289,8 @@ Record4 --> Existing --> Updated --> Re-submit
 -- Sample Record 0: Fully Populated (spec-maximal / reference payload)
 --------------------------------------------------------------------------------
 DECLARE @p0 NVARCHAR(MAX) = N'{
-  "la_child_id": "Child0000",
-  "mis_child_id": "Supplier-Child-0000",
+  "la_child_id": "Child0034",
+  "mis_child_id": "Supplier-Child-0034",
   "purge": false,
 
   "child_details": {
