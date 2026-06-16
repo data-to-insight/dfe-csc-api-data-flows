@@ -84,7 +84,7 @@ Op notes:
 */
 
 
-DECLARE @VERSION nvarchar(32) = N'0.4.5';
+DECLARE @VERSION nvarchar(32) = N'0.4.6';
 RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 
 
