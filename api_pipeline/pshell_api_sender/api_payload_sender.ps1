@@ -56,6 +56,12 @@
   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
   .\api_payload_sender.ps1
 
+.NOTES
+  Data security in transit:
+  This script sends data to the DfE API endpoint using HTTPS and POST only; it does not provide a separate encryption layer.
+  Data in transit is protected by the HTTPS/TLS config of the receiving endpoint, incl. server certificate validation and encrypted transport.
+  This script does not replace LA responsibility for local data security, access control, credential management, or safe handling of extracted data pre-transmission.
+
 .EXAMPLE
   # Smallest: use built-in hard-coded record and POST to API
   powershell -NoProfile -File .\api_payload_sender.ps1 -UseTestRecord -Phase full -BatchSize 1
