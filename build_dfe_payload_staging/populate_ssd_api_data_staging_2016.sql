@@ -356,7 +356,7 @@ SemanticHashPayload AS (
                         )
                         THEN (
                             SELECT
-                                LEFT(UPPER(LTRIM(RTRIM(d.disa_disability_code))), 4)
+                                LEFT(UPPER(LTRIM(RTRIM(d.disa_disability_code))), 4) AS code
                             FROM ssd_disability d
                             WHERE d.disa_person_id = p.pers_person_id
                               AND NULLIF(LTRIM(RTRIM(d.disa_disability_code)), '') IS NOT NULL
@@ -493,9 +493,11 @@ SemanticHashPayload AS (
                         /* adoption */
                         (
                             SELECT TOP 1
-                                CONVERT(varchar(10), perm.perm_adm_decision_date, 23),
-                                CONVERT(varchar(10), perm.perm_matched_date, 23),
-                                CONVERT(varchar(10), perm.perm_placed_for_adoption_date, 23)
+
+                              CONVERT(varchar(10), perm.perm_adm_decision_date, 23)        AS initial_decision_date,
+                              CONVERT(varchar(10), perm.perm_matched_date, 23)             AS matched_date,
+                              CONVERT(varchar(10), perm.perm_placed_for_adoption_date, 23) AS placed_date
+
                             FROM ssd_permanence perm
                             WHERE perm.perm_person_id = p.pers_person_id
                             ORDER BY COALESCE(
@@ -509,9 +511,11 @@ SemanticHashPayload AS (
                         /* care leavers */
                         (
                             SELECT TOP 1
-                                CONVERT(varchar(10), clea.clea_care_leaver_latest_contact, 23),
-                                LEFT(NULLIF(LTRIM(RTRIM(clea.clea_care_leaver_activity)), ''), 2),
-                                LEFT(NULLIF(LTRIM(RTRIM(clea.clea_care_leaver_accommodation)), ''), 1)
+
+                              CONVERT(varchar(10), clea.clea_care_leaver_latest_contact, 23) AS contact_date,
+                              LEFT(NULLIF(LTRIM(RTRIM(clea.clea_care_leaver_activity)), ''), 2) AS activity,
+                              LEFT(NULLIF(LTRIM(RTRIM(clea.clea_care_leaver_accommodation)), ''), 1) AS accommodation
+
                             FROM ssd_care_leavers clea
                             WHERE clea.clea_person_id = p.pers_person_id
                             ORDER BY clea.clea_care_leaver_latest_contact DESC
