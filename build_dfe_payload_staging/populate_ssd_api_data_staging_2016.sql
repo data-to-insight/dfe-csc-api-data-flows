@@ -605,6 +605,8 @@ RawPayloads AS (
                                     WHEN LEN(li2.link_identifier_value) = 13 
                                     THEN li2.link_identifier_value
                                 END
+                        -- Can the former UPN be obtained consistently instead from some 
+                        -- common CMS field to avoid use of the link table? 
                         FROM ssd_linked_identifiers li2
                         WHERE li2.link_person_id       = p.pers_person_id
                         AND li2.link_identifier_type = 'Former Unique Pupil Number'
