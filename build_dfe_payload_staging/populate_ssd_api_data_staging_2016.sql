@@ -84,7 +84,7 @@ Op notes:
 */
 
 
-DECLARE @VERSION nvarchar(32) = N'0.4.6';
+DECLARE @VERSION nvarchar(32) = N'0.4.7'; -- dev check .toml 
 RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 
 
@@ -140,12 +140,24 @@ DECLARE @ea_cohort_window_end date = DATEADD(day, 1, @run_date) -- today + 1
 
 
 
+;WITH CensusDates AS (
+    -- identify which CiN dates are within timeframe window (<=2 expected)
+    SELECT DATEFROMPARTS(y,3,31) AS census_date
+    FROM (VALUES
+            (YEAR(@ea_cohort_window_start)),
+            (YEAR(@ea_cohort_window_end))
+         ) v(y)
+    WHERE DATEFROMPARTS(y,3,31)
+          BETWEEN @ea_cohort_window_start
+              AND @ea_cohort_window_end
+),
+
 /*
 =============================================================================
 Cohort CTEs (SQL Server 2016+ compatible)
 =============================================================================
 */
-;WITH EligibleBySpec AS (
+EligibleBySpec AS (
   /* Include if:
         - Known DoB and age <=25 inclusive at some point during window(we key off the 26th bday)
          (26th birthday after window_start) and born by window_end
@@ -1028,10 +1040,25 @@ RawPayloads AS (
                             FROM ssd_involvements i
                             JOIN ssd_professionals pr
                               ON i.invo_professional_id = pr.prof_professional_id
+
+
                             WHERE i.invo_referral_id = cine.cine_referral_id
-                              AND i.invo_involvement_start_date <= @ea_cohort_window_end
-                              AND (i.invo_involvement_end_date IS NULL
-                                   OR i.invo_involvement_end_date >= @ea_cohort_window_start)
+
+                              -- Social Workers only 
+                              -- internal LA formats appear to vary. Assumptions limited to : 
+                              -- -- SW reg number exists/and source data col/reg num data only for this purpose
+                              AND pr.prof_social_worker_registration_no IS NOT NULL
+
+                              -- involvement active on 1+ March census date within cohort window
+                              AND EXISTS (
+                                    SELECT 1
+                                    FROM CensusDates cd
+                                    WHERE i.invo_involvement_start_date <= cd.census_date
+                                      AND (
+                                            i.invo_involvement_end_date IS NULL
+                                        OR i.invo_involvement_end_date >= cd.census_date
+                                      )
+                                  )
                             ORDER BY i.invo_involvement_start_date DESC
                             FOR JSON PATH
                         )) AS [care_worker_details],
