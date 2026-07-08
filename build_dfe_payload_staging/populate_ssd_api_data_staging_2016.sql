@@ -152,6 +152,18 @@ DECLARE @ea_cohort_window_end date = DATEADD(day, 1, @run_date) -- today + 1
               AND @ea_cohort_window_end
 ),
 
+ReferralWithCINPlan AS (
+  -- towards gating case worker/SW to only CiN records via referrals
+    SELECT DISTINCT
+        cinp.cinp_referral_id
+    FROM ssd_cin_plans cinp
+    WHERE cinp.cinp_cin_plan_start_date <= @ea_cohort_window_end
+      AND (
+            cinp.cinp_cin_plan_end_date IS NULL
+            OR cinp.cinp_cin_plan_end_date >= @ea_cohort_window_start
+      )
+),
+
 /*
 =============================================================================
 Cohort CTEs (SQL Server 2016+ compatible)
@@ -418,18 +430,64 @@ SemanticHashPayload AS (
                         END AS referral_no_further_action_flag,
 
                         /* care workers */
-                        (
-                            SELECT
-                                pr.prof_social_worker_registration_no AS worker_id,
-                                CONVERT(varchar(10), i.invo_involvement_start_date, 23) AS start_date,
-                                CONVERT(varchar(10), i.invo_involvement_end_date, 23)   AS end_date
-                            FROM ssd_involvements i
-                            JOIN ssd_professionals pr
-                              ON pr.prof_professional_id = i.invo_professional_id
-                            WHERE i.invo_referral_id = cine.cine_referral_id
-                            ORDER BY i.invo_involvement_start_date
-                            FOR JSON PATH
-                        ) AS care_worker_details,
+                        CASE
+                        WHEN EXISTS (
+                            SELECT 1
+                            -- social worker gate evaluated 1x per referral
+                            FROM ReferralWithCINPlan rcp
+                            WHERE rcp.cinp_referral_id = cine.cine_referral_id
+                        )
+                        THEN
+                        -- Referral == c|s worker reporting
+                        --     Y --> build JSON worker array
+                        --     N --> return NULL
+
+                            JSON_QUERY((
+                                SELECT
+                                    CAST(pr.prof_social_worker_registration_no AS varchar(12)) AS [worker_id],
+                                    CONVERT(varchar(10), i.invo_involvement_start_date, 23) AS [start_date],
+                                    CONVERT(varchar(10), i.invo_involvement_end_date, 23) AS [end_date]
+
+                                FROM ssd_involvements i
+
+                                JOIN ssd_professionals pr
+                                    ON pr.prof_professional_id = i.invo_professional_id
+
+                                WHERE i.invo_referral_id = cine.cine_referral_id
+
+                                  AND pr.prof_social_worker_registration_no IS NOT NULL
+
+                                  AND EXISTS (
+                                        SELECT 1
+                                        FROM CensusDates cd
+                                        WHERE i.invo_involvement_start_date <= cd.census_date
+                                          AND (
+                                                i.invo_involvement_end_date IS NULL
+                                            OR i.invo_involvement_end_date >= cd.census_date
+                                          )
+                                  )
+
+                                ORDER BY
+                                    i.invo_involvement_start_date DESC
+
+                                FOR JSON PATH
+                            ))
+                        ELSE NULL
+                        END AS care_worker_details,
+
+
+                        -- (
+                        --     SELECT
+                        --         pr.prof_social_worker_registration_no AS worker_id,
+                        --         CONVERT(varchar(10), i.invo_involvement_start_date, 23) AS start_date,
+                        --         CONVERT(varchar(10), i.invo_involvement_end_date, 23)   AS end_date
+                        --     FROM ssd_involvements i
+                        --     JOIN ssd_professionals pr
+                        --       ON pr.prof_professional_id = i.invo_professional_id
+                        --     WHERE i.invo_referral_id = cine.cine_referral_id
+                        --     ORDER BY i.invo_involvement_start_date
+                        --     FOR JSON PATH
+                        -- ) AS care_worker_details,
 
                         /* assessments */
                         (
