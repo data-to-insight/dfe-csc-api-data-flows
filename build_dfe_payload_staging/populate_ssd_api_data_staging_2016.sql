@@ -84,7 +84,7 @@ Op notes:
 */
 
 
-DECLARE @VERSION nvarchar(32) = N'0.4.6';
+DECLARE @VERSION nvarchar(32) = N'0.4.7'; -- dev check .toml 
 RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 
 
@@ -140,12 +140,36 @@ DECLARE @ea_cohort_window_end date = DATEADD(day, 1, @run_date) -- today + 1
 
 
 
+;WITH CensusDates AS (
+    -- identify which CiN dates are within timeframe window (<=2 expected)
+    SELECT DATEFROMPARTS(y,3,31) AS census_date
+    FROM (VALUES
+            (YEAR(@ea_cohort_window_start)),
+            (YEAR(@ea_cohort_window_end))
+         ) v(y)
+    WHERE DATEFROMPARTS(y,3,31)
+          BETWEEN @ea_cohort_window_start
+              AND @ea_cohort_window_end
+),
+
+ReferralWithCINPlan AS (
+  -- towards gating case worker/SW to only CiN records via referrals
+    SELECT DISTINCT
+        cinp.cinp_referral_id
+    FROM ssd_cin_plans cinp
+    WHERE cinp.cinp_cin_plan_start_date <= @ea_cohort_window_end
+      AND (
+            cinp.cinp_cin_plan_end_date IS NULL
+            OR cinp.cinp_cin_plan_end_date >= @ea_cohort_window_start
+      )
+),
+
 /*
 =============================================================================
 Cohort CTEs (SQL Server 2016+ compatible)
 =============================================================================
 */
-;WITH EligibleBySpec AS (
+EligibleBySpec AS (
   /* Include if:
         - Known DoB and age <=25 inclusive at some point during window(we key off the 26th bday)
          (26th birthday after window_start) and born by window_end
@@ -406,18 +430,64 @@ SemanticHashPayload AS (
                         END AS referral_no_further_action_flag,
 
                         /* care workers */
-                        (
-                            SELECT
-                                pr.prof_social_worker_registration_no AS worker_id,
-                                CONVERT(varchar(10), i.invo_involvement_start_date, 23) AS start_date,
-                                CONVERT(varchar(10), i.invo_involvement_end_date, 23)   AS end_date
-                            FROM ssd_involvements i
-                            JOIN ssd_professionals pr
-                              ON pr.prof_professional_id = i.invo_professional_id
-                            WHERE i.invo_referral_id = cine.cine_referral_id
-                            ORDER BY i.invo_involvement_start_date
-                            FOR JSON PATH
-                        ) AS care_worker_details,
+                        CASE
+                        WHEN EXISTS (
+                            SELECT 1
+                            -- social worker gate evaluated 1x per referral
+                            FROM ReferralWithCINPlan rcp
+                            WHERE rcp.cinp_referral_id = cine.cine_referral_id
+                        )
+                        THEN
+                        -- Referral == c|s worker reporting
+                        --     Y --> build JSON worker array
+                        --     N --> return NULL
+
+                            JSON_QUERY((
+                                SELECT
+                                    CAST(pr.prof_social_worker_registration_no AS varchar(12)) AS [worker_id],
+                                    CONVERT(varchar(10), i.invo_involvement_start_date, 23) AS [start_date],
+                                    CONVERT(varchar(10), i.invo_involvement_end_date, 23) AS [end_date]
+
+                                FROM ssd_involvements i
+
+                                JOIN ssd_professionals pr
+                                    ON pr.prof_professional_id = i.invo_professional_id
+
+                                WHERE i.invo_referral_id = cine.cine_referral_id
+
+                                  AND pr.prof_social_worker_registration_no IS NOT NULL
+
+                                  AND EXISTS (
+                                        SELECT 1
+                                        FROM CensusDates cd
+                                        WHERE i.invo_involvement_start_date <= cd.census_date
+                                          AND (
+                                                i.invo_involvement_end_date IS NULL
+                                            OR i.invo_involvement_end_date >= cd.census_date
+                                          )
+                                  )
+
+                                ORDER BY
+                                    i.invo_involvement_start_date DESC
+
+                                FOR JSON PATH
+                            ))
+                        ELSE NULL
+                        END AS care_worker_details,
+
+
+                        -- (
+                        --     SELECT
+                        --         pr.prof_social_worker_registration_no AS worker_id,
+                        --         CONVERT(varchar(10), i.invo_involvement_start_date, 23) AS start_date,
+                        --         CONVERT(varchar(10), i.invo_involvement_end_date, 23)   AS end_date
+                        --     FROM ssd_involvements i
+                        --     JOIN ssd_professionals pr
+                        --       ON pr.prof_professional_id = i.invo_professional_id
+                        --     WHERE i.invo_referral_id = cine.cine_referral_id
+                        --     ORDER BY i.invo_involvement_start_date
+                        --     FOR JSON PATH
+                        -- ) AS care_worker_details,
 
                         /* assessments */
                         (
@@ -593,6 +663,8 @@ RawPayloads AS (
                                     WHEN LEN(li2.link_identifier_value) = 13 
                                     THEN li2.link_identifier_value
                                 END
+                        -- Can the former UPN be obtained consistently instead from some 
+                        -- common CMS field to avoid use of the link table? 
                         FROM ssd_linked_identifiers li2
                         WHERE li2.link_person_id       = p.pers_person_id
                         AND li2.link_identifier_type = 'Former Unique Pupil Number'
@@ -1019,22 +1091,66 @@ RawPayloads AS (
                           - join involvements by referral, include rows overlapping window
                           - newest first by start date
                         */
-                        JSON_QUERY((
-                            SELECT
-                                -- CAST(pr.prof_staff_id AS varchar(12)) AS [worker_id],                                    -- 53 [903] IF LA workerID contains only ID's
-                                CAST(pr.prof_social_worker_registration_no AS varchar(12)) AS [worker_id],                  -- 53 [903] IF LA workerID is username use SWE REG instead
-                                CONVERT(varchar(10), i.invo_involvement_start_date, 23) AS [start_date],                    -- 54 [903]
-                                CONVERT(varchar(10), i.invo_involvement_end_date, 23) AS [end_date]                         -- 55 [903]
-                            FROM ssd_involvements i
-                            JOIN ssd_professionals pr
-                              ON i.invo_professional_id = pr.prof_professional_id
-                            WHERE i.invo_referral_id = cine.cine_referral_id
-                              AND i.invo_involvement_start_date <= @ea_cohort_window_end
-                              AND (i.invo_involvement_end_date IS NULL
-                                   OR i.invo_involvement_end_date >= @ea_cohort_window_start)
-                            ORDER BY i.invo_involvement_start_date DESC
-                            FOR JSON PATH
-                        )) AS [care_worker_details],
+
+
+
+                        /* care workers */
+                        CASE
+                        -- social worker gate evaluated 1x per referral
+                        WHEN EXISTS (
+                            SELECT 1
+                            -- only incl. SW/CW if within CiN gate
+                            FROM ReferralWithCINPlan rcp
+                            WHERE rcp.cinp_referral_id = cine.cine_referral_id
+                        )
+                        THEN
+                        -- Referral == c|s worker reporting
+                        --     Y --> build JSON worker array
+                        --     N --> return NULL
+
+                            JSON_QUERY((
+                                SELECT
+                                    -- CAST(pr.prof_staff_id AS varchar(12)) AS [worker_id],    -- possible LA alternative
+                                    CAST(pr.prof_social_worker_registration_no AS varchar(12)) AS [worker_id],
+                                    CONVERT(varchar(10), i.invo_involvement_start_date, 23) AS [start_date],
+                                    CONVERT(varchar(10), i.invo_involvement_end_date, 23) AS [end_date]
+
+                                FROM ssd_involvements i
+
+                                JOIN ssd_professionals pr
+                                    ON pr.prof_professional_id = i.invo_professional_id
+
+                                WHERE i.invo_referral_id = cine.cine_referral_id
+
+                              -- Social Worker registered only 
+                              -- LA source data for defining SW role status varied. Assumptions limited to : 
+                              -- -- SW reg number exists/and role type desc/id
+
+                              -- -- FILTER REMOVED to align with : 
+                              -- -- "episodes where child not in care may also incl. non-qualified SW/CW without SWE number"
+                              -- --    AND pr.prof_social_worker_registration_no IS NOT NULL
+
+                                  -- Care Worker role only
+                                  AND UPPER(LTRIM(RTRIM(i.invo_professional_role_id))) = 'CW'
+
+                                  AND EXISTS (
+                                        -- involvement active on 1+ March census date within cohort window
+                                        SELECT 1
+                                        FROM CensusDates cd
+                                        WHERE i.invo_involvement_start_date <= cd.census_date
+                                          AND (
+                                                i.invo_involvement_end_date IS NULL
+                                            OR i.invo_involvement_end_date >= cd.census_date
+                                          )
+                                  )
+
+                                ORDER BY
+                                    i.invo_involvement_start_date DESC
+
+                                FOR JSON PATH
+                            ))
+                        ELSE NULL
+                        END AS [care_worker_details],
 
                         CAST(0 AS bit) AS [purge]
                       FROM ssd_cin_episodes cine
