@@ -121,7 +121,31 @@ $VERSION = '0.4.6'
 Write-Host ("CSC API staging build: v{0}" -f $VERSION)
 
 
+# early fail on needed language mode 
+if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage')
+{
+    Write-Error @"
 
+PowerShell language mode is:
+$($ExecutionContext.SessionState.LanguageMode)
+
+This script requires FullLanguage mode to access .NET classes, 
+SQL connectivity, proxy config and API comms. 
+Your LA PShell LanguageMode setting appears restricted. 
+
+The most common causes are:
+ - AppLocker
+ - WDAC (Windows Defender Application Control)
+ - Device Guard
+ - Endpoint security policy
+
+Please provide this message to your IT/security team
+
+"@
+
+    exit 1
+}
+## end early language mode fail
 
 
 # ----------- LA DfE Config START -----------
