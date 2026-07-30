@@ -84,7 +84,7 @@ Op notes:
 */
 
 
-DECLARE @VERSION nvarchar(32) = N'0.4.7'; -- dev check .toml 
+DECLARE @VERSION nvarchar(32) = N'0.4.8'; -- dev check .toml 
 RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 
 
@@ -414,6 +414,19 @@ SemanticHashPayload AS (
                         s2.immi_immigration_status_start_date DESC
                 ) AS uasc_end_date,
 
+                /* === health_and_wellbeing mirror === */
+                JSON_QUERY(
+                    CASE
+                        WHEN sdq.has_sdq = 1
+                        THEN (
+                              SELECT
+                              JSON_QUERY(sdq.sdq_assessments_json) AS [sdq_assessments]
+                            FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
+                       )
+                        ELSE NULL
+                    END) AS health_and_wellbeing,
+
+
                 /* === social_care_episodes === */
                 (
                     SELECT
@@ -429,51 +442,70 @@ SemanticHashPayload AS (
                             ELSE NULL
                         END AS referral_no_further_action_flag,
 
+                        /* ================= care_worker_details (53..55), array (or []) per episode =================
+                          - join involvements by referral, include rows overlapping window
+                          - newest first by start date
+                        */
+
                         /* care workers */
-                        CASE
-                        WHEN EXISTS (
-                            SELECT 1
-                            -- social worker gate evaluated 1x per referral
-                            FROM ReferralWithCINPlan rcp
-                            WHERE rcp.cinp_referral_id = cine.cine_referral_id
-                        )
-                        THEN
-                        -- Referral == c|s worker reporting
-                        --     Y --> build JSON worker array
-                        --     N --> return NULL
+                        JSON_QUERY(
+                            CASE
 
-                            JSON_QUERY((
-                                SELECT
-                                    CAST(pr.prof_social_worker_registration_no AS varchar(12)) AS [worker_id],
-                                    CONVERT(varchar(10), i.invo_involvement_start_date, 23) AS [start_date],
-                                    CONVERT(varchar(10), i.invo_involvement_end_date, 23) AS [end_date]
+                                -- social worker gate evaluated 1x per referral
+                                -- Referral == c|s worker reporting
+                                --     Y --> build JSON worker array
+                                --     N --> return empty array
 
-                                FROM ssd_involvements i
+                                WHEN EXISTS (
+                                    SELECT 1
+                                    -- only incl. SW/CW if within CiN gate
+                                    FROM ReferralWithCINPlan rcp
+                                    WHERE rcp.cinp_referral_id = cine.cine_referral_id
+                                )
+                                THEN (
+                                    SELECT
+                                        -- CAST(pr.prof_staff_id AS varchar(12)) AS [worker_id],    -- possible LA alternative
+                                        CAST(pr.prof_social_worker_registration_no AS varchar(12)) AS [worker_id],
 
-                                JOIN ssd_professionals pr
-                                    ON pr.prof_professional_id = i.invo_professional_id
+                                        CONVERT(varchar(10), i.invo_involvement_start_date, 23) AS [start_date],
+                                        CONVERT(varchar(10), i.invo_involvement_end_date, 23) AS [end_date]
 
-                                WHERE i.invo_referral_id = cine.cine_referral_id
+                                    FROM ssd_involvements i
 
-                                  AND pr.prof_social_worker_registration_no IS NOT NULL
+                                    JOIN ssd_professionals pr
+                                        ON pr.prof_professional_id = i.invo_professional_id
 
-                                  AND EXISTS (
-                                        SELECT 1
-                                        FROM CensusDates cd
-                                        WHERE i.invo_involvement_start_date <= cd.census_date
-                                          AND (
-                                                i.invo_involvement_end_date IS NULL
-                                            OR i.invo_involvement_end_date >= cd.census_date
-                                          )
-                                  )
+                                    WHERE i.invo_referral_id = cine.cine_referral_id
 
-                                ORDER BY
-                                    i.invo_involvement_start_date DESC
+                                      -- Social Worker registered only
+                                      -- LA source data for defining SW role status varied. Assumptions limited to :
+                                      -- -- SW reg number exists/and role type desc/id
 
-                                FOR JSON PATH
-                            ))
-                        ELSE NULL
-                        END AS care_worker_details,
+                                      -- -- REMOVE FILTER if/to align with :
+                                      -- -- "episodes where child not in care may incl. non-qualified SW/CW without SWE number number"
+                                      AND pr.prof_social_worker_registration_no IS NOT NULL
+
+                                      -- Case Worker role only
+                                      AND UPPER(LTRIM(RTRIM(i.invo_professional_role_id))) = 'CW'
+
+                                      AND EXISTS (
+                                            -- involvement active on 1+ March census date within cohort window
+                                            SELECT 1
+                                            FROM CensusDates cd
+                                            WHERE i.invo_involvement_start_date <= cd.census_date
+                                              AND (
+                                                    i.invo_involvement_end_date IS NULL
+                                                OR i.invo_involvement_end_date >= cd.census_date
+                                              )
+                                      )
+
+                                    ORDER BY
+                                        i.invo_involvement_start_date DESC
+
+                                    FOR JSON PATH
+                                )
+                            END
+                        ) AS care_worker_details,
 
 
                         -- (
@@ -605,7 +637,63 @@ SemanticHashPayload AS (
         ) AS semantic_hash_payload
 
     FROM ssd_person p
+
+        /* Disabilities array, return NULL when no codes, truncate codes to 4 chars max */
+    OUTER APPLY (
+        SELECT
+          CASE
+            WHEN EXISTS (
+              SELECT 1
+              FROM ssd_disability d0
+              WHERE d0.disa_person_id = p.pers_person_id
+                AND NULLIF(LTRIM(RTRIM(d0.disa_disability_code)), '') IS NOT NULL
+            )
+            THEN JSON_QUERY(
+              N'[' +
+              STUFF((
+                  SELECT N',' + QUOTENAME(u.code, '"')
+                  FROM (
+                      SELECT TOP (12)
+                          LEFT(UPPER(LTRIM(RTRIM(d2.disa_disability_code))), 4) AS code
+                      FROM ssd_disability d2
+                      WHERE d2.disa_person_id = p.pers_person_id
+                        AND NULLIF(LTRIM(RTRIM(d2.disa_disability_code)), '') IS NOT NULL
+                      GROUP BY LEFT(UPPER(LTRIM(RTRIM(d2.disa_disability_code))), 4)
+                      ORDER BY LEFT(UPPER(LTRIM(RTRIM(d2.disa_disability_code))), 4)
+                  ) u
+                  FOR XML PATH(''), TYPE
+              ).value('.', 'nvarchar(max)'), 1, 1, N'')
+              + N']'
+            )
+            ELSE NULL
+          END AS disabilities
+    ) AS disab
+
+
+    /* SDQ prebuild, reuse once, and flag presence */
+    OUTER APPLY (
+        SELECT
+            (
+                SELECT
+                    CONVERT(varchar(10), csdq.csdq_sdq_completed_date, 23) AS [date],   -- 45
+                    TRY_CONVERT(int, csdq.csdq_sdq_score)                  AS [score]   -- 46
+                FROM ssd_sdq_scores csdq
+                WHERE csdq.csdq_person_id = p.pers_person_id
+                  AND csdq.csdq_sdq_score IS NOT NULL
+                  AND csdq.csdq_sdq_completed_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+                ORDER BY csdq.csdq_sdq_completed_date DESC
+                FOR JSON PATH
+            ) AS sdq_assessments_json,
+            CASE WHEN EXISTS (
+                SELECT 1
+                FROM ssd_sdq_scores csdq
+                WHERE csdq.csdq_person_id = p.pers_person_id
+                  AND csdq.csdq_sdq_score IS NOT NULL
+                  AND csdq.csdq_sdq_completed_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+            ) THEN 1 ELSE 0 END AS has_sdq
+    ) AS sdq
 ),
+
 
 
 SpecInclusion AS (
@@ -630,7 +718,16 @@ SpecInclusion AS (
 ),
 
 
-/* === Payload builder 2016Sp1+/Azure SQL compatible === */
+
+
+
+/*
+=============================================================================
+Payload builder 2016Sp1+/Azure SQL compatible
+=============================================================================
+*/
+
+
 RawPayloads AS (
     SELECT
         -- LA Payload record id
@@ -744,15 +841,18 @@ RawPayloads AS (
                   - sdq scores ordered numeric array, TRY_CONVERT guard
                 */
                 /* [REVIEW] - revised - omit whole block when no SDQs in window */
-                CASE WHEN sdq.has_sdq = 1
-                    THEN JSON_QUERY((
+                JSON_QUERY(
+                    CASE
+                        WHEN sdq.has_sdq = 1
+                        THEN (
                             SELECT
-                                JSON_QUERY(sdq.sdq_assessments_json) AS [sdq_assessments],  -- 45, 46 [903]
-                                CAST(0 AS bit)                       AS [purge]
+                                JSON_QUERY(sdq.sdq_assessments_json) AS [sdq_assessments],
+                                CAST(0 AS bit) AS [purge]
                             FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
-                          ))
-                    ELSE NULL
-                END AS [health_and_wellbeing],
+                        )
+                        ELSE NULL
+                    END
+                ) AS [health_and_wellbeing],
 
                 -- /* [REVIEW] - depreciated */
                 -- JSON_QUERY((
@@ -1087,70 +1187,70 @@ RawPayloads AS (
                         )) AS [care_leavers],
 
 
+
                         /* ================= care_worker_details (53..55), array (or []) per episode =================
                           - join involvements by referral, include rows overlapping window
                           - newest first by start date
                         */
 
-
-
                         /* care workers */
-                        CASE
-                        -- social worker gate evaluated 1x per referral
-                        WHEN EXISTS (
-                            SELECT 1
-                            -- only incl. SW/CW if within CiN gate
-                            FROM ReferralWithCINPlan rcp
-                            WHERE rcp.cinp_referral_id = cine.cine_referral_id
-                        )
-                        THEN
-                        -- Referral == c|s worker reporting
-                        --     Y --> build JSON worker array
-                        --     N --> return NULL
+                        JSON_QUERY(
+                            CASE
 
-                            JSON_QUERY((
-                                SELECT
-                                    -- CAST(pr.prof_staff_id AS varchar(12)) AS [worker_id],    -- possible LA alternative
-                                    CAST(pr.prof_social_worker_registration_no AS varchar(12)) AS [worker_id],
-                                    CONVERT(varchar(10), i.invo_involvement_start_date, 23) AS [start_date],
-                                    CONVERT(varchar(10), i.invo_involvement_end_date, 23) AS [end_date]
+                                -- social worker gate evaluated 1x per referral
+                                -- Referral == c|s worker reporting
+                                --     Y --> build JSON worker array
+                                --     N --> return empty array
 
-                                FROM ssd_involvements i
+                                WHEN EXISTS (
+                                    SELECT 1
+                                    -- only incl. SW/CW if within CiN gate
+                                    FROM ReferralWithCINPlan rcp
+                                    WHERE rcp.cinp_referral_id = cine.cine_referral_id
+                                )
+                                THEN (
+                                    SELECT
+                                        -- CAST(pr.prof_staff_id AS varchar(12)) AS [worker_id],    -- possible LA alternative
+                                        CAST(pr.prof_social_worker_registration_no AS varchar(12)) AS [worker_id],
+                                        CONVERT(varchar(10), i.invo_involvement_start_date, 23) AS [start_date],
+                                        CONVERT(varchar(10), i.invo_involvement_end_date, 23) AS [end_date]
 
-                                JOIN ssd_professionals pr
-                                    ON pr.prof_professional_id = i.invo_professional_id
+                                    FROM ssd_involvements i
 
-                                WHERE i.invo_referral_id = cine.cine_referral_id
+                                    JOIN ssd_professionals pr
+                                        ON pr.prof_professional_id = i.invo_professional_id
 
-                              -- Social Worker registered only 
-                              -- LA source data for defining SW role status varied. Assumptions limited to : 
-                              -- -- SW reg number exists/and role type desc/id
+                                    WHERE i.invo_referral_id = cine.cine_referral_id
 
-                              -- -- FILTER REMOVED to align with : 
-                              -- -- "episodes where child not in care may also incl. non-qualified SW/CW without SWE number"
-                              -- --    AND pr.prof_social_worker_registration_no IS NOT NULL
+                                      -- Social Worker registered only
+                                      -- LA source data for defining SW role status varied. Assumptions limited to :
+                                      -- -- SW reg number exists/and role type desc/id
 
-                                  -- Care Worker role only
-                                  AND UPPER(LTRIM(RTRIM(i.invo_professional_role_id))) = 'CW'
+                                      -- -- REMOVE FILTER if/to align with :
+                                      -- -- "episodes where child not in care may incl. non-qualified SW/CW without SWE number"
+                                      AND pr.prof_social_worker_registration_no IS NOT NULL
 
-                                  AND EXISTS (
-                                        -- involvement active on 1+ March census date within cohort window
-                                        SELECT 1
-                                        FROM CensusDates cd
-                                        WHERE i.invo_involvement_start_date <= cd.census_date
-                                          AND (
-                                                i.invo_involvement_end_date IS NULL
-                                            OR i.invo_involvement_end_date >= cd.census_date
-                                          )
-                                  )
+                                      -- Case Worker role only
+                                      AND UPPER(LTRIM(RTRIM(i.invo_professional_role_id))) = 'CW'
 
-                                ORDER BY
-                                    i.invo_involvement_start_date DESC
+                                      AND EXISTS (
+                                            -- involvement active on 1+ March census date within cohort window
+                                            SELECT 1
+                                            FROM CensusDates cd
+                                            WHERE i.invo_involvement_start_date <= cd.census_date
+                                              AND (
+                                                    i.invo_involvement_end_date IS NULL
+                                                OR i.invo_involvement_end_date >= cd.census_date
+                                              )
+                                      )
 
-                                FOR JSON PATH
-                            ))
-                        ELSE NULL
-                        END AS [care_worker_details],
+                                    ORDER BY
+                                        i.invo_involvement_start_date DESC
+
+                                    FOR JSON PATH
+                                )
+                            END
+                        ) AS [care_worker_details],
 
                         CAST(0 AS bit) AS [purge]
                       FROM ssd_cin_episodes cine
@@ -1323,20 +1423,23 @@ WHERE NOT EXISTS (
     WHERE src.person_id = tgt.person_id
 );
 
--- -- Optional
--- CREATE UNIQUE INDEX UX_ssd_api_data_staging_person ON ssd_api_data_staging(person_id);
-IF NOT EXISTS (
-    -- to avoid issues on re-runs
-    SELECT 1
-    FROM sys.indexes
-    WHERE name = 'UX_ssd_api_data_staging_person'
-      AND object_id = OBJECT_ID('ssd_api_data_staging')
-)
-BEGIN
-    CREATE UNIQUE INDEX UX_ssd_api_data_staging_person
-    ON ssd_api_data_staging(person_id)
-    INCLUDE (current_hash);
-END;
+
+
+
+-- -- -- Optional Idx
+-- -- CREATE UNIQUE INDEX UX_ssd_api_data_staging_person ON ssd_api_data_staging(person_id);
+-- IF NOT EXISTS (
+--     -- to avoid issues on re-runs
+--     SELECT 1
+--     FROM sys.indexes
+--     WHERE name = 'UX_ssd_api_data_staging_person'
+--       AND object_id = OBJECT_ID('ssd_api_data_staging')
+-- )
+-- BEGIN
+--     CREATE UNIQUE INDEX UX_ssd_api_data_staging_person
+--     ON ssd_api_data_staging(person_id)
+--     INCLUDE (current_hash);
+-- END;
 
 
 
