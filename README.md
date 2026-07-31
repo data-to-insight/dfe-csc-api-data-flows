@@ -70,7 +70,7 @@ DEBUG=true
 ## Pre flight checks
 
 A separate archive, `pre_flight_checks.zip`, contains:
-- `phase_1_api_credentials_smoke_test.ps1`
+- `api_credentials_smoke_test.ps1`
 - `ssd_csc_api_schema_checks.sql`
 
 Download, extract, run the smoke test first, then run schema checks against your deployed SSD schema.
