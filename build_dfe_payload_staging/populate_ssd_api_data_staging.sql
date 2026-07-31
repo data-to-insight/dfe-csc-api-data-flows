@@ -5,7 +5,7 @@ use HDM_Local;  -- LA should change to bespoke or remove
 /* ==========================================================================
    D2I CSC API Payload Builder
    SQL Server 2016+ compatible
-   N.B This a duplicate script of : populate_ssd_api_data_staging.sql
+   N.B This a duplicate script of : populate_ssd_api_data_staging_2016.sql
    ========================================================================== */
 
 

@@ -32,7 +32,7 @@ Then follow these steps.
    - In SQL Server Management Studio, open:
      - `pre_flight_checks/ssd_vw_csc_api_schema_checks.sql` (read only, confirms SSD schema and views)
      - If your DB does not already have the staging objects, run **one** of:
-       - `sql_json_query/populate_ssd_api_data_staging_2016.sql` (SQL Server 2016 SP1 and above)
+       - `sql_json_query/populate_ssd_api_data_staging.sql` (SQL Server 2016 SP1 and above)
        - `sql_json_query/populate_ssd_api_data_staging_2012.sql` (SQL Server 2012)
    - In Windows PowerShell, open:
      - `pre_flight_checks/api_credentials_smoke_test.ps1`
@@ -106,7 +106,7 @@ Other files:
 
 ```bash
 sha256sum api_payload_sender.ps1
-sha256sum sql_json_query/populate_ssd_api_data_staging_2016.sql
+sha256sum sql_json_query/populate_ssd_api_data_staging.sql
 
 ```
 
