@@ -136,7 +136,7 @@ jobs:
 
           # SQL files, legacy and current 
           Copy-Item build_dfe_payload_staging\populate_ssd_api_data_staging.sql -Destination release_bundle\
-          Copy-Item build_dfe_payload_staging\populate_ssd_api_data_staging_postgres.sql -Destination release_bundle\
+          # Copy-Item build_dfe_payload_staging\populate_ssd_api_data_staging_postgres.sql -Destination release_bundle\
 
           # Notebooks
           Copy-Item api_pipeline\notebooks\* -Destination release_bundle\notebooks\ -Recurse -Force

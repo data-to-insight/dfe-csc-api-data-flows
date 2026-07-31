@@ -168,7 +168,7 @@ cp api_pipeline/pshell_api_sender/api_payload_sender.ps1 release_bundle/ || true
 # current
 cp build_dfe_payload_staging/populate_ssd_api_data_staging.sql release_bundle/ || true
 # postgres
-cp build_dfe_payload_staging/populate_ssd_api_data_staging_postgres.sql release_bundle/ || true
+# cp build_dfe_payload_staging/populate_ssd_api_data_staging_postgres.sql release_bundle/ || true
 
 # bundle notebooks into .zip also
 cp -R api_pipeline/notebooks/* release_bundle/notebooks/ || true
@@ -272,7 +272,7 @@ EOF
   cp api_pipeline/pshell_api_sender/api_payload_sender.ps1 release_bundle/ || true
   # cp build_dfe_payload_staging/populate_ssd_api_data_staging_2012.sql release_bundle/ || true
   cp build_dfe_payload_staging/populate_ssd_api_data_staging.sql release_bundle/ || true
-  cp build_dfe_payload_staging/populate_ssd_api_data_staging_postgres.sql release_bundle/ || true
+  # cp build_dfe_payload_staging/populate_ssd_api_data_staging_postgres.sql release_bundle/ || true
   cp -R api_pipeline/notebooks/* release_bundle/notebooks/ || true
 
   # include api_pipeline Python modules in the bundle
