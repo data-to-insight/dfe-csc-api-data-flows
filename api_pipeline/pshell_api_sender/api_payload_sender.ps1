@@ -83,7 +83,7 @@
     -Phase full -UseIntegratedSecurityDbConnection
 
 .EXAMPLE
-  # Deltas, SQL auth to DB using env vars, with LA proxy and default creds
+  # Deltas, SQL auth to DB using env vars (if not using integrated security), with LA proxy and default creds
   $env:DB_USER = "svc_csc"; $env:DB_PASSWORD = "P@ssw0rd!"
   powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 `
     -Phase deltas -Proxy http://proxy.myLA.local:8080 -ProxyUseDefaultCredentials
@@ -117,7 +117,7 @@ param(
   [switch]$UseIntegratedSecurityDbConnection               # use Windows auth when present
 )
 
-$VERSION = '0.4.6'
+$VERSION = '0.4.7'
 Write-Host ("CSC API staging build: v{0}" -f $VERSION)
 
 
@@ -825,7 +825,13 @@ WHERE (submission_status IN ('pending','error'))
 
   } catch {
     W-Err ("db conn err: {0}" -f $_.Exception.Message)
-  }
+    W-Err ("exception type: {0}" -f $_.Exception.GetType().FullName)
+
+    if ($_.Exception.InnerException) {
+        W-Err ("inner exception: {0}" -f $_.Exception.InnerException.Message)
+        W-Err ("inner type: {0}" -f $_.Exception.InnerException.GetType().FullName)
+    }
+}
 
   # Return as array (comma ensures array even if single item)
   return ,$JsonArray
@@ -1230,3 +1236,87 @@ $scriptEndStamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
 Write-Host "#####################################################" -ForegroundColor Gray
 Write-Host "### Script Execution Ended: $scriptEndStamp ###" -ForegroundColor Gray
 Write-Host "#####################################################" -ForegroundColor Gray
+
+
+
+<#
+.EXAMPLE
+  # Added here to avoid excessive clutter in main doc string. Just some extended use-case 
+  # examples or additional infos for LA ref.
+
+.EXAMPLE
+  # Smallest possible test
+  # Uses built-in hard-coded record and submits single record to API (Use TEST endpoint only)
+  powershell -NoProfile -File .\api_payload_sender.ps1 `
+    -UseTestRecord `
+    -Phase full `
+    -BatchSize 1
+
+.EXAMPLE
+  # Read records from SQL Server using Windows Auth
+  # Uses currently logged-on Windows account
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 `
+    -Phase full `
+    -UseTestRecord:$false `
+    -UseIntegratedSecurityDbConnection
+
+.EXAMPLE
+  # Read records from SQL Server using SQL Auth
+  # Where Windows Auth unavailable (or failing)
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 `
+    -Phase full `
+    -UseTestRecord:$false `
+    -UseIntegratedSecurityDbConnection:$false `
+    -DbUser mySqlLogin `
+    -DbPassword myPassword
+
+.EXAMPLE
+  # SQL Auth using environment vars
+  $env:DB_USER = "mySqlLogin"
+  $env:DB_PASSWORD = "myPassword"
+
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 `
+    -UseIntegratedSecurityDbConnection:$false `
+    -UseTestRecord:$false
+
+.EXAMPLE
+  # Submit full ALPHA|DELTA payloads (Pilot Phase)
+  # Uses json_payload column
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 `
+    -Phase full
+
+.EXAMPLE
+  # Submit delta payloads only (Not currently possible with this script in Pilot Phase)
+  # Ask D2I about 'true deltas' options; in theory generates partial_json_payload
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 `
+    -Phase deltas
+
+.EXAMPLE
+  # Dry-run mode
+  # Processes records but does NOT submit anything to DfE/API
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 `
+    -InternalTest
+
+.EXAMPLE
+  # Spec smaller batch size
+  # For troubleshooting or testing performance in larger LAs
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 `
+    -BatchSize 25
+
+.EXAMPLE
+  # Use explicit proxy with current Windows credentials
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 `
+    -Proxy http://proxy.example.gov.uk:8080 `
+    -ProxyUseDefaultCredentials
+
+.EXAMPLE
+  # Typical prod-style execution
+  # Read pending records from SQL Server and submit batches to API
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 `
+    -Phase full `
+    -UseTestRecord:$false `
+    -BatchSize 100 `
+    -ApiTimeout 30 `
+    -UseIntegratedSecurityDbConnection
+
+#>
