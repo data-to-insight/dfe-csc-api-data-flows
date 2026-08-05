@@ -1241,82 +1241,100 @@ Write-Host "#####################################################" -ForegroundCo
 
 <#
 .EXAMPLE
-  # Added here to avoid excessive clutter in main doc string. Just some extended use-case 
+  # Added here to avoid excessive clutter in main doc string. Just some extended use-case
   # examples or additional infos for LA ref.
 
 .EXAMPLE
   # Smallest possible test
   # Uses built-in hard-coded record and submits single record to API (Use TEST endpoint only)
-  powershell -NoProfile -File .\api_payload_sender.ps1 `
-    -UseTestRecord `
-    -Phase full `
-    -BatchSize 1
+
+  powershell -NoProfile -File .\api_payload_sender.ps1 -UseTestRecord -Phase full -BatchSize 1
 
 .EXAMPLE
   # Read records from SQL Server using Windows Auth
   # Uses currently logged-on Windows account
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 `
-    -Phase full `
-    -UseTestRecord:$false `
-    -UseIntegratedSecurityDbConnection
+
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 -Phase full -UseTestRecord:$false -UseIntegratedSecurityDbConnection
 
 .EXAMPLE
   # Read records from SQL Server using SQL Auth
   # Where Windows Auth unavailable (or failing)
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 `
-    -Phase full `
-    -UseTestRecord:$false `
-    -UseIntegratedSecurityDbConnection:$false `
-    -DbUser mySqlLogin `
-    -DbPassword myPassword
+
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 -Phase full -UseTestRecord:$false -UseIntegratedSecurityDbConnection:$false -DbUser mySqlLogin -DbPassword myPassword
 
 .EXAMPLE
   # SQL Auth using environment vars
+
   $env:DB_USER = "mySqlLogin"
   $env:DB_PASSWORD = "myPassword"
 
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 `
-    -UseIntegratedSecurityDbConnection:$false `
-    -UseTestRecord:$false
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 -UseIntegratedSecurityDbConnection:$false -UseTestRecord:$false
 
 .EXAMPLE
   # Submit full ALPHA|DELTA payloads (Pilot Phase)
   # Uses json_payload column
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 `
-    -Phase full
+
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 -Phase full
 
 .EXAMPLE
   # Submit delta payloads only (Not currently possible with this script in Pilot Phase)
   # Ask D2I about 'true deltas' options; in theory generates partial_json_payload
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 `
-    -Phase deltas
+
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 -Phase deltas
 
 .EXAMPLE
   # Dry-run mode
   # Processes records but does NOT submit anything to DfE/API
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 `
-    -InternalTest
+
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 -InternalTest
 
 .EXAMPLE
   # Spec smaller batch size
   # For troubleshooting or testing performance in larger LAs
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 `
-    -BatchSize 25
+
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 -BatchSize 25
 
 .EXAMPLE
   # Use explicit proxy with current Windows credentials
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 `
-    -Proxy http://proxy.example.gov.uk:8080 `
-    -ProxyUseDefaultCredentials
+
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 -Proxy http://proxy.example.gov.uk:8080 -ProxyUseDefaultCredentials
 
 .EXAMPLE
   # Typical prod-style execution
   # Read pending records from SQL Server and submit batches to API
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 `
-    -Phase full `
-    -UseTestRecord:$false `
-    -BatchSize 100 `
-    -ApiTimeout 30 `
-    -UseIntegratedSecurityDbConnection
+
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 -Phase full -UseTestRecord:$false -BatchSize 100 -ApiTimeout 30 -UseIntegratedSecurityDbConnection
+
+.EXAMPLE
+  # Running from existing PShell session using SQL Auth
+  # Useful where Windows Auth unavailable or failing
+
+  & ".\api_payload_sender.ps1" -UseIntegratedSecurityDbConnection:$false -DbUser "DW_USERNAME" -DbPassword "MyPassword"
+
+.EXAMPLE
+  # Running using full path
+  # Useful when not located in script dir
+
+  & "C:\Path\api_payload_sender.ps1" -UseIntegratedSecurityDbConnection:$false -DbUser "DW_USERNAME" -DbPassword "MyPassword"
+
+.EXAMPLE
+  # Show all available script params
+
+  (Get-Command .\api_payload_sender.ps1).Parameters.Keys
+
+.EXAMPLE
+  # Show full script help
+
+  Get-Help .\api_payload_sender.ps1 -Full
+
+.EXAMPLE
+  # Show examples only
+
+  Get-Help .\api_payload_sender.ps1 -Examples
+
+.EXAMPLE
+  # Show help for specific param
+
+  Get-Help .\api_payload_sender.ps1 -Parameter DbUser
 
 #>
