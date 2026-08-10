@@ -394,26 +394,10 @@ SemanticHashPayload AS (
                 ) AS disabilities,
 
                 /* === UASC === */
-                CASE 
-                    WHEN EXISTS (
-                        SELECT 1
-                        FROM ssd_immigration_status s
-                        WHERE s.immi_person_id = p.pers_person_id
-                          AND ISNULL(s.immi_immigration_status, '')
-                            COLLATE Latin1_General_CI_AI LIKE '%UASC%'
-                    )
-                    THEN 1 ELSE 0
-                END AS uasc_flag,
+                ISNULL(uasc.uasc_flag, CAST(0 AS bit)) AS uasc_flag,
 
-                (
-                    SELECT TOP 1
-                        CONVERT(varchar(10), s2.immi_immigration_status_end_date, 23)
-                    FROM ssd_immigration_status s2
-                    WHERE s2.immi_person_id = p.pers_person_id
-                    ORDER BY 
-                        CASE WHEN s2.immi_immigration_status_end_date IS NULL THEN 1 ELSE 0 END,
-                        s2.immi_immigration_status_start_date DESC
-                ) AS uasc_end_date,
+                uasc.uasc_end_date AS uasc_end_date,
+
 
                 /* === health_and_wellbeing mirror === */
                 JSON_QUERY(
@@ -693,7 +677,22 @@ SemanticHashPayload AS (
                   AND csdq.csdq_sdq_completed_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
             ) THEN 1 ELSE 0 END AS has_sdq
     ) AS sdq
+
+    OUTER APPLY (
+        SELECT TOP 1
+            CAST(1 AS bit) AS uasc_flag,
+            CONVERT(varchar(10), s.immi_immigration_status_end_date, 23) AS uasc_end_date
+        FROM ssd_immigration_status s
+        WHERE s.immi_person_id = p.pers_person_id
+          AND UPPER(LTRIM(RTRIM(s.immi_immigration_status))) = 'U'
+          AND (
+                s.immi_immigration_status_end_date IS NULL
+            OR s.immi_immigration_status_end_date >= @ea_cohort_window_start
+          )
+    ) AS uasc
+
 ),
+
 
 
 
@@ -813,24 +812,9 @@ RawPayloads AS (
                         ORDER BY a.addr_address_start_date DESC
                         ) AS [postcode],                                                            -- 13 [903]
 
-                        CASE 
-                            WHEN EXISTS (
-                                SELECT 1
-                                FROM ssd_immigration_status s
-                                WHERE s.immi_person_id = p.pers_person_id
-                                AND ISNULL(s.immi_immigration_status, '') 
-                                    COLLATE Latin1_General_CI_AI LIKE '%UASC%'
-                            ) THEN CAST(1 AS bit) 
-                            ELSE CAST(0 AS bit) 
-                        END AS [uasc_flag],                                                         -- 14 [903]
-
-                        (SELECT TOP 1 CONVERT(varchar(10), s2.immi_immigration_status_end_date, 23)
-                        FROM ssd_immigration_status s2
-                        WHERE s2.immi_person_id = p.pers_person_id
-                        ORDER BY 
-                            CASE WHEN s2.immi_immigration_status_end_date IS NULL THEN 1 ELSE 0 END,
-                            s2.immi_immigration_status_start_date DESC
-                        ) AS [uasc_end_date],                                                       -- 15 [903]
+                        /* uasc outer apply for consistency btwn these */
+                        ISNULL(uasc.uasc_flag, CAST(0 AS bit)) AS [uasc_flag],                  -- 14 [903]
+                        uasc.uasc_end_date AS [uasc_end_date],                                      -- 15 [903]                                                  -- 15 [903]
 
                         CAST(0 AS bit) AS [purge] -- child_details purge
                     FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
@@ -1300,7 +1284,6 @@ RawPayloads AS (
           END AS disabilities
     ) AS disab
 
-
     /* SDQ prebuild, reuse once, and flag presence */
     OUTER APPLY (
         SELECT
@@ -1323,6 +1306,19 @@ RawPayloads AS (
                   AND csdq.csdq_sdq_completed_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
             ) THEN 1 ELSE 0 END AS has_sdq
     ) AS sdq
+
+    OUTER APPLY (
+        SELECT TOP 1
+            CAST(1 AS bit) AS uasc_flag,
+            CONVERT(varchar(10), s.immi_immigration_status_end_date, 23) AS uasc_end_date
+        FROM ssd_immigration_status s
+        WHERE s.immi_person_id = p.pers_person_id
+          AND UPPER(LTRIM(RTRIM(s.immi_immigration_status))) = 'U'
+          AND (
+                s.immi_immigration_status_end_date IS NULL
+            OR s.immi_immigration_status_end_date >= @ea_cohort_window_start
+          )
+    ) AS uasc
 
 )   -- close RawPayloads CTE
   
