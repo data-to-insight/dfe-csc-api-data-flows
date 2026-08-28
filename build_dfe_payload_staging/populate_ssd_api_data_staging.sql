@@ -2193,6 +2193,44 @@ Find records that have multiple CW involvements to verify SW history
 
 --------------------------------------------------------------------------------
 /*
+SUBSECTION: Confidential records postcode mask
+---------------------------------------
+Simplistic chk records showing CON in address postcode, also have no placement postcodes
+as these must come through as either "" or "CON"
+*/
+-- ;WITH LatestAddress AS (
+--     SELECT
+--         a.addr_person_id,
+--         a.addr_address_postcode,
+--         ROW_NUMBER() OVER (
+--             PARTITION BY a.addr_person_id
+--             ORDER BY a.addr_address_start_date DESC
+--         ) AS rn
+--     FROM ssd_address a
+-- )
+-- SELECT DISTINCT
+--     s.person_id,
+--     s.legacy_id,
+--     la.addr_address_postcode AS source_postcode,
+--     clap.clap_cla_placement_postcode AS placement_postcode,
+--     s.json_payload
+-- FROM ssd_api_data_staging s
+-- JOIN LatestAddress la
+--     ON la.addr_person_id = s.person_id
+--    AND la.rn = 1
+-- JOIN ssd_cla_episodes clae
+--     ON clae.clae_person_id = s.person_id
+-- JOIN ssd_cla_placement clap
+--     ON clap.clap_cla_id = clae.clae_cla_id
+-- WHERE UPPER(LTRIM(RTRIM(la.addr_address_postcode))) = 'CON'
+--   AND NULLIF(LTRIM(RTRIM(clap.clap_cla_placement_postcode)), '') IS NOT NULL
+--   AND UPPER(LTRIM(RTRIM(clap.clap_cla_placement_postcode))) <> 'CON'
+--   AND LEN(LTRIM(RTRIM(clap.clap_cla_placement_postcode))) > 3
+-- ORDER BY s.person_id;
+
+
+--------------------------------------------------------------------------------
+/*
 SECTION: Cleanup
 ===============================================================================
 */
