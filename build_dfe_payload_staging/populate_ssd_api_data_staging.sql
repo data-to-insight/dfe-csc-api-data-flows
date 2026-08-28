@@ -366,6 +366,19 @@ SemanticHashPayload AS (
                     ORDER BY a.addr_address_start_date DESC
                 ) AS postcode,
 
+                /* apply if CON fails DfE endpoint validation on postcode */
+                -- ( 
+                --     SELECT TOP 1
+                --         CASE
+                --             WHEN UPPER(LTRIM(RTRIM(a.addr_address_postcode))) = 'CON'
+                --                 THEN '' -- return empty str instead of CON/Confidencial code
+                --             ELSE a.addr_address_postcode
+                --         END
+                --     FROM ssd_address a
+                --     WHERE a.addr_person_id = p.pers_person_id
+                --     ORDER BY a.addr_address_start_date DESC
+                -- ) AS postcode,
+
                 /* === disabilities (NONE fallback) === */
                 JSON_QUERY(
                     CASE 
