@@ -569,7 +569,12 @@ SemanticHashPayload AS (
                                 CONVERT(varchar(10), clap.clap_cla_placement_start_date, 23) AS start_date,
                                 CONVERT(varchar(10), clap.clap_cla_placement_end_date, 23)   AS end_date,
                                 LEFT(NULLIF(LTRIM(RTRIM(clap.clap_cla_placement_type)), ''), 3) AS placement_type,
-                                clap.clap_cla_placement_postcode AS postcode
+                                CASE
+                                    -- protect CONfidential placement postcodes / rtn emtpy str
+                                    WHEN UPPER(LTRIM(RTRIM(ISNULL(clap.clap_cla_placement_postcode, '')))) = 'CON'
+                                        THEN ''
+                                    ELSE clap.clap_cla_placement_postcode
+                                END AS postcode,
                             FROM ssd_cla_placement clap
                             JOIN ssd_cla_episodes clae
                               ON clae.clae_cla_id = clap.clap_cla_id
@@ -807,14 +812,28 @@ RawPayloads AS (
                             END
                         ) AS [disabilities],                                                        -- 12 [CiN]
                                                      
-                        (SELECT TOP 1 a.addr_address_postcode
+                        (
+                        SELECT TOP 1 a.addr_address_postcode
                         FROM ssd_address a
                         WHERE a.addr_person_id = p.pers_person_id
                         ORDER BY a.addr_address_start_date DESC
-                        ) AS [postcode],                                                            -- 13 [903]
+                        ) AS [postcode],         
+                                                                           -- 13 [903]
+                        /* apply if CON fails DfE endpoint validation on postcode */
+                        -- ( 
+                        --     SELECT TOP 1
+                        --         CASE
+                        --             WHEN UPPER(LTRIM(RTRIM(a.addr_address_postcode))) = 'CON'
+                        --                 THEN '' -- return empty str instead of CON/Confidencial code
+                        --             ELSE a.addr_address_postcode
+                        --         END
+                        --     FROM ssd_address a
+                        --     WHERE a.addr_person_id = p.pers_person_id
+                        --     ORDER BY a.addr_address_start_date DESC
+                        -- ) AS [postcode],
 
                         /* uasc outer apply for consistency btwn these */
-                        ISNULL(uasc.uasc_flag, CAST(0 AS bit)) AS [uasc_flag],                  -- 14 [903]
+                        ISNULL(uasc.uasc_flag, CAST(0 AS bit)) AS [uasc_flag],                      -- 14 [903]
                         uasc.uasc_end_date AS [uasc_end_date],                                      -- 15 [903]                                                  -- 15 [903]
 
                         CAST(0 AS bit) AS [purge] -- child_details purge
@@ -1051,8 +1070,13 @@ RawPayloads AS (
                                 -- this data point being coerced until superceded by change in source data field for systemC users
                                 MIN(LEFT(NULLIF(LTRIM(RTRIM(clae.clae_cla_episode_start_reason)), ''), 1)) AS [start_reason],     -- 39 [903] 
                                 
-                                clap.clap_cla_placement_postcode AS [postcode],                                                   -- 40 [903]
-                                
+                                CASE
+                                    -- protect CONfidential placement postcodes / rtn emtpy str
+                                    WHEN UPPER(LTRIM(RTRIM(ISNULL(clap.clap_cla_placement_postcode, '')))) = 'CON'
+                                        THEN ''
+                                    ELSE clap.clap_cla_placement_postcode
+                                END AS [postcode],                                                                                -- 40 [903]
+                                                                
                                 /* SSD data coerce into API JSON spec */
                                 LEFT(NULLIF(LTRIM(RTRIM(clap.clap_cla_placement_type)), ''), 3) AS [placement_type],              -- 41 [903]
 
