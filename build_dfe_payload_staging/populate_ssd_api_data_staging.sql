@@ -85,7 +85,7 @@ Op notes:
 */
 
 
-DECLARE @VERSION nvarchar(32) = N'0.4.8'; -- dev check .toml 
+DECLARE @VERSION nvarchar(32) = N'0.5.0'; -- dev check .toml 
 RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 
 
@@ -138,31 +138,27 @@ DECLARE @fy_start_year int = YEAR(@anchor) - CASE WHEN MONTH(@anchor) < @fy_star
 DECLARE @ea_cohort_window_start date = DATEFROMPARTS(@fy_start_year, @fy_start_month, 1);
 DECLARE @ea_cohort_window_end date = DATEADD(day, 1, @run_date) -- today + 1
 
+DECLARE @restrict_to_worker_roles bit = 1; -- default ON. 1== restrict to only defined SW|CW roles 
 
-
-
-;WITH CensusDates AS (
-    -- identify which CiN dates are within timeframe window (<=2 expected)
-    SELECT DATEFROMPARTS(y,3,31) AS census_date
-    FROM (VALUES
+;WITH SSDA903Dates AS (
+    -- id which SSDA903 dates within timeframe window (<=2 expected)
+    SELECT DATEFROMPARTS(y, 3, 31) AS ssda903_date
+    FROM (
+        VALUES
             (YEAR(@ea_cohort_window_start)),
             (YEAR(@ea_cohort_window_end))
-         ) v(y)
-    WHERE DATEFROMPARTS(y,3,31)
+    ) v(y)
+    WHERE DATEFROMPARTS(y, 3, 31)
           BETWEEN @ea_cohort_window_start
               AND @ea_cohort_window_end
 ),
 
-ReferralWithCINPlan AS (
-  -- towards gating case worker/SW to only CiN records via referrals
-    SELECT DISTINCT
-        cinp.cinp_referral_id
-    FROM ssd_cin_plans cinp
-    WHERE cinp.cinp_cin_plan_start_date <= @ea_cohort_window_end
-      AND (
-            cinp.cinp_cin_plan_end_date IS NULL
-            OR cinp.cinp_cin_plan_end_date >= @ea_cohort_window_start
-      )
+SSDA903Window AS (
+    -- assign the now known 1+ 903 dates
+    SELECT
+        MIN(ssda903_date) AS cla_window_start,
+        MAX(ssda903_date) AS cla_window_end
+    FROM SSDA903Dates
 ),
 
 /*
@@ -427,84 +423,76 @@ SemanticHashPayload AS (
                             ELSE NULL
                         END AS referral_no_further_action_flag,
 
+
+
                         /* ================= care_worker_details (53..55), array (or []) per episode =================
                           - join involvements by referral, include rows overlapping window
                           - newest first by start date
+                          - involvement overlaps SSDA903 reporting period
+                          - (between earliest and latest applicable 31 March dates)
                         */
 
                         /* care workers */
                         JSON_QUERY(
-                            CASE
+                            (
+                                SELECT
+                                    -- CAST(pr.prof_staff_id AS varchar(12)) AS [worker_id],    -- possible LA alternative
+                                    CAST(pr.prof_social_worker_registration_no AS varchar(12)) AS [worker_id],
 
-                                -- social worker gate evaluated 1x per referral
-                                -- Referral == c|s worker reporting
-                                --     Y --> build JSON worker array
-                                --     N --> return empty array
+                                    CONVERT(varchar(10), i.invo_involvement_start_date, 23) AS [start_date],
+                                    CONVERT(varchar(10), i.invo_involvement_end_date, 23) AS [end_date]
 
-                                WHEN EXISTS (
-                                    SELECT 1
-                                    -- only incl. SW/CW if within CiN gate
-                                    FROM ReferralWithCINPlan rcp
-                                    WHERE rcp.cinp_referral_id = cine.cine_referral_id
-                                )
-                                THEN (
-                                    SELECT
-                                        -- CAST(pr.prof_staff_id AS varchar(12)) AS [worker_id],    -- possible LA alternative
-                                        CAST(pr.prof_social_worker_registration_no AS varchar(12)) AS [worker_id],
+                                FROM ssd_involvements i
 
-                                        CONVERT(varchar(10), i.invo_involvement_start_date, 23) AS [start_date],
-                                        CONVERT(varchar(10), i.invo_involvement_end_date, 23) AS [end_date]
+                                JOIN ssd_professionals pr
+                                    ON pr.prof_professional_id = i.invo_professional_id
 
-                                    FROM ssd_involvements i
+                                WHERE i.invo_referral_id = cine.cine_referral_id
 
-                                    JOIN ssd_professionals pr
-                                        ON pr.prof_professional_id = i.invo_professional_id
+                                  -- Social Worker registered only
+                                  -- LA source data for defining SW role status varied. Assumptions limited to :
+                                  -- -- SW reg number exists/and role type desc/id
 
-                                    WHERE i.invo_referral_id = cine.cine_referral_id
+                                  -- -- REMOVE FILTER if/to align with :
+                                  -- -- "episodes where child not in care may incl. non-qualified SW/CW without SWE number number"
+                                  AND pr.prof_social_worker_registration_no IS NOT NULL
+                                  
+                                  -- Case Worker/SW
+                                  -- Optional role filter:
+                                  -- 0 = return all involvements linked to registered Social Worker(s)
+                                  -- 1 = return only involvements with selected worker role ids
+                                  AND ( 
+                                          @restrict_to_worker_roles = 0
+                                      OR
+                                        UPPER(LTRIM(RTRIM(i.invo_professional_role_id))) IN (
+                                            'CW'
+                                            -- -- [LA REVIEW] edit role code list as required
+                                            -- , 'SW', 'CSW', 'ASW', 'PASW',
+                                            -- 'PSW', 'HSW', 'SSW', 'FFSW', 'RFFSW',
+                                            -- 'LLSWM', 'LLSWS', 'SWA'
+                                            -- , 'IRO', 'CHP' 
+                                        )
+                                  )
 
-                                      -- Social Worker registered only
-                                      -- LA source data for defining SW role status varied. Assumptions limited to :
-                                      -- -- SW reg number exists/and role type desc/id
-
-                                      -- -- REMOVE FILTER if/to align with :
-                                      -- -- "episodes where child not in care may incl. non-qualified SW/CW without SWE number number"
-                                      AND pr.prof_social_worker_registration_no IS NOT NULL
-
-                                      -- Case Worker role only
-                                      AND UPPER(LTRIM(RTRIM(i.invo_professional_role_id))) = 'CW'
-
-                                      AND EXISTS (
-                                            -- involvement active on 1+ March census date within cohort window
-                                            SELECT 1
-                                            FROM CensusDates cd
-                                            WHERE i.invo_involvement_start_date <= cd.census_date
-                                              AND (
-                                                    i.invo_involvement_end_date IS NULL
-                                                OR i.invo_involvement_end_date >= cd.census_date
-                                              )
+                                  -- SW involvements overlapping SSDA903 reporting window
+                                  AND i.invo_involvement_start_date <= (
+                                          SELECT cla_window_end
+                                          FROM SSDA903Window
+                                      )
+                                  AND (
+                                          i.invo_involvement_end_date IS NULL
+                                      OR  i.invo_involvement_end_date >= (
+                                              SELECT cla_window_start
+                                              FROM SSDA903Window
+                                          )
                                       )
 
-                                    ORDER BY
-                                        i.invo_involvement_start_date DESC
+                                ORDER BY
+                                    i.invo_involvement_start_date DESC
 
-                                    FOR JSON PATH
-                                )
-                            END
+                                FOR JSON PATH
+                            )
                         ) AS care_worker_details,
-
-
-                        -- (
-                        --     SELECT
-                        --         pr.prof_social_worker_registration_no AS worker_id,
-                        --         CONVERT(varchar(10), i.invo_involvement_start_date, 23) AS start_date,
-                        --         CONVERT(varchar(10), i.invo_involvement_end_date, 23)   AS end_date
-                        --     FROM ssd_involvements i
-                        --     JOIN ssd_professionals pr
-                        --       ON pr.prof_professional_id = i.invo_professional_id
-                        --     WHERE i.invo_referral_id = cine.cine_referral_id
-                        --     ORDER BY i.invo_involvement_start_date
-                        --     FOR JSON PATH
-                        -- ) AS care_worker_details,
 
                         /* assessments */
                         (
@@ -839,23 +827,6 @@ RawPayloads AS (
                     END
                 ) AS [health_and_wellbeing],
 
-                -- /* [REVIEW] - depreciated */
-                -- JSON_QUERY((
-                    -- SELECT
-                    --     (
-                    --         SELECT
-                    --             CONVERT(varchar(10), csdq.csdq_sdq_completed_date, 23) AS [date],   -- 45
-                    --             TRY_CONVERT(int, csdq.csdq_sdq_score)                 AS [score]    -- 46
-                    --         FROM ssd_sdq_scores csdq
-                    --         WHERE csdq.csdq_person_id = p.pers_person_id
-                    --           AND csdq.csdq_sdq_score IS NOT NULL
-                    --           AND csdq.csdq_sdq_completed_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
-                    --         ORDER BY csdq.csdq_sdq_completed_date DESC
-                    --         FOR JSON PATH
-                    --     ) AS [sdq_assessments],
-                --         CAST(0 AS bit) AS [purge]
-                --     FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
-                -- )) AS [health_and_wellbeing],
 
 
                 /* ================= social_care_episodes (16..44 and 47..55), array =================
@@ -1172,70 +1143,75 @@ RawPayloads AS (
                         )) AS [care_leavers],
 
 
-
                         /* ================= care_worker_details (53..55), array (or []) per episode =================
                           - join involvements by referral, include rows overlapping window
                           - newest first by start date
+                          - involvement overlaps SSDA903 reporting period (between earliest and latest applicable 31 March dates)
                         */
 
                         /* care workers */
                         JSON_QUERY(
-                            CASE
+                            (
+                                SELECT
+                                    -- CAST(pr.prof_staff_id AS varchar(12)) AS [worker_id],    -- possible LA alternative
+                                    CAST(pr.prof_social_worker_registration_no AS varchar(12)) AS [worker_id],
+                                    CONVERT(varchar(10), i.invo_involvement_start_date, 23) AS [start_date],
+                                    CONVERT(varchar(10), i.invo_involvement_end_date, 23) AS [end_date]
 
-                                -- social worker gate evaluated 1x per referral
-                                -- Referral == c|s worker reporting
-                                --     Y --> build JSON worker array
-                                --     N --> return empty array
+                                FROM ssd_involvements i
 
-                                WHEN EXISTS (
-                                    SELECT 1
-                                    -- only incl. SW/CW if within CiN gate
-                                    FROM ReferralWithCINPlan rcp
-                                    WHERE rcp.cinp_referral_id = cine.cine_referral_id
-                                )
-                                THEN (
-                                    SELECT
-                                        -- CAST(pr.prof_staff_id AS varchar(12)) AS [worker_id],    -- possible LA alternative
-                                        CAST(pr.prof_social_worker_registration_no AS varchar(12)) AS [worker_id],
-                                        CONVERT(varchar(10), i.invo_involvement_start_date, 23) AS [start_date],
-                                        CONVERT(varchar(10), i.invo_involvement_end_date, 23) AS [end_date]
+                                JOIN ssd_professionals pr
+                                    ON pr.prof_professional_id = i.invo_professional_id
 
-                                    FROM ssd_involvements i
+                                WHERE i.invo_referral_id = cine.cine_referral_id
 
-                                    JOIN ssd_professionals pr
-                                        ON pr.prof_professional_id = i.invo_professional_id
+                                  -- Social Worker registered only
+                                  -- LA source data for defining SW role status varied. Assumptions limited to :
+                                  -- -- SW reg number exists and role type desc/id
 
-                                    WHERE i.invo_referral_id = cine.cine_referral_id
+                                  -- -- REMOVE FILTER if/to align with :
+                                  -- -- "episodes where child not in care may incl. non-qualified SW/CW without SWE number"
+                                  AND pr.prof_social_worker_registration_no IS NOT NULL
 
-                                      -- Social Worker registered only
-                                      -- LA source data for defining SW role status varied. Assumptions limited to :
-                                      -- -- SW reg number exists/and role type desc/id
+                                  -- Case Worker/SW
+                                  -- Optional role filter:
+                                  -- 0 = return all involvements linked to registered Social Worker(s)
+                                  -- 1 = return only involvements with selected worker role ids
+                                  AND ( 
+                                          @restrict_to_worker_roles = 0
+                                      OR
+                                        UPPER(LTRIM(RTRIM(i.invo_professional_role_id))) IN (
+                                            'CW'
+                                            -- -- [LA REVIEW] edit role code list as required
+                                            -- , 'SW', 'CSW', 'ASW', 'PASW',
+                                            -- 'PSW', 'HSW', 'SSW', 'FFSW', 'RFFSW',
+                                            -- 'LLSWM', 'LLSWS', 'SWA'
+                                            -- , 'IRO', 'CHP' 
+                                        )
+                                  )
 
-                                      -- -- REMOVE FILTER if/to align with :
-                                      -- -- "episodes where child not in care may incl. non-qualified SW/CW without SWE number"
-                                      AND pr.prof_social_worker_registration_no IS NOT NULL
-
-                                      -- Case Worker role only
-                                      AND UPPER(LTRIM(RTRIM(i.invo_professional_role_id))) = 'CW'
-
-                                      AND EXISTS (
-                                            -- involvement active on 1+ March census date within cohort window
-                                            SELECT 1
-                                            FROM CensusDates cd
-                                            WHERE i.invo_involvement_start_date <= cd.census_date
-                                              AND (
-                                                    i.invo_involvement_end_date IS NULL
-                                                OR i.invo_involvement_end_date >= cd.census_date
-                                              )
+                                  -- [REVIEW] 
+                                  -- rtn SW involvements overlapping SSDA903 reporting window
+                                  AND i.invo_involvement_start_date <= (
+                                          SELECT cla_window_end
+                                          FROM SSDA903Window
+                                      )
+                                  AND (
+                                          i.invo_involvement_end_date IS NULL
+                                      OR  i.invo_involvement_end_date >= (
+                                              SELECT cla_window_start
+                                              FROM SSDA903Window
+                                          )
                                       )
 
-                                    ORDER BY
-                                        i.invo_involvement_start_date DESC
+                                      
+                                ORDER BY
+                                    i.invo_involvement_start_date DESC
 
-                                    FOR JSON PATH
-                                )
-                            END
+                                FOR JSON PATH
+                            )
                         ) AS [care_worker_details],
+
 
                         CAST(0 AS bit) AS [purge]
                       FROM ssd_cin_episodes cine
@@ -2150,6 +2126,30 @@ Quick age band check for records in staging
 --   DATEDIFF(year, p.pers_dob, CONVERT(date, GETDATE()))
 --     - CASE WHEN DATEADD(year, DATEDIFF(year, p.pers_dob, CONVERT(date, GETDATE())), p.pers_dob) > CONVERT(date, GETDATE()) THEN 1 ELSE 0 END
 -- ORDER BY age_years;
+
+
+
+--------------------------------------------------------------------------------
+/*
+SUBSECTION: Records with multiple CW involvements
+---------------------------------------
+Find records that have multiple CW involvements to verify SW history 
+*/
+-- SELECT TOP (50)
+--     person_id,
+--     legacy_id,
+--     (
+--         LEN(json_payload)
+--         - LEN(REPLACE(json_payload, '"worker_id"', ''))
+--     ) / LEN('"worker_id"') AS worker_count,
+--     json_payload
+-- FROM ssd_api_data_staging
+-- WHERE (
+--         LEN(json_payload)
+--         - LEN(REPLACE(json_payload, '"worker_id"', ''))
+--       ) / LEN('"worker_id"') > 1
+-- ORDER BY worker_count DESC,
+--          person_id;
 
 
 
