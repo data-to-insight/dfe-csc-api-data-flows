@@ -574,7 +574,7 @@ SemanticHashPayload AS (
                                     WHEN UPPER(LTRIM(RTRIM(ISNULL(clap.clap_cla_placement_postcode, '')))) = 'CON'
                                         THEN ''
                                     ELSE clap.clap_cla_placement_postcode
-                                END AS postcode,
+                                END AS postcode
                             FROM ssd_cla_placement clap
                             JOIN ssd_cla_episodes clae
                               ON clae.clae_cla_id = clap.clap_cla_id
