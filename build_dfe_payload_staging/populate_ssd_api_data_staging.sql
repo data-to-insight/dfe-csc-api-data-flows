@@ -1092,21 +1092,22 @@ RawPayloads AS (
                                 ) AS [end_date],                                                                                  -- 42 [903]
 
                                 /* SSD data coerce into API JSON spec */
-                                MIN(          -- different approach needed here as needed raw data part has varied length
-                                  NULLIF(     -- this process to be superceded by replacement source field for systemC users
-                                    REPLACE(
-                                      REPLACE(
-                                        REPLACE(
-                                          REPLACE(LEFT(clae.clae_cla_episode_ceased_reason, 3), ' ', ''),   -- remove spaces after max length truncation
-                                        CHAR(9), ''),   -- tabs
-                                      CHAR(10), ''),    -- LF
-                                    CHAR(13), ''),      -- CR
-                                    ''                  -- empty string to NULL
-                                  )
-                                ) AS [end_reason],                                                                                -- 43 [903]
+                                -- MIN(          -- different approach needed here as needed raw data part has varied length
+                                --   NULLIF(     -- this process to be superceded by replacement source field for systemC users
+                                --     REPLACE(
+                                --       REPLACE(
+                                --         REPLACE(
+                                --           REPLACE(LEFT(clae.clae_cla_episode_ceased_reason, 3), ' ', ''),   -- remove spaces after max length truncation
+                                --         CHAR(9), ''),   -- tabs
+                                --       CHAR(10), ''),    -- LF
+                                --     CHAR(13), ''),      -- CR
+                                --     ''                  -- empty string to NULL
+                                --   )
+                                -- ) AS [end_reason],                                                                                -- 43 [903]
 
-                                clap.clap_cla_placement_change_reason AS [change_reason],                                         -- 44 [903]
-                                
+                                NULLIF(LTRIM(RTRIM(clap.clap_cla_placement_change_reason)), '') AS [end_reason],  -- [REVIEW SOURCE]  -- 43 [903]
+                                NULLIF(LTRIM(RTRIM(clap.clap_cla_placement_change_reason)), '') AS [change_reason],                   -- 44 [903]
+
                                 CAST(0 AS bit) AS [purge]
                             FROM ssd_cla_episodes clae
                             JOIN ssd_cla_placement clap
