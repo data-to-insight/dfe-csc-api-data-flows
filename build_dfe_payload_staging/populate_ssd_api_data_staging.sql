@@ -569,12 +569,14 @@ SemanticHashPayload AS (
                                 CONVERT(varchar(10), clap.clap_cla_placement_start_date, 23) AS start_date,
                                 CONVERT(varchar(10), clap.clap_cla_placement_end_date, 23)   AS end_date,
                                 LEFT(NULLIF(LTRIM(RTRIM(clap.clap_cla_placement_type)), ''), 3) AS placement_type,
+           
                                 CASE
-                                    -- protect CONfidential placement postcodes / rtn emtpy str
-                                    WHEN UPPER(LTRIM(RTRIM(ISNULL(clap.clap_cla_placement_postcode, '')))) = 'CON'
-                                        THEN ''
+                                    -- protect CONfidential placement postcodes 
+                                    WHEN UPPER(LTRIM(RTRIM(ISNULL(clap.clap_placement_postcode, '')))) = 'CON'
+                                        THEN 'CON'
                                     ELSE clap.clap_cla_placement_postcode
-                                END AS postcode
+                                END AS postcode,   
+
                             FROM ssd_cla_placement clap
                             JOIN ssd_cla_episodes clae
                               ON clae.clae_cla_id = clap.clap_cla_id
