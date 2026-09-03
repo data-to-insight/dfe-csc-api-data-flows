@@ -572,10 +572,10 @@ SemanticHashPayload AS (
            
                                 CASE
                                     -- protect CONfidential placement postcodes 
-                                    WHEN UPPER(LTRIM(RTRIM(ISNULL(clap.clap_placement_postcode, '')))) = 'CON'
+                                    WHEN UPPER(LTRIM(RTRIM(ISNULL(clap.clap_cla_placement_postcode, '')))) = 'CON'
                                         THEN 'CON'
                                     ELSE clap.clap_cla_placement_postcode
-                                END AS postcode,   
+                                END AS postcode   
 
                             FROM ssd_cla_placement clap
                             JOIN ssd_cla_episodes clae
@@ -1074,7 +1074,7 @@ RawPayloads AS (
                                                                                                                                                -- 40 [903]
                                 CASE
                                     -- protect CONfidential placement postcodes 
-                                    WHEN UPPER(LTRIM(RTRIM(ISNULL(clap.clap_placement_postcode, '')))) = 'CON'
+                                    WHEN UPPER(LTRIM(RTRIM(ISNULL(clap.clap_cla_placement_postcode, '')))) = 'CON'
                                         THEN 'CON'
                                     ELSE clap.clap_cla_placement_postcode
                                 END AS [postcode],   
