@@ -1069,14 +1069,14 @@ RawPayloads AS (
                                 /* SSD data coerce into API JSON spec */
                                 -- this data point being coerced until superceded by change in source data field for systemC users
                                 MIN(LEFT(NULLIF(LTRIM(RTRIM(clae.clae_cla_episode_start_reason)), ''), 1)) AS [start_reason],     -- 39 [903] 
-                                
+                                                                                                                                               -- 40 [903]
                                 CASE
-                                    -- protect CONfidential placement postcodes / rtn emtpy str
-                                    WHEN UPPER(LTRIM(RTRIM(ISNULL(clap.clap_cla_placement_postcode, '')))) = 'CON'
-                                        THEN ''
+                                    -- protect CONfidential placement postcodes 
+                                    WHEN UPPER(LTRIM(RTRIM(ISNULL(clap.clap_placement_postcode, '')))) = 'CON'
+                                        THEN 'CON'
                                     ELSE clap.clap_cla_placement_postcode
-                                END AS [postcode],                                                                                -- 40 [903]
-                                                                
+                                END AS [postcode],   
+
                                 /* SSD data coerce into API JSON spec */
                                 LEFT(NULLIF(LTRIM(RTRIM(clap.clap_cla_placement_type)), ''), 3) AS [placement_type],              -- 41 [903]
 
