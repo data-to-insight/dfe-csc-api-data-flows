@@ -567,21 +567,90 @@ SemanticHashPayload AS (
                         (
                             SELECT
                                 CONVERT(varchar(10), clap.clap_cla_placement_start_date, 23) AS start_date,
-                                CONVERT(varchar(10), clap.clap_cla_placement_end_date, 23)   AS end_date,
-                                LEFT(NULLIF(LTRIM(RTRIM(clap.clap_cla_placement_type)), ''), 3) AS placement_type,
-           
+
+                                /* SSD data coerce into API JSON spec */
+                                MIN(
+                                    LEFT(
+                                        NULLIF(
+                                            LTRIM(RTRIM(clae.clae_cla_episode_start_reason)),
+                                            ''
+                                        ),
+                                        1
+                                    )
+                                ) AS start_reason,
+
                                 CASE
-                                    -- protect CONfidential placement postcodes 
+                                    -- protect CONfidential placement postcodes
                                     WHEN UPPER(LTRIM(RTRIM(ISNULL(clap.clap_cla_placement_postcode, '')))) = 'CON'
                                         THEN 'CON'
                                     ELSE clap.clap_cla_placement_postcode
-                                END AS postcode   
+                                END AS postcode,
+
+                                /* SSD data coerce into API JSON spec */
+                                LEFT(
+                                    NULLIF(
+                                        LTRIM(RTRIM(clap.clap_cla_placement_type)),
+                                        ''
+                                    ),
+                                    3
+                                ) AS placement_type,
+
+                                CONVERT(
+                                    varchar(10),
+                                    CASE
+                                        WHEN clap.clap_cla_placement_end_date IS NULL
+                                            OR clap.clap_cla_placement_end_date >= clap.clap_cla_placement_start_date
+                                            THEN clap.clap_cla_placement_end_date
+                                        ELSE NULL
+                                    END,
+                                    23
+                                ) AS end_date,
+
+                                /* SSD data coerce into API JSON spec */
+                                MIN(
+                                    NULLIF(
+                                        REPLACE(
+                                            REPLACE(
+                                                REPLACE(
+                                                    REPLACE(
+                                                        LEFT(clae.clae_cla_episode_ceased_reason, 3),
+                                                        ' ',
+                                                        ''
+                                                    ),
+                                                    CHAR(9),
+                                                    ''
+                                                ),
+                                                CHAR(10),
+                                                ''
+                                            ),
+                                            CHAR(13),
+                                            ''
+                                        ),
+                                        ''
+                                    )
+                                ) AS end_reason,
+
+                                NULLIF(
+                                    LTRIM(RTRIM(clap.clap_cla_placement_change_reason)),
+                                    ''
+                                ) AS change_reason
 
                             FROM ssd_cla_placement clap
                             JOIN ssd_cla_episodes clae
-                              ON clae.clae_cla_id = clap.clap_cla_id
+                                ON clae.clae_cla_id = clap.clap_cla_id
+
                             WHERE clae.clae_referral_id = cine.cine_referral_id
+
+                            GROUP BY
+                                clap.clap_cla_placement_id,
+                                clap.clap_cla_placement_start_date,
+                                clap.clap_cla_placement_type,
+                                clap.clap_cla_placement_postcode,
+                                clap.clap_cla_placement_end_date,
+                                clap.clap_cla_placement_change_reason
+
                             ORDER BY clap.clap_cla_placement_start_date
+
                             FOR JSON PATH
                         ) AS child_looked_after_placements,
 
@@ -1094,20 +1163,20 @@ RawPayloads AS (
                                 ) AS [end_date],                                                                                  -- 42 [903]
 
                                 /* SSD data coerce into API JSON spec */
-                                -- MIN(          -- different approach needed here as needed raw data part has varied length
-                                --   NULLIF(     -- this process to be superceded by replacement source field for systemC users
-                                --     REPLACE(
-                                --       REPLACE(
-                                --         REPLACE(
-                                --           REPLACE(LEFT(clae.clae_cla_episode_ceased_reason, 3), ' ', ''),   -- remove spaces after max length truncation
-                                --         CHAR(9), ''),   -- tabs
-                                --       CHAR(10), ''),    -- LF
-                                --     CHAR(13), ''),      -- CR
-                                --     ''                  -- empty string to NULL
-                                --   )
-                                -- ) AS [end_reason],                                                                                -- 43 [903]
+                                MIN(          -- different approach needed here as needed raw data part has varied length
+                                  NULLIF(     -- this process to be superceded by replacement source field for systemC users
+                                    REPLACE(
+                                      REPLACE(
+                                        REPLACE(
+                                          REPLACE(LEFT(clae.clae_cla_episode_ceased_reason, 3), ' ', ''),   -- remove spaces after max length truncation
+                                        CHAR(9), ''),   -- tabs
+                                      CHAR(10), ''),    -- LF
+                                    CHAR(13), ''),      -- CR
+                                    ''                  -- empty string to NULL
+                                  )
+                                ) AS [end_reason],                                                                   -- [REVIEW SOURCE]  -- 43 [903]
 
-                                NULLIF(LTRIM(RTRIM(clap.clap_cla_placement_change_reason)), '') AS [end_reason],  -- [REVIEW SOURCE]  -- 43 [903]
+                                -- NULLIF(LTRIM(RTRIM(clap.clap_cla_placement_change_reason)), '') AS [end_reason],  -- [REVIEW SOURCE]  -- 43 [903]
                                 NULLIF(LTRIM(RTRIM(clap.clap_cla_placement_change_reason)), '') AS [change_reason],                   -- 44 [903]
 
                                 CAST(0 AS bit) AS [purge]
