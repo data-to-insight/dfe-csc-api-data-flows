@@ -640,6 +640,12 @@ SemanticHashPayload AS (
                                 ON clae.clae_cla_id = clap.clap_cla_id
 
                             WHERE clae.clae_referral_id = cine.cine_referral_id
+                            -- AND clap.clap_cla_placement_type <> 'T0'    -- IF LA not reporting some (e.g. TEMP) placements
+                            AND clap.clap_cla_placement_start_date <= @ea_cohort_window_end
+                            AND (
+                                    clap.clap_cla_placement_end_date IS NULL
+                                OR clap.clap_cla_placement_end_date >= @ea_cohort_window_start
+                                )
 
                             GROUP BY
                                 clap.clap_cla_placement_id,
@@ -1182,7 +1188,8 @@ RawPayloads AS (
                                 CAST(0 AS bit) AS [purge]
                             FROM ssd_cla_episodes clae
                             JOIN ssd_cla_placement clap
-                            ON clap.clap_cla_id = clae.clae_cla_id
+                              ON clap.clap_cla_id = clae.clae_cla_id
+                              
                             WHERE clae.clae_referral_id = cine.cine_referral_id
                             -- AND clap.clap_cla_placement_type <> 'T0'    -- IF LA not reporting some (e.g. TEMP) placements
                             AND clap.clap_cla_placement_start_date <= @ea_cohort_window_end
