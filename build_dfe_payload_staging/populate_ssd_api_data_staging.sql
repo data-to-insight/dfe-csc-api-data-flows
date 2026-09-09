@@ -587,13 +587,7 @@ SemanticHashPayload AS (
                                 END AS postcode,
 
                                 /* SSD data coerce into API JSON spec */
-                                LEFT(
-                                    NULLIF(
-                                        LTRIM(RTRIM(clap.clap_cla_placement_type)),
-                                        ''
-                                    ),
-                                    3
-                                ) AS placement_type,
+                                LEFT(NULLIF(LTRIM(RTRIM(clap.clap_cla_placement_type)), ''), 3) AS placement_type,              
 
                                 CONVERT(
                                     varchar(10),
@@ -604,40 +598,30 @@ SemanticHashPayload AS (
                                         ELSE NULL
                                     END,
                                     23
-                                ) AS end_date,
+                                ) AS end_date,                                                                                  
 
                                 /* SSD data coerce into API JSON spec */
-                                MIN(
-                                    NULLIF(
-                                        REPLACE(
-                                            REPLACE(
-                                                REPLACE(
-                                                    REPLACE(
-                                                        LEFT(clae.clae_cla_episode_ceased_reason, 3),
-                                                        ' ',
-                                                        ''
-                                                    ),
-                                                    CHAR(9),
-                                                    ''
-                                                ),
-                                                CHAR(10),
-                                                ''
-                                            ),
-                                            CHAR(13),
-                                            ''
-                                        ),
-                                        ''
-                                    )
-                                ) AS end_reason,
+                                -- Placement-ending episode identified where:
+                                --     clae_cla_episode_ceased_date = clae_cla_placement_end_date
+                                -- Return episode ceased code from identified placement-ending episode
+                                placement_end_ep.clae_cla_episode_ceased_code AS end_reason,                                        
 
-                                NULLIF(
-                                    LTRIM(RTRIM(clap.clap_cla_placement_change_reason)),
-                                    ''
-                                ) AS change_reason
+                                NULLIF(LTRIM(RTRIM(clap.clap_cla_placement_change_reason)), '') AS change_reason                     
 
                             FROM ssd_cla_placement clap
                             JOIN ssd_cla_episodes clae
                                 ON clae.clae_cla_id = clap.clap_cla_id
+                                
+                            OUTER APPLY
+                            (
+                                SELECT TOP (1)
+                                    ep.clae_cla_episode_ceased_code
+                                FROM ssd_cla_episodes ep
+                                WHERE ep.clae_cla_placement_id = clap.clap_cla_placement_id
+                                  AND ep.clae_cla_episode_ceased_date =
+                                      ep.clae_cla_placement_end_date
+                                  AND ep.clae_cla_episode_ceased_code IS NOT NULL
+                            ) AS placement_end_ep
 
                             WHERE clae.clae_referral_id = cine.cine_referral_id
                             -- AND clap.clap_cla_placement_type <> 'T0'    -- IF LA not reporting some (e.g. TEMP) placements
@@ -653,11 +637,12 @@ SemanticHashPayload AS (
                                 clap.clap_cla_placement_type,
                                 clap.clap_cla_placement_postcode,
                                 clap.clap_cla_placement_end_date,
-                                clap.clap_cla_placement_change_reason
+                                clap.clap_cla_placement_change_reason,
+                                placement_end_ep.clae_cla_episode_ceased_code
 
-                            ORDER BY clap.clap_cla_placement_start_date
-
+                            ORDER BY clap.clap_cla_placement_start_date DESC
                             FOR JSON PATH
+
                         ) AS child_looked_after_placements,
 
                         /* adoption */
@@ -1169,27 +1154,28 @@ RawPayloads AS (
                                 ) AS [end_date],                                                                                  -- 42 [903]
 
                                 /* SSD data coerce into API JSON spec */
-                                MIN(          -- different approach needed here as needed raw data part has varied length
-                                  NULLIF(     -- this process to be superceded by replacement source field for systemC users
-                                    REPLACE(
-                                      REPLACE(
-                                        REPLACE(
-                                          REPLACE(LEFT(clae.clae_cla_episode_ceased_reason, 3), ' ', ''),   -- remove spaces after max length truncation
-                                        CHAR(9), ''),   -- tabs
-                                      CHAR(10), ''),    -- LF
-                                    CHAR(13), ''),      -- CR
-                                    ''                  -- empty string to NULL
-                                  )
-                                ) AS [end_reason],                                                                   -- [REVIEW SOURCE]  -- 43 [903]
+                                -- Placement-ending episode identified where:
+                                --     clae_cla_episode_ceased_date = clae_cla_placement_end_date
+                                -- Return episode ceased code from identified placement-ending episode
+                                placement_end_ep.clae_cla_episode_ceased_code AS [end_reason],                                        -- 43 [903]
 
-                                -- NULLIF(LTRIM(RTRIM(clap.clap_cla_placement_change_reason)), '') AS [end_reason],  -- [REVIEW SOURCE]  -- 43 [903]
                                 NULLIF(LTRIM(RTRIM(clap.clap_cla_placement_change_reason)), '') AS [change_reason],                   -- 44 [903]
 
                                 CAST(0 AS bit) AS [purge]
                             FROM ssd_cla_episodes clae
                             JOIN ssd_cla_placement clap
                               ON clap.clap_cla_id = clae.clae_cla_id
-                              
+                            OUTER APPLY
+                            (
+                                SELECT TOP (1)
+                                    ep.clae_cla_episode_ceased_code
+                                FROM ssd_cla_episodes ep
+                                WHERE ep.clae_cla_placement_id = clap.clap_cla_placement_id
+                                  AND ep.clae_cla_episode_ceased_date =
+                                      ep.clae_cla_placement_end_date
+                                  AND ep.clae_cla_episode_ceased_code IS NOT NULL
+                            ) AS placement_end_ep
+
                             WHERE clae.clae_referral_id = cine.cine_referral_id
                             -- AND clap.clap_cla_placement_type <> 'T0'    -- IF LA not reporting some (e.g. TEMP) placements
                             AND clap.clap_cla_placement_start_date <= @ea_cohort_window_end
@@ -1203,7 +1189,9 @@ RawPayloads AS (
                                 clap.clap_cla_placement_type,
                                 clap.clap_cla_placement_postcode,
                                 clap.clap_cla_placement_end_date,
-                                clap.clap_cla_placement_change_reason
+                                clap.clap_cla_placement_change_reason,
+                                placement_end_ep.clae_cla_episode_ceased_code
+
                             ORDER BY clap.clap_cla_placement_start_date DESC
                             FOR JSON PATH
                         )) AS [child_looked_after_placements],
