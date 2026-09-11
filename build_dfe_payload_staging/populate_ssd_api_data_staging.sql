@@ -569,15 +569,7 @@ SemanticHashPayload AS (
                                 CONVERT(varchar(10), clap.clap_cla_placement_start_date, 23) AS start_date,
 
                                 /* SSD data coerce into API JSON spec */
-                                MIN(
-                                    LEFT(
-                                        NULLIF(
-                                            LTRIM(RTRIM(clae.clae_cla_episode_start_reason)),
-                                            ''
-                                        ),
-                                        1
-                                    )
-                                ) AS start_reason,
+                                MIN(LEFT(NULLIF(LTRIM(RTRIM(clae.clae_cla_episode_start_reason)), ''), 1)) AS start_reason,     -- 39 [903] 
 
                                 CASE
                                     -- protect CONfidential placement postcodes
@@ -604,24 +596,26 @@ SemanticHashPayload AS (
                                 -- Placement-ending episode identified where:
                                 --     clae_cla_episode_ceased_date = clae_cla_placement_end_date
                                 -- Return episode ceased code from identified placement-ending episode
-                                placement_end_ep.clae_cla_episode_ceased_code AS end_reason,                                        
+                                -- placement_end_ep.clae_cla_episode_ceased_code AS end_reason,    
+                                CAST('' AS varchar(3)) AS [end_reason], -- D2I temp placeholder #290 investigation                                    
 
                                 NULLIF(LTRIM(RTRIM(clap.clap_cla_placement_change_reason)), '') AS change_reason                     
 
                             FROM ssd_cla_placement clap
                             JOIN ssd_cla_episodes clae
                                 ON clae.clae_cla_id = clap.clap_cla_id
-                                
-                            OUTER APPLY
-                            (
-                                SELECT TOP (1)
-                                    ep.clae_cla_episode_ceased_code
-                                FROM ssd_cla_episodes ep
-                                WHERE ep.clae_cla_placement_id = clap.clap_cla_placement_id
-                                  AND ep.clae_cla_episode_ceased_date =
-                                      ep.clae_cla_placement_end_date
-                                  AND ep.clae_cla_episode_ceased_code IS NOT NULL
-                            ) AS placement_end_ep
+                            
+                            -- #290 investigation
+                            -- OUTER APPLY
+                            -- (
+                            --     SELECT TOP (1)
+                            --         ep.clae_cla_episode_ceased_code
+                            --     FROM ssd_cla_episodes ep
+                            --     WHERE ep.clae_cla_placement_id = clap.clap_cla_placement_id
+                            --       AND ep.clae_cla_episode_ceased_date =
+                            --           ep.clae_cla_placement_end_date
+                            --       AND ep.clae_cla_episode_ceased_code IS NOT NULL
+                            -- ) AS placement_end_ep
 
                             WHERE clae.clae_referral_id = cine.cine_referral_id
                             -- AND clap.clap_cla_placement_type <> 'T0'    -- IF LA not reporting some (e.g. TEMP) placements
@@ -637,8 +631,8 @@ SemanticHashPayload AS (
                                 clap.clap_cla_placement_type,
                                 clap.clap_cla_placement_postcode,
                                 clap.clap_cla_placement_end_date,
-                                clap.clap_cla_placement_change_reason,
-                                placement_end_ep.clae_cla_episode_ceased_code
+                                clap.clap_cla_placement_change_reason
+                                -- placement_end_ep.clae_cla_episode_ceased_code CAST('' AS varchar(3)) AS [end_reason], -- #290 investigation
 
                             ORDER BY clap.clap_cla_placement_start_date DESC
                             FOR JSON PATH
