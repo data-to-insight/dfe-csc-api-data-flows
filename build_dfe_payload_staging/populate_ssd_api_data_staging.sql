@@ -2333,6 +2333,109 @@ as these must come through as either "" or "CON"
 -- ORDER BY s.person_id;
 
 
+
+--------------------------------------------------------------------------------
+/*
+SUBSECTION: Get an overview of records that show a correct/incorrect populating 
+of episode_ceased_reason and placement_end_date DfE validator CSC0155
+---------------------------------------
+Date and reason episode ceased if one is populated then both must be. This
+added in-part towards verifiying fix for issue # 290.
+*/
+-- SELECT
+--     CASE
+--         WHEN clap.clap_cla_placement_end_date IS NOT NULL
+--          AND placement_end_ep.clae_cla_episode_ceased_reason IS NOT NULL
+--             THEN 'Both populated'
+
+--         WHEN clap.clap_cla_placement_end_date IS NOT NULL
+--          AND placement_end_ep.clae_cla_episode_ceased_reason IS NULL
+--             THEN 'End date only'
+
+--         WHEN clap.clap_cla_placement_end_date IS NULL
+--          AND placement_end_ep.clae_cla_episode_ceased_reason IS NOT NULL
+--             THEN 'End reason only'
+
+--         ELSE 'Both empty'
+--     END AS ValidationResult,
+--     COUNT(*) AS PlacementCount
+-- FROM ssd_cla_placement clap
+-- OUTER APPLY
+-- (
+--     SELECT TOP (1)
+--         ep.clae_cla_episode_ceased_reason
+--     FROM ssd_cla_episodes ep
+--     WHERE ep.clae_cla_placement_id = clap.clap_cla_placement_id
+--       AND ep.clae_cla_episode_ceased_date =
+--           clap.clap_cla_placement_end_date
+-- ) placement_end_ep
+-- WHERE EXISTS
+-- (
+--     SELECT 1
+--     FROM ssd_cla_episodes ep
+--     WHERE ep.clae_cla_placement_id = clap.clap_cla_placement_id
+--       AND ep.clae_referral_id IS NOT NULL
+-- )
+-- GROUP BY
+--     CASE
+--         WHEN clap.clap_cla_placement_end_date IS NOT NULL
+--          AND placement_end_ep.clae_cla_episode_ceased_reason IS NOT NULL
+--             THEN 'Both populated'
+
+--         WHEN clap.clap_cla_placement_end_date IS NOT NULL
+--          AND placement_end_ep.clae_cla_episode_ceased_reason IS NULL
+--             THEN 'End date only'
+
+--         WHEN clap.clap_cla_placement_end_date IS NULL
+--          AND placement_end_ep.clae_cla_episode_ceased_reason IS NOT NULL
+--             THEN 'End reason only'
+
+--         ELSE 'Both empty'
+--     END;
+
+-- -- which records in the SSD fit the incorrect population profile
+-- SELECT
+--     clap.clap_cla_placement_id,
+--     clap.clap_cla_id,
+--     clap.clap_cla_placement_end_date,
+
+--     placement_end_ep.clae_cla_episode_ceased_reason
+
+-- FROM ssd_cla_placement clap
+
+-- OUTER APPLY
+-- (
+--     SELECT TOP (1)
+--         ep.clae_cla_episode_ceased_reason
+--     FROM ssd_cla_episodes ep
+--     WHERE ep.clae_cla_placement_id = clap.clap_cla_placement_id
+--       AND ep.clae_cla_episode_ceased_date =
+--           clap.clap_cla_placement_end_date
+-- ) placement_end_ep
+
+-- WHERE EXISTS
+-- (
+--     SELECT 1
+--     FROM ssd_cla_episodes ep
+--     WHERE ep.clae_cla_placement_id = clap.clap_cla_placement_id
+--       AND ep.clae_referral_id IS NOT NULL
+-- )
+
+-- AND clap.clap_cla_placement_end_date IS NOT NULL
+-- AND placement_end_ep.clae_cla_episode_ceased_reason IS NULL;
+
+-- -- and then add any placement ids output from the above query into the following
+-- -- to check whether they ahve also come through into the payload 
+-- SELECT
+--     id,
+--     person_id
+-- FROM ssd_api_data_staging
+-- WHERE json_payload LIKE '%"child_looked_after_placement_id":"<PlacementIdHere>"%';
+
+
+
+
+
 --------------------------------------------------------------------------------
 /*
 SECTION: Cleanup
