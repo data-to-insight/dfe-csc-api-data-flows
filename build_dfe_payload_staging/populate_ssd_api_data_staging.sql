@@ -425,7 +425,17 @@ SemanticHashPayload AS (
                 (
                     SELECT
                         CONVERT(varchar(10), cine.cine_referral_date, 23) AS referral_date,
-                        LEFT(NULLIF(LTRIM(RTRIM(cine.cine_referral_source_code)), ''), 2) AS referral_source,
+                        CASE
+                          /* SSD data coerce into API JSON spec */
+                          -- See notes on raw extract block
+                          WHEN cine.cine_referral_source_code IS NULL THEN NULL
+                          WHEN LTRIM(RTRIM(cine.cine_referral_source_code)) LIKE '10%'        THEN '10'
+                          WHEN LTRIM(RTRIM(cine.cine_referral_source_code)) LIKE '[1-3][A-F]%' THEN LEFT(LTRIM(RTRIM(cine.cine_referral_source_code)), 2)
+                          WHEN LTRIM(RTRIM(cine.cine_referral_source_code)) LIKE '5[A-D]%'     THEN LEFT(LTRIM(RTRIM(cine.cine_referral_source_code)), 2)
+                          WHEN LTRIM(RTRIM(cine.cine_referral_source_code)) LIKE '[46789]%'    THEN LEFT(LTRIM(RTRIM(cine.cine_referral_source_code)), 1)
+                          ELSE NULL
+                        END AS referral_source,                                                                               
+
                         CONVERT(varchar(10), cine.cine_close_date, 23) AS closure_date,
                         LEFT(NULLIF(LTRIM(RTRIM(cine.cine_close_reason)), ''), 3) AS closure_reason,
 
