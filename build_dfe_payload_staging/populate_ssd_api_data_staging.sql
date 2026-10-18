@@ -1491,24 +1491,53 @@ JOIN SemanticHashPayload shp
 
 /*
 =============================================================================
-Apply SCD-1 merge semantics (split UPDATE / INSERT / DELETE)
+Update changed rows OR reactivate returning cohort members 
+Revision RH 181026
+
+Handles:
+- Existing person with materially changed payload
+- Previously Deleted person returning with changed payload
+- Previously Deleted person returning with unchanged payload
+- Existing person with NULL hash (legacy data)
 =============================================================================
 */
 
-/* Update changed rows */
 UPDATE tgt
 SET
-    tgt.previous_json_payload = tgt.json_payload,
-    tgt.json_payload          = src.json_payload,
-    tgt.previous_hash         = tgt.current_hash,
-    tgt.current_hash          = src.current_hash,
-    tgt.submission_status     = 'Pending',
-    tgt.row_state             = 'Updated',
-    tgt.last_updated          = GETDATE()
-FROM ssd_api_data_staging tgt
-JOIN #Hashed src
-  ON src.person_id = tgt.person_id
-WHERE tgt.current_hash <> src.current_hash;
+    tgt.previous_json_payload =
+        CASE
+            WHEN tgt.current_hash IS NULL
+              OR tgt.current_hash <> src.current_hash
+            THEN tgt.json_payload
+            ELSE tgt.previous_json_payload
+        END,
+
+    tgt.json_payload = src.json_payload,
+
+    tgt.previous_hash =
+        CASE
+            WHEN tgt.current_hash IS NULL
+              OR tgt.current_hash <> src.current_hash
+            THEN tgt.current_hash
+            ELSE tgt.previous_hash
+        END,
+
+    tgt.current_hash = src.current_hash,
+
+    tgt.submission_status = 'Pending',
+    tgt.row_state = 'Updated',
+    tgt.last_updated = GETDATE()
+
+FROM ssd_api_data_staging AS tgt
+
+INNER JOIN #Hashed AS src
+    ON src.person_id = tgt.person_id
+
+WHERE
+       tgt.current_hash IS NULL
+    OR tgt.current_hash <> src.current_hash
+    OR tgt.row_state = 'Deleted';
+
 
 /* Insert new rows */
 INSERT INTO ssd_api_data_staging (
@@ -1535,16 +1564,32 @@ WHERE NOT EXISTS (
     WHERE tgt.person_id = src.person_id
 );
 
-/* Soft delete: person no longer in cohort and/or LA STAT table*/
+
+/*
+=============================================================================
+Soft delete: person no longer in cohort and/or LA STAT table
+Revision RH 181026
+
+Only update when record not already marked Deleted
+=============================================================================
+*/
+
 UPDATE tgt
 SET
-    row_state = 'Deleted',
-    last_updated = GETDATE()
-FROM ssd_api_data_staging tgt
+    tgt.row_state = 'Deleted',
+    tgt.last_updated = GETDATE()
+
+FROM ssd_api_data_staging AS tgt
+
 WHERE NOT EXISTS (
     SELECT 1
-    FROM #Hashed src
+    FROM #Hashed AS src
     WHERE src.person_id = tgt.person_id
+)
+
+AND (
+    tgt.row_state IS NULL
+    OR tgt.row_state <> 'Deleted'
 );
 
 
