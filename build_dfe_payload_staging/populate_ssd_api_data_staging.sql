@@ -416,15 +416,19 @@ RawPayloads AS (
 
                         (SELECT TOP 1 
                                 CASE 
+                                    -- If latest record contains invalid value, query returns NULL, 
+                                    -- this even if older record contains valid 13-character UPN! 
                                     WHEN LEN(li2.link_identifier_value) = 13 
                                     THEN li2.link_identifier_value
                                 END
-                        -- Can the former UPN be obtained consistently instead from some 
-                        -- common CMS field to avoid use of the link table? 
+                        -- [REVIEW] Can former UPN be instead obtained consistently from 
+                        -- a common CMS field to avoid use of the link table? 
                         FROM ssd_linked_identifiers li2
                         WHERE li2.link_person_id       = p.pers_person_id
                         AND li2.link_identifier_type = 'Former Unique Pupil Number'
-                        ORDER BY li2.link_valid_from_date DESC
+                        ORDER BY
+                          li2.link_valid_from_date DESC,
+                          li2.link_identifier_value ASC
                         ) AS [former_unique_pupil_number],                                          -- 4 [903&CiN]
 
                         /* SSD data coerce into API JSON spec */
@@ -469,9 +473,11 @@ RawPayloads AS (
                         SELECT TOP 1 a.addr_address_postcode
                         FROM ssd_address a
                         WHERE a.addr_person_id = p.pers_person_id
-                        ORDER BY a.addr_address_start_date DESC
-                        ) AS [postcode],         
-                                                                           -- 13 [903]
+                        ORDER BY
+                          -- If 1+ address records have identical start date, produce deterministic
+                          a.addr_address_start_date DESC,
+                          a.addr_address_postcode ASC
+                        ) AS [postcode],                                                            -- 13 [903]
                         /* apply if CON fails DfE endpoint validation on postcode */
                         -- ( 
                         --     SELECT TOP 1
@@ -583,7 +589,11 @@ RawPayloads AS (
                                     ca.cina_assessment_start_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
                                 OR ca.cina_assessment_auth_date  BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
                               )
-                            FOR JSON PATH
+                            ORDER BY
+                            ca.cina_assessment_start_date DESC,
+                            ca.cina_assessment_auth_date DESC
+
+                        FOR JSON PATH
                         )) AS [child_and_family_assessments],
 
 
@@ -603,7 +613,11 @@ RawPayloads AS (
                               AND cinp.cinp_cin_plan_start_date <= @ea_cohort_window_end
                               AND (cinp.cinp_cin_plan_end_date IS NULL
                                    OR cinp.cinp_cin_plan_end_date >= @ea_cohort_window_start)
-                            FOR JSON PATH
+                            ORDER BY
+                            cinp.cinp_cin_plan_start_date DESC,
+                            cinp.cinp_cin_plan_end_date DESC
+
+                        FOR JSON PATH
                         )) AS [child_in_need_plans],
 
 
@@ -680,7 +694,12 @@ RawPayloads AS (
                                     -- Or include if ICPC in window, even where S47 dates outside window [REVIEW]
                                 OR (icpc.icpc_icpc_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end)
                               )
-                            FOR JSON PATH
+                            ORDER BY
+                            s47e.s47e_s47_start_date DESC,
+                            s47e.s47e_s47_end_date DESC,
+                            icpc.icpc_icpc_date DESC
+
+                        FOR JSON PATH
                         )) AS [section_47_assessments],
 
                         /* WRAPPER TOGGLE (comment out this tail block to revert to original behaviour)
@@ -704,7 +723,11 @@ RawPayloads AS (
                               AND cppl.cppl_cp_plan_start_date <= @ea_cohort_window_end
                               AND (cppl.cppl_cp_plan_end_date IS NULL
                                    OR cppl.cppl_cp_plan_end_date >= @ea_cohort_window_start)
-                            FOR JSON PATH
+                            ORDER BY
+                            cppl.cppl_cp_plan_start_date DESC,
+                            cppl.cppl_cp_plan_end_date DESC
+
+                        FOR JSON PATH
                         )) AS [child_protection_plans],
 
 
@@ -768,6 +791,7 @@ RawPayloads AS (
                                   AND ep.clae_cla_episode_start_date =
                                       clap.clap_cla_placement_start_date
                                   AND ep.clae_cla_episode_start_reason IS NOT NULL
+                                ORDER BY ep.clae_cla_episode_start_reason ASC
                             ) AS placement_start_ep
 
                             -- towards # 290
@@ -780,6 +804,7 @@ RawPayloads AS (
                                   AND ep.clae_cla_episode_ceased_date =
                                       clap.clap_cla_placement_end_date
                                   AND ep.clae_cla_episode_ceased_reason IS NOT NULL
+                                ORDER BY ep.clae_cla_episode_ceased_reason ASC
                             ) AS placement_end_ep
 
                             WHERE EXISTS
@@ -802,8 +827,12 @@ RawPayloads AS (
                                 OR clap.clap_cla_placement_end_date >= @ea_cohort_window_start
                                 )
 
-                            ORDER BY clap.clap_cla_placement_start_date DESC
-                            FOR JSON PATH
+                            ORDER BY
+                            clap.clap_cla_placement_start_date DESC,
+                            clap.clap_cla_placement_end_date DESC,
+                            clap.clap_cla_placement_type ASC
+
+                        FOR JSON PATH
                         )) AS [child_looked_after_placements],
 
 
@@ -830,11 +859,15 @@ RawPayloads AS (
                                  OR perm.perm_matched_date             BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
                                  OR perm.perm_placed_for_adoption_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
                                   )
-                            ORDER BY COALESCE(
-                                        perm.perm_placed_for_adoption_date,
-                                        perm.perm_matched_date,
-                                        perm.perm_adm_decision_date
-                                     ) DESC
+                              ORDER BY
+                                  COALESCE(
+                                      perm.perm_placed_for_adoption_date,
+                                      perm.perm_matched_date,
+                                      perm.perm_adm_decision_date
+                                  ) DESC,
+                                  perm.perm_placed_for_adoption_date DESC,
+                                  perm.perm_matched_date DESC,
+                                  perm.perm_adm_decision_date DESC
                             FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
                         )) AS [adoption],
 
@@ -920,9 +953,11 @@ RawPayloads AS (
 
                                       
                                 ORDER BY
-                                    i.invo_involvement_start_date DESC
+                                i.invo_involvement_start_date DESC,
+                                i.invo_involvement_end_date DESC,
+                                pr.prof_social_worker_registration_no ASC
 
-                                FOR JSON PATH
+                            FOR JSON PATH
                             )
                         ) AS [care_worker_details],
 
@@ -938,7 +973,8 @@ RawPayloads AS (
                           )
 
                         ORDER BY
-                            cine.cine_referral_date DESC
+                            cine.cine_referral_date DESC,
+                            -- episode_identity.stable_id ASC #100
 
                         FOR JSON PATH
                 )) AS [social_care_episodes]
@@ -993,8 +1029,12 @@ RawPayloads AS (
                 WHERE csdq.csdq_person_id = p.pers_person_id
                   AND csdq.csdq_sdq_score IS NOT NULL
                   AND csdq.csdq_sdq_completed_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
-                ORDER BY csdq.csdq_sdq_completed_date DESC
-                FOR JSON PATH
+                ORDER BY
+                -- handle SDQ records recorded on same date with different scores
+                csdq.csdq_sdq_completed_date DESC,
+                TRY_CONVERT(int, csdq.csdq_sdq_score) DESC
+
+            FOR JSON PATH
             ) AS sdq_assessments_json,
             CASE WHEN EXISTS (
                 SELECT 1
@@ -1016,6 +1056,15 @@ RawPayloads AS (
                 s.immi_immigration_status_end_date IS NULL
             OR s.immi_immigration_status_end_date >= @ea_cohort_window_start
           )
+          ORDER BY
+        CASE
+            -- prefer ongoing UASC status over ended, then select most recently ended status
+            WHEN s.immi_immigration_status_end_date IS NULL
+            THEN 0
+            ELSE 1
+        END,
+        s.immi_immigration_status_end_date DESC
+        
     ) AS uasc
 
 )   -- close RawPayloads CTE
