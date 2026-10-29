@@ -1239,11 +1239,12 @@ SUBSECTION: Anonymised / TEST|ANON API payload and logging
 ----------------------------------------------------------
 
 Purpose:
-This table is NON-live and solely for pre-live data/API testing.
+This table is NON-live and solely for pre-live data/API testing
 
 - Data from this table sent only to CSC TEST receiver endpoint
 - Intended for schema, payload and API contract validation
 - Safe to truncate, reseed or delete at any time
+- NEVER LIVE DATA HERE
 
 Lifecycle:
 - Expected to be deprecated / removed by the LA once LIVE submissions
@@ -1771,20 +1772,20 @@ SET NOCOUNT OFF;
 /*
 SECTION: Payload Verification Queries
 ===============================================================================
-Optional queries support manual inspection of payload content and
-shape after staging run
+Optional queries support inspection of payload content and shape after staging run
 
 All below queries read-only
 */
 --------------------------------------------------------------------------------
 
 
-
 /*
 SUBSECTION: Basic Sanity Checks - LIVE
 ---------------------------------------
-Verify recent rows exist in staging tables.
+Verify live records exist in LIVE staging table
 */
+
+-- summary overview of what, if any records have changed
 SELECT
     COUNT(*) AS total_rows,
     SUM(CASE WHEN current_hash = previous_hash THEN 1 ELSE 0 END) AS unchanged_rows,
@@ -1792,7 +1793,7 @@ SELECT
     SUM(CASE WHEN current_hash IS NULL OR previous_hash IS NULL THEN 1 ELSE 0 END) AS null_hash_rows
 FROM ssd_development.ssd_api_data_staging;
 
-
+-- sample of which records have changed
 SELECT 
   -- TOP (5)
     person_id,
@@ -1804,12 +1805,13 @@ FROM ssd_development.ssd_api_data_staging
 WHERE current_hash <> previous_hash
 ORDER BY last_updated DESC;
 
+
 /*
 SUBSECTION: Basic Sanity Checks - TEST
 ---------------------------------------
-Verify recent rows exist in staging tables.
+Verify test|constructed records exist in TEST staging table
 */
-select TOP (5) * from ssd_development.ssd_api_data_staging_test; -- verify inclusion of x3 fake records added above 
+select TOP (5) * from ssd_development.ssd_api_data_staging_test; -- NEVER LIVE DATA HERE
 
 
 --------------------------------------------------------------------------------
