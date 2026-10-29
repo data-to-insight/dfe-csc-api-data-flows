@@ -1,0 +1,2293 @@
+-- define as required 
+use HDM_Local;  -- LA should change to bespoke or remove 
+                -- HDM_Local is SystemC/LLogic default
+
+/*
+=============================================================================
+One-time full resubmission control
+
+1 = Force all existing cohort records to Updated / Pending
+0 = Normal hash-based change detection
+
+IMPORTANT: Set back to 0 after migration
+=============================================================================
+*/
+
+DECLARE @force_resend BIT = 1;
+
+
+
+
+
+/* ==========================================================================
+   D2I CSC API Payload Builder
+   SQL Server 2016+ compatible
+   N.B This a duplicate script of : populate_ssd_api_data_staging_2016.sql
+   ========================================================================== */
+
+
+/*
+=============================================================================
+META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging"}
+=============================================================================
+ssd_api_data_staging - SCD Type-1 Current State Payload Store
+
+Purpose:
+This table stores the most recent|current CSC API payload per person to support
+(daily) incremental refresh using hash-based change detection. Designed
+to act as persistent state table not transient staging table
+
+Design pattern:
+Slowly Changing Dimension - Type 1 (SCD-1)
+- One row per person_id represents current authoritative payload
+- Payload changes overwrite current version in-place
+- Limited history (previous payload + hash) kept for audit/debug
+
+Core mechanics:
+- SOURCE rows come from the derived cohort (RawPayloads / Hashed)
+- TARGET rows live in ssd_api_data_staging
+- Changes detected using SHA2_256 hash of JSON payload
+
+Row lifecycle:
+NEW        -> first time person appears in cohort
+UPDATED    -> payload content changed (hash delta detected)
+UNCHANGED  -> payload identical to previous run
+DELETED    -> person no longer present in SOURCE set(SSD/STAT)
+
+Change handling:
+- On payload change:
+    - json_payload is replaced
+    - previous_json_payload and previous_hash are preserved
+    - submission_status reset to 'Pending'
+- On no change:
+    - row preserved as-is
+    - timestamps intentionally not churned
+
+Soft delete semantics:
+- Rows NOT MATCHED BY SOURCE are soft-deleted
+- row_state set to 'Deleted'
+- No physical deletes performed on ssd api staging table
+
+Opt cohort restriction:
+- An optional STAT return filter may be enabled in the MERGE SOURCE
+- When enabled any person_id NOT in STAT table is treated as
+  'not in source' and therefore soft-deleted
+
+Timestamp semantics:
+- last_updated represents the last *material payload change*
+- Unchanged rows preserve last_updated across runs
+- Deleted rows update last_updated when deletion happens
+
+Op notes:
+- Table is stateful and SHOULD NOT be truncated between runs
+- UNIQUE idx on person_id enforces singular records
+
+===============================================================================
+*/
+
+
+/* =============================================================================
+   Data pre/smoke test validator(s) (optional)
+   =============================================================================
+   D2I offers a seperate <simplified> validation VIEW towards your local data
+   verification checks.
+
+   This provides pre-process comparison between local SSD data and 
+   DfE CSC API payload schema to help identify mapping, format, or completeness
+   issues pre-payload construction.
+
+   File: (T-SQL 2016+ only)
+   https://github.com/data-to-insight/dfe-csc-api-data-flows/tree/main/pre_flight_checks/ssd_vw_csc_api_schema_checks.sql
+   =============================================================================
+*/
+
+
+DECLARE @VERSION nvarchar(32) = N'0.6.0'; -- dev check .toml 
+RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
+
+
+-- -- Apply if/when d2i staging table structual changes have been newly applied
+-- DROP TABLE IF EXISTS ssd_development.ssd_api_data_staging_anon;
+-- DROP TABLE IF EXISTS ssd_development.ssd_api_data_staging;
+-- GO
+
+-- Pre-clean up
+IF OBJECT_ID('tempdb..#Hashed') IS NOT NULL DROP TABLE #Hashed;
+
+IF OBJECT_ID('ssd_development.ssd_api_data_staging') IS NULL
+-- META-ELEMENT: {"type": "create_table"}
+BEGIN
+    CREATE TABLE ssd_development.ssd_api_data_staging (
+        id INT IDENTITY(1,1) PRIMARY KEY,           
+        person_id NVARCHAR(20) NULL,                        -- link value (_person_id)
+        legacy_id NVARCHAR(36) NULL,                        -- link value (_mis or _legacy_id)
+
+        previous_json_payload NVARCHAR(MAX) NULL,           -- historic last copy of last payload sent
+        json_payload NVARCHAR(MAX) NOT NULL,                -- current awaiting payload
+        partial_json_payload NVARCHAR(MAX) NULL,            -- current awaiting partial payload
+        current_hash BINARY(32) NULL,                       -- current hash of JSON payload
+        previous_hash BINARY(32) NULL,                      -- previous hash of JSON payload
+        submission_status NVARCHAR(50) DEFAULT 'Pending',   -- Status: Pending, Sent, Error
+        submission_timestamp DATETIME DEFAULT GETDATE(),    -- data submitted timestamp
+        api_response NVARCHAR(MAX) NULL,                    -- API response or error
+        row_state NVARCHAR(10) DEFAULT 'New',               -- record state : New, Updated, Deleted, Unchanged
+        last_updated DATETIME DEFAULT GETDATE()             -- timestamp data update/insertion
+    );
+
+END
+
+
+
+
+
+
+/*
+=============================================================================
+PERSISTENT IDENTITY LOOKUP
+CSC API staging v0.6.0
+
+Build a temporary lookup from one validated identity snapshot.
+
+Must execute BEFORE RawPayloads.
+
+Initial integration testing.
+=============================================================================
+*/
+
+DECLARE @identity_run_id UNIQUEIDENTIFIER = NULL;
+
+
+/*
+Auto-select only if exactly one validated identity run exists
+
+For multiple validated runs, explicitly provide
+the required run_id above instead.
+*/
+
+IF @identity_run_id IS NULL
+BEGIN
+
+    IF (
+        SELECT COUNT_BIG(*)
+        FROM ssd_development.ssd_api_identity_run
+        WHERE run_status = 'Validated'
+    ) <> 1
+        THROW 53001,
+            'Specify @identity_run_id. Expected exactly one validated run.',
+            1;
+
+    SELECT
+        @identity_run_id = run_id
+    FROM ssd_development.ssd_api_identity_run
+    WHERE run_status = 'Validated';
+
+END;
+
+
+/*
+Confirm selected run exists|validated
+*/
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM ssd_development.ssd_api_identity_run
+    WHERE run_id = @identity_run_id
+      AND run_status = 'Validated'
+)
+    THROW 53002,
+        'Selected identity run is not validated.',
+        1;
+
+
+/*
+Remove temp mapping from previous
+execution in same session
+*/
+
+IF OBJECT_ID('tempdb..#IdentityMap') IS NOT NULL
+    DROP TABLE #IdentityMap;
+
+
+/*
+Block unresolved identities before generating JSON
+*/
+
+IF EXISTS (
+    SELECT 1
+    FROM ssd_development.ssd_api_entity_observation
+    WHERE run_id = @identity_run_id
+      AND (
+          stable_id IS NULL
+          OR resolution_status NOT IN ('New', 'Matched')
+      )
+)
+    THROW 53003,
+        'Identity run contains unresolved observations.',
+        1;
+
+
+/*
+Create temp identity lookup
+*/
+
+SELECT
+    entity_type,
+    person_id,
+    source_record_id,
+    parent_source_referral_id,
+    stable_id,
+    parent_stable_id
+
+INTO #IdentityMap
+
+FROM ssd_development.ssd_api_entity_observation
+
+WHERE run_id = @identity_run_id;
+
+
+/*
+efficiency indexes
+*/
+
+CREATE UNIQUE CLUSTERED INDEX UX_IdentityMap_Source
+ON #IdentityMap (
+    entity_type,
+    person_id,
+    source_record_id
+);
+
+CREATE UNIQUE NONCLUSTERED INDEX UX_IdentityMap_Stable
+ON #IdentityMap (stable_id);
+
+
+/*
+Confirm lookup populated
+*/
+
+SELECT
+    @identity_run_id AS identity_run_id,
+    COUNT_BIG(*) AS total_identity_mappings
+FROM #IdentityMap;
+
+
+/*
+Show entity type counts
+*/
+
+SELECT
+    entity_type,
+    COUNT_BIG(*) AS identity_mappings
+FROM #IdentityMap
+GROUP BY entity_type
+ORDER BY entity_type;
+
+
+
+
+/*
+=============================================================================
+EA Spec window (dynamic: 24 months back -> FY start on 1 April)
+=============================================================================
+*/
+DECLARE @run_date      date = CONVERT(date, GETDATE());
+DECLARE @months_back   int  = 24;
+DECLARE @fy_start_month int = 4;  -- April
+
+DECLARE @anchor date = DATEADD(month, -@months_back, @run_date);
+DECLARE @fy_start_year int = YEAR(@anchor) - CASE WHEN MONTH(@anchor) < @fy_start_month THEN 1 ELSE 0 END;
+
+DECLARE @ea_cohort_window_start date = DATEFROMPARTS(@fy_start_year, @fy_start_month, 1);
+DECLARE @ea_cohort_window_end date = DATEADD(day, 1, @run_date) -- today + 1
+
+DECLARE @restrict_to_worker_roles bit = 1; -- default ON. 1== restrict to only defined SW|CW roles 
+
+;WITH SSDA903Dates AS (
+    -- id which SSDA903 dates within timeframe window (<=2 expected)
+    SELECT DATEFROMPARTS(y, 3, 31) AS ssda903_date
+    FROM (
+        VALUES
+            (YEAR(@ea_cohort_window_start)),
+            (YEAR(@ea_cohort_window_end))
+    ) v(y)
+    WHERE DATEFROMPARTS(y, 3, 31)
+          BETWEEN @ea_cohort_window_start
+              AND @ea_cohort_window_end
+),
+
+SSDA903Window AS (
+    -- assign the now known 1+ 903 dates
+    SELECT
+        MIN(ssda903_date) AS cla_window_start,
+        MAX(ssda903_date) AS cla_window_end
+    FROM SSDA903Dates
+),
+
+/*
+=============================================================================
+Cohort CTEs (SQL Server 2016+ compatible)
+=============================================================================
+*/
+EligibleBySpec AS (
+  /* Include if:
+        - Known DoB and age <=25 inclusive at some point during window(we key off the 26th bday)
+         (26th birthday after window_start) and born by window_end
+        - OR unborn (expected_dob in window)
+        - Deceased included, no death-date filter
+
+    Expected cohort: 
+    children <=25 at any point between @ea_cohort_window_start and @ea_cohort_window_end (dynamic EA window, derived from 24 months back anchored to FY start)
+
+  */
+  SELECT p.pers_person_id
+  FROM ssd_person p
+  WHERE
+    (
+      p.pers_dob IS NOT NULL
+      AND p.pers_dob <= @ea_cohort_window_end
+      AND DATEADD(year, 26, p.pers_dob) > @ea_cohort_window_start -- <=25 at any point in window (DfE spec)
+      -- DATEADD(year, 26, p.pers_dob) > @run_date                -- <=25 on run date
+
+    )
+    OR
+    (
+      /* fall back to expected DoB */
+      p.pers_dob IS NULL
+      AND p.pers_expected_dob IS NOT NULL
+      AND p.pers_expected_dob BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+    )
+
+
+    /* pre-alpha cohort filter (remove this block as required)
+      LA use during live PRE-alpha cohort testing, add known child IDs here (< 20 records) */
+
+    --AND p.pers_person_id IN ('1', '2', '3') 
+
+    /* end pre-alpha cohort  */
+),
+
+
+ActiveReferral AS (
+  /* CIN episode overlaps cohort window */
+  /* open at run_date overlap, referral_date <= window_end and (close_date null or close_date >= window_start)
+     open, close_date null or close_date > run_date
+  */
+    SELECT DISTINCT cine.cine_person_id AS person_id
+    FROM ssd_cin_episodes cine
+    WHERE cine.cine_referral_date <= @ea_cohort_window_end
+      AND (cine.cine_close_date IS NULL OR cine.cine_close_date >= @ea_cohort_window_start)
+    
+),
+WaitingAssessment AS (
+    /* Open referral episode with no assessment started for that referral (placeholder) */
+    SELECT DISTINCT cine.cine_person_id AS person_id
+    FROM ssd_cin_episodes cine
+    WHERE cine.cine_close_date IS NULL
+      AND NOT EXISTS (
+            SELECT 1
+            FROM ssd_cin_assessments ca
+            WHERE ca.cina_referral_id = cine.cine_referral_id
+              AND ca.cina_assessment_start_date IS NOT NULL
+      )
+),
+HasCINPlan AS (
+    /*
+      Include if any CiN plan overlaps window
+      Overlap, plan_start <= window_end and (plan_end null or plan_end >= window_start)
+    */
+    SELECT DISTINCT cinp.cinp_person_id AS person_id
+    FROM ssd_cin_plans cinp
+    WHERE cinp.cinp_cin_plan_start_date <= @ea_cohort_window_end
+      AND (cinp.cinp_cin_plan_end_date IS NULL OR cinp.cinp_cin_plan_end_date >= @ea_cohort_window_start)
+),
+HasCPPlan AS (
+    /*
+      Include if any CP plan overlaps window
+      Overlap, plan_start <= window_end and (plan_end null or plan_end >= window_start)
+    */
+    SELECT DISTINCT cppl.cppl_person_id AS person_id
+    FROM ssd_cp_plans cppl
+    WHERE cppl.cppl_cp_plan_start_date <= @ea_cohort_window_end
+      AND (cppl.cppl_cp_plan_end_date IS NULL OR cppl.cppl_cp_plan_end_date >= @ea_cohort_window_start)
+),
+HasLAC AS (
+    /*
+      Include if LAC by either 
+      A, LAC episode linked to CIN referral overlapping window
+      B, any placement overlapping window, independent of CIN linkage
+    */
+
+    -- A) LAC episode linked to CIN episode that overlaps window
+    SELECT DISTINCT clae.clae_person_id AS person_id
+    FROM ssd_cla_episodes clae
+    JOIN ssd_cin_episodes cine
+      ON cine.cine_referral_id = clae.clae_referral_id
+    WHERE cine.cine_referral_date <= @ea_cohort_window_end
+      AND (cine.cine_close_date IS NULL OR cine.cine_close_date >= @ea_cohort_window_start)
+
+    UNION
+
+    -- B) Or any placement overlapping window
+    SELECT DISTINCT clae2.clae_person_id AS person_id
+    FROM ssd_cla_episodes clae2
+    JOIN ssd_cla_placement clap
+      ON clap.clap_cla_id = clae2.clae_cla_id
+    WHERE clap.clap_cla_placement_start_date <= @ea_cohort_window_end
+      AND (clap.clap_cla_placement_end_date IS NULL OR clap.clap_cla_placement_end_date >= @ea_cohort_window_start)
+),
+
+
+IsCareLeaver16to25 AS (
+    /*
+      Include if care leaver latest contact in window [REVIEW]
+      And age between 16 and 25 by DATEDIFF year, coarse boundary -not- birthday precise
+      Allow expected DoB guard when DoB null
+
+    Expected Care leavers cohort subset:
+    Care leavers classified 16-25 (at run date), plus latest contact in window
+    Include care leavers who have a non null clea_care_leaver_latest_contact date inside the window
+    */
+  SELECT DISTINCT p.pers_person_id AS person_id
+  FROM ssd_person p
+  
+  -- -- [REVIEW] alternative/additional robustness towards issue 81
+  -- JOIN ActiveReferral ar
+  --   ON ar.person_id = p.pers_person_id
+
+  WHERE p.pers_dob IS NOT NULL
+
+    -- [REVIEW] See below for alternative run-date classification
+    AND DATEADD(year, 16, p.pers_dob) <  @ea_cohort_window_end    -- classified 16-25 (within window)
+    AND DATEADD(year, 26, p.pers_dob) >= @ea_cohort_window_start  -- classified 16-25 (within window)
+
+
+    -- in-window care leaver contact
+    AND EXISTS (
+      SELECT 1
+      FROM ssd_care_leavers clea
+      WHERE clea.clea_person_id = p.pers_person_id
+        -- [REVIEW] Opt: gate on latest contact being within cohort window
+        AND clea.clea_care_leaver_latest_contact >= @ea_cohort_window_start
+        AND clea.clea_care_leaver_latest_contact <  @ea_cohort_window_end
+
+        -- [REVIEW] Opt: require they are considered in touch
+        -- AND NULLIF(LTRIM(RTRIM(clea.clea_care_leaver_in_touch)), '') IS NOT NULL
+    )
+
+    -- and also OPEN social care episode
+    AND EXISTS (
+      SELECT 1
+      FROM ssd_cin_episodes cine
+      WHERE cine.cine_person_id = p.pers_person_id
+        AND cine.cine_referral_date <= @ea_cohort_window_end
+        AND cine.cine_close_date IS NULL
+    )
+
+    -- AND @run_date >= DATEADD(year, 16, p.pers_dob) -- [REVIEW] classified 16-25 (at run date)
+    -- AND @run_date <  DATEADD(year, 26, p.pers_dob) -- [REVIEW] classified 16-25 (at run date)
+),
+
+
+-- IsDisabled AS (
+--     /*
+--       Include if -any- disability code recorded
+--       No dates, treat as ever recorded
+--     */
+--     SELECT DISTINCT d.disa_person_id AS person_id
+--     FROM ssd_disability d
+--     WHERE NULLIF(LTRIM(RTRIM(d.disa_disability_code)), '') IS NOT NULL
+-- ),
+
+
+
+SpecInclusion AS (
+    /*
+      Combined inclusion sets per spec
+    */
+
+    SELECT DISTINCT person_id
+    FROM (
+        SELECT person_id FROM ActiveReferral
+        UNION ALL
+        SELECT person_id FROM WaitingAssessment
+        UNION ALL
+        SELECT person_id FROM HasCINPlan
+        -- UNION ALL SELECT person_id FROM HasCPPlan
+        UNION ALL
+        SELECT person_id FROM HasLAC
+        UNION ALL
+        SELECT person_id FROM IsCareLeaver16to25
+        -- UNION ALL SELECT person_id FROM IsDisabled
+    ) AS all_included
+),
+
+
+
+
+
+/*
+=============================================================================
+Payload builder 2016Sp1+/Azure SQL compatible
+=============================================================================
+*/
+
+
+RawPayloads AS (
+    SELECT
+        -- LA Payload record id
+        p.pers_person_id AS person_id,
+        p.pers_legacy_id AS legacy_id, -- this included in payload as mis_child_id. 
+        (
+            -- payload start 
+            SELECT
+                -- (Spec attribute numbers 2..55 commented)
+                CAST(p.pers_person_id AS varchar(20)) AS [la_child_id],                             -- 2 :str(id) [Mandatory]
+                CAST( 
+                  LEFT(NULLIF(LTRIM(RTRIM(p.pers_legacy_id)), ''), 36)
+                  AS varchar(36)
+                ) AS [mis_child_id],                                                                -- legacy compatibility id primarily SystemC users
+                CAST(0 AS bit) AS [purge],
+
+
+                /* ================= child_details (3..15), per child, top level =================
+                  - unique_pupil_number now from person table
+                  - former_unique_pupil_number from linked_identifiers, latest by valid_from, ==13 chars
+                  - disabilities prebuilt array, [] when none
+                  - uasc_flag via case insensitive LIKE on immigration status
+                */
+                JSON_QUERY((
+                    SELECT
+                        p.pers_upn AS [unique_pupil_number],                                        -- 3 [903&CiN]
+
+                        (SELECT TOP 1 
+                                CASE 
+                                    -- If latest record contains invalid value, query returns NULL, 
+                                    -- this even if older record contains valid 13-character UPN! 
+                                    WHEN LEN(li2.link_identifier_value) = 13 
+                                    THEN li2.link_identifier_value
+                                END
+                        -- [REVIEW] Can former UPN be instead obtained consistently from 
+                        -- a common CMS field to avoid use of the link table? 
+                        FROM ssd_linked_identifiers li2
+                        WHERE li2.link_person_id       = p.pers_person_id
+                        AND li2.link_identifier_type = 'Former Unique Pupil Number'
+                        ORDER BY
+                          li2.link_valid_from_date DESC,
+                          li2.link_identifier_value ASC
+                        ) AS [former_unique_pupil_number],                                          -- 4 [903&CiN]
+
+                        /* SSD data coerce into API JSON spec */
+                        LEFT(
+                            NULLIF(
+                                CASE
+                                    WHEN NULLIF(LTRIM(RTRIM(p.pers_upn_unknown)), '') IS NOT NULL
+                                        THEN LTRIM(RTRIM(p.pers_upn_unknown))
+                                    WHEN UPPER(NULLIF(LTRIM(RTRIM(p.pers_upn)), '')) 
+                                        IN ('UN1','UN2','UN3','UN4','UN5','UN6','UN7','UN8','UN9','UN10')
+                                        THEN UPPER(LTRIM(RTRIM(p.pers_upn)))
+                                    ELSE NULL
+                                END,
+                                ''
+                            ),
+                            4
+                        ) AS [unique_pupil_number_unknown_reason],                                  -- 5 [903&CiN]
+
+                        p.pers_forename        AS [first_name],                                     -- 6 
+                        p.pers_surname         AS [surname],                                        -- 7 
+                        CONVERT(varchar(10), p.pers_dob,          23) AS [date_of_birth],           -- 8 [903&CiN]
+                        CONVERT(varchar(10), p.pers_expected_dob, 23) AS [expected_date_of_birth],  -- 9 [CiN]
+
+                        CASE 
+                            WHEN p.pers_sex IN ('M', 'F') THEN p.pers_sex 
+                            ELSE 'U' 
+                        END AS [sex],                                                               -- 10 [903&CiN]
+
+                        /* SSD data coerce into API JSON spec (Note: Max 12 codes in array! */
+                        LEFT(NULLIF(LTRIM(RTRIM(p.pers_ethnicity)), ''), 4) AS [ethnicity],         -- 11 [903&CiN]
+
+                        JSON_QUERY(
+                            CASE 
+                                WHEN disab.disabilities IS NOT NULL 
+                                    THEN disab.disabilities 
+                                -- force ["NONE"] when outer apply returns NULL|no disabilities
+                                ELSE '["NONE"]'
+                            END
+                        ) AS [disabilities],                                                        -- 12 [CiN]
+                                                     
+                        (
+                        SELECT TOP 1 a.addr_address_postcode
+                        FROM ssd_address a
+                        WHERE a.addr_person_id = p.pers_person_id
+                        ORDER BY
+                          -- If 1+ address records have identical start date, produce deterministic
+                          a.addr_address_start_date DESC,
+                          a.addr_address_postcode ASC
+                        ) AS [postcode],                                                            -- 13 [903]
+
+                        /* uasc outer apply for consistency btwn these */
+                        ISNULL(uasc.uasc_flag, CAST(0 AS bit)) AS [uasc_flag],                      -- 14 [903]
+                        uasc.uasc_end_date AS [uasc_end_date],                                      -- 15 [903]                                                  -- 15 [903]
+
+                        CAST(0 AS bit) AS [purge] -- child_details purge
+                    FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
+                )) AS [child_details],
+
+              
+                /* ============ health_and_wellbeing (45..46), single object(or null), top level ============
+                  - include SDQs for child in cohort window
+                  - sdq scores ordered numeric array, TRY_CONVERT guard
+                */
+                /* [REVIEW] - revised - omit whole block when no SDQs in window */
+                JSON_QUERY(
+                    CASE
+                        WHEN sdq.has_sdq = 1
+                        THEN (
+                            SELECT
+                                JSON_QUERY(sdq.sdq_assessments_json) AS [sdq_assessments],
+                                CAST(0 AS bit) AS [purge]
+                            FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
+                        )
+                        ELSE NULL
+                    END
+                ) AS [health_and_wellbeing],
+
+
+
+                /* ================= social_care_episodes (16..44 and 47..55), array =================
+                - include episode if referral_date <= window_end and close_date is null or >= window_start, overlap with cohort window
+                - id string 36 chars max, referral_source 2 chars, closure_reason 3 chars, cast and trim as in spec
+                - referral_no_further_action_flag derived only, not gate for inclusion, try convert to bit else map Y T 1 TRUE to 1, N F 0 FALSE to 0, else null
+                - unused episode level purge false
+                */
+                JSON_QUERY((
+                    SELECT
+                        -- str(id) for JSON
+                        episode_identity.stable_id    AS [social_care_episode_id],                             -- 16 [CiN] [Mandatory]
+                        CONVERT(varchar(10), cine.cine_referral_date, 23) AS [referral_date],                               -- 17 [CiN]
+                        CASE
+                          /* SSD data coerce into API JSON spec */
+                          -- extracted data being coerced until superceded by change in source SSD data field for systemC users
+                          WHEN cine.cine_referral_source_code IS NULL THEN NULL
+                          WHEN LTRIM(RTRIM(cine.cine_referral_source_code)) LIKE '10%'        THEN '10'
+                          WHEN LTRIM(RTRIM(cine.cine_referral_source_code)) LIKE '[1-3][A-F]%' THEN LEFT(LTRIM(RTRIM(cine.cine_referral_source_code)), 2)
+                          WHEN LTRIM(RTRIM(cine.cine_referral_source_code)) LIKE '5[A-D]%'     THEN LEFT(LTRIM(RTRIM(cine.cine_referral_source_code)), 2)
+                          WHEN LTRIM(RTRIM(cine.cine_referral_source_code)) LIKE '[46789]%'    THEN LEFT(LTRIM(RTRIM(cine.cine_referral_source_code)), 1)
+                          ELSE NULL
+                        END AS [referral_source],                                                                           -- 18 [CiN]    
+
+                        CONVERT(varchar(10), cine.cine_close_date, 23) AS [closure_date],                                   -- 19 [CiN]
+
+                        LEFT(NULLIF(LTRIM(RTRIM(cine.cine_close_reason)), ''), 3) AS [closure_reason],                      -- 20 [CiN] 
+
+                        CASE
+                            WHEN TRY_CONVERT(bit, cine.cine_referral_nfa) IS NOT NULL
+                                THEN TRY_CONVERT(bit, cine.cine_referral_nfa)
+                            -- SSD source enforces NCHAR(1) but some robustness added
+                            -- SSD source field cine_referral_nfa in review as bool
+                            WHEN UPPER(LTRIM(RTRIM(cine.cine_referral_nfa))) IN ('Y','T','1','TRUE')
+                                THEN CAST(1 AS bit)
+                            WHEN UPPER(LTRIM(RTRIM(cine.cine_referral_nfa))) IN ('N','F','0','FALSE')
+                                THEN CAST(0 AS bit)
+                            ELSE CAST(NULL AS bit)
+                        END AS [referral_no_further_action_flag],                                                           -- 21 [CiN]
+
+
+                        /* ================= child_and_family_assessments (22..25), array (or []) per episode =================
+                          - include assessment if start or authorisation date in cohort window
+                          - factors passed as JSON array, payload returns [] when none
+                        */
+                        JSON_QUERY((
+                            SELECT
+                                assessment_identity.stable_id     AS [child_and_family_assessment_id],             -- 22 [CiN] [Mandatory]
+                                CONVERT(varchar(10), ca.cina_assessment_start_date, 23) AS [start_date],                    -- 23 [CiN]
+                                CONVERT(varchar(10), ca.cina_assessment_auth_date, 23)  AS [authorisation_date],            -- 24 [CiN]
+                                JSON_QUERY(
+                                    CASE
+                                    -- Note: Max num of assessment factors defined in spec but not restricted here
+                                    -- null handling as failsafe
+                                        WHEN af.cinf_assessment_factors_json IS NULL
+                                          OR LTRIM(RTRIM(af.cinf_assessment_factors_json)) IN ('', 'null')
+                                        THEN '[]'
+                                        ELSE af.cinf_assessment_factors_json -- assumes source data is already as ["val1", "val2",.. ]
+                                    END
+                                ) AS [factors],                                                                             -- 25 [CiN]
+                                CAST(0 AS bit) AS [purge]
+                            FROM ssd_cin_assessments ca
+
+                            LEFT JOIN ssd_assessment_factors af
+                                ON af.cinf_assessment_id = ca.cina_assessment_id
+
+                            LEFT JOIN #IdentityMap AS assessment_identity
+                              ON assessment_identity.entity_type =
+                                'child_and_family_assessment'
+                            AND assessment_identity.person_id =
+                                CONVERT(NVARCHAR(20), cine.cine_person_id)
+                            AND assessment_identity.source_record_id =
+                                CONVERT(NVARCHAR(100), ca.cina_assessment_id)
+                            AND assessment_identity.parent_stable_id =
+                                episode_identity.stable_id
+                                
+                            WHERE ca.cina_referral_id = cine.cine_referral_id
+                              AND (
+                                    ca.cina_assessment_start_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+                                OR ca.cina_assessment_auth_date  BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+                              )
+                            ORDER BY
+                            ca.cina_assessment_start_date DESC,
+                            ca.cina_assessment_auth_date DESC
+
+                        FOR JSON PATH
+                        )) AS [child_and_family_assessments],
+
+
+
+                        /* ================= child_in_need_plans (26..28), array (or []) per episode =================
+                          - include CIN plan if plan dates overlap cohort window
+                          - newest first by start date opt in outer ORDER
+                        */
+                        JSON_QUERY((
+                            SELECT
+                                cin_identity.stable_id    AS [child_in_need_plan_id],                    -- 26 [CiN] [Mandatory]
+                                CONVERT(varchar(10), cinp.cinp_cin_plan_start_date, 23) AS [start_date],                   -- 27 [CiN]
+                                CONVERT(varchar(10), cinp.cinp_cin_plan_end_date, 23)   AS [end_date],                     -- 28 [CiN]
+                                CAST(0 AS bit) AS [purge]
+                            FROM ssd_cin_plans cinp
+              
+                            LEFT JOIN #IdentityMap AS cin_identity
+                                ON cin_identity.entity_type = 'child_in_need_plan'
+                              AND cin_identity.person_id =
+                                  CONVERT(NVARCHAR(20), cine.cine_person_id)
+                              AND cin_identity.source_record_id =
+                                  CONVERT(NVARCHAR(100), cinp.cinp_cin_plan_id)
+                              AND cin_identity.parent_stable_id =
+                                  episode_identity.stable_id
+
+                            WHERE cinp.cinp_referral_id = cine.cine_referral_id
+                              AND cinp.cinp_cin_plan_start_date <= @ea_cohort_window_end
+                              AND (cinp.cinp_cin_plan_end_date IS NULL
+                                   OR cinp.cinp_cin_plan_end_date >= @ea_cohort_window_start)
+
+                            ORDER BY
+                            cinp.cinp_cin_plan_start_date DESC,
+                            cinp.cinp_cin_plan_end_date DESC
+
+                        FOR JSON PATH
+                        )) AS [child_in_need_plans],
+
+
+
+                        /* ============== section_47_assessments (29..33), array (or []) per episode ==============           
+                          - CP flag derived only, does not filter
+                          - Include S47 if
+                              i) S47 dates overlap the cohort window, or
+                              ii) there is >=1 ICPC for S47 with date inside cohort window
+                          - OUTER APPLY for latest ICPC date per S47, avoid duplicate S47 rows if multiple ICPCs exist
+                          - CP flag parsed from s47e_s47_outcome_json using JSON_VALUE If missing or not Y or N, flag returned as NULL     
+                        */
+
+                        JSON_QUERY((
+                            SELECT
+                                s47_identity.stable_id    AS [section_47_assessment_id],            -- 29 [CiN] [Mandatory]
+                                CONVERT(varchar(10), s47e.s47e_s47_start_date, 23) AS [start_date],                     -- 30 [CiN]
+
+                                -- CP conference flag derived, not gate for inclusion
+                                CASE
+                                    WHEN JSON_VALUE(s47e.s47e_s47_outcome_json, '$.CP_CONFERENCE_FLAG')
+                                        IN ('Y','T','1','true','True') THEN CAST(1 AS bit)
+                                    WHEN JSON_VALUE(s47e.s47e_s47_outcome_json, '$.CP_CONFERENCE_FLAG')
+                                        IN ('N','F','0','false','False') THEN CAST(0 AS bit)
+                                    ELSE CAST(NULL AS bit)
+                                END AS [icpc_required_flag],                                                            -- 31 [CiN]
+
+                                -- Single ICPC date per S47, choose latest, avoid dup rows from possible multiple ICPC records
+                                CONVERT(varchar(10), icpc.icpc_icpc_date, 23) AS [icpc_date],                           -- 32 [CiN]
+
+                                -- Keep end date if present
+                                CONVERT(varchar(10), s47e.s47e_s47_end_date, 23) AS [end_date],                         -- 33 [CiN]
+                                CAST(0 AS bit) AS [purge]
+                            FROM ssd_s47_enquiry s47e
+
+                            LEFT JOIN #IdentityMap AS s47_identity
+                                ON s47_identity.entity_type = 'section_47_assessment'
+                              AND s47_identity.person_id =
+                                  CONVERT(NVARCHAR(20), cine.cine_person_id)
+                              AND s47_identity.source_record_id =
+                                  CONVERT(NVARCHAR(100), s47e.s47e_s47_enquiry_id)
+                              AND s47_identity.parent_stable_id =
+                                  episode_identity.stable_id
+
+                            OUTER APPLY (
+                                SELECT TOP 1 i.icpc_icpc_date
+                                FROM ssd_initial_cp_conference i
+                                WHERE i.icpc_s47_enquiry_id = s47e.s47e_s47_enquiry_id
+                                ORDER BY i.icpc_icpc_date DESC
+                            ) AS icpc
+
+                            WHERE s47e.s47e_referral_id = cine.cine_referral_id
+                              AND (
+                                    -- Overlap test, include if S47 period intersects cohort window
+                                    (s47e.s47e_s47_start_date <= @ea_cohort_window_end
+                                    AND (s47e.s47e_s47_end_date IS NULL OR s47e.s47e_s47_end_date >= @ea_cohort_window_start))
+                                    -- Or include if ICPC in window, even where S47 dates outside window [REVIEW]
+                                OR (icpc.icpc_icpc_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end)
+                              )
+                            ORDER BY
+                            s47e.s47e_s47_start_date DESC,
+                            s47e.s47e_s47_end_date DESC,
+                            icpc.icpc_icpc_date DESC
+
+                        FOR JSON PATH
+                        )) AS [section_47_assessments],
+
+                        /* WRAPPER TOGGLE (comment out this tail block to revert to original behaviour)
+                        --     ELSE JSON_QUERY('[]')
+                        --   END
+                        -- )
+                        */
+
+
+                        /* ================= child_protection_plans (34..36), array (or []) per episode =================
+                          - include CP plan if plan dates overlap cohort window
+                        */
+                        JSON_QUERY((
+                            SELECT
+                                cp_identity.stable_id    AS [child_protection_plan_id],                 -- 34 [CiN] [Mandatory]
+                                CONVERT(varchar(10), cppl.cppl_cp_plan_start_date, 23) AS [start_date],                  -- 35 [CiN]
+                                CONVERT(varchar(10), cppl.cppl_cp_plan_end_date, 23)   AS [end_date],                    -- 36 [CiN]
+                                CAST(0 AS bit) AS [purge]
+                            FROM ssd_cp_plans cppl
+
+                            LEFT JOIN #IdentityMap AS cp_identity
+                              ON cp_identity.entity_type = 'child_protection_plan'
+                            AND cp_identity.person_id =
+                                CONVERT(NVARCHAR(20), cine.cine_person_id)
+                            AND cp_identity.source_record_id =
+                                CONVERT(NVARCHAR(100), cppl.cppl_cp_plan_id)
+                            AND cp_identity.parent_stable_id =
+                                episode_identity.stable_id
+
+                            WHERE cppl.cppl_referral_id = cine.cine_referral_id
+                              AND cppl.cppl_cp_plan_start_date <= @ea_cohort_window_end
+                              AND (cppl.cppl_cp_plan_end_date IS NULL
+                                   OR cppl.cppl_cp_plan_end_date >= @ea_cohort_window_start)
+                            ORDER BY
+                            cppl.cppl_cp_plan_start_date DESC,
+                            cppl.cppl_cp_plan_end_date DESC
+                          
+
+                        FOR JSON PATH
+                        )) AS [child_protection_plans],
+
+
+
+                        -- /* ================= child_looked_after_placements (37..44), array (or []) per episode =================
+                        --   - include placement if placement dates overlap cohort window
+                        --   - group by placement id to prevent duplication in case episode joins +1 rows
+                        --   - start_reason, end_reason taken from min across episode reasons per placement, consistent single code
+                        
+                        --   - Dev note: We are aware of possible issues in this block with regards episode start_reason/placement end_reason 
+                        --   - and are currently working to address these. 
+                        -- */
+                        -- JSON_QUERY((
+                        --     SELECT
+                        --         CAST(clap.clap_cla_placement_id AS varchar(36)) AS [child_looked_after_placement_id],             -- 37 [903] [Mandatory]
+                        --         CONVERT(varchar(10), clap.clap_cla_placement_start_date, 23) AS [start_date],                     -- 38 [903]
+                              
+                        --         placement_start_ep.clae_cla_episode_start_reason AS [start_reason],                               -- 39 [903] 
+                        --                                                                                                           -- 40 [903]
+                        --         CASE
+                        --             -- protect CONfidential placement postcodes 
+                        --             WHEN UPPER(LTRIM(RTRIM(ISNULL(clap.clap_cla_placement_postcode, '')))) = 'CON'
+                        --                 THEN 'CON'
+                        --             ELSE clap.clap_cla_placement_postcode
+                        --         END AS [postcode],   
+
+                        --         /* SSD data coerce into API JSON spec */
+                        --         -- Expect: U1, U2, Z1, H5, etc but some LAs use such H5a
+                        --         LEFT(NULLIF(LTRIM(RTRIM(clap.clap_cla_placement_type)), ''), 3) AS [placement_type],              -- 41 [903]
+
+                        --         CONVERT(
+                        --             varchar(10),
+                        --             CASE
+                        --                 WHEN clap.clap_cla_placement_end_date IS NULL
+                        --                     OR clap.clap_cla_placement_end_date >= clap.clap_cla_placement_start_date
+                        --                     THEN clap.clap_cla_placement_end_date
+                        --                 ELSE NULL
+                        --             END,
+                        --         23
+                        --         ) AS [end_date],                                                                                  -- 42 [903]
+
+                        --         -- /* SSD data coerce into API JSON spec */
+                        --         -- -- Placement-ending episode identified where:
+                        --         -- -- clae_cla_episode_ceased_date == clae_cla_placement_end_date
+                        --         -- -- Return episode ceased code from identified placement-ending episode
+                        --         placement_end_ep.clae_cla_episode_ceased_reason AS [end_reason],                                  -- 43 [903]
+                        --         -- CAST('' AS varchar(3)) AS [end_reason], -- D2I temp placeholder # 290 investigation
+
+                        --         NULLIF(LTRIM(RTRIM(clap.clap_cla_placement_change_reason)), '') AS [change_reason],               -- 44 [903]
+
+                        --         CAST(0 AS bit) AS [purge]
+                        --     FROM ssd_cla_placement clap
+                            
+                        --     -- towards # 290
+                        --     OUTER APPLY
+                        --     (
+                        --         SELECT TOP (1)
+                        --             ep.clae_cla_episode_start_reason
+                        --         FROM ssd_cla_episodes ep
+                        --         WHERE ep.clae_cla_placement_id = clap.clap_cla_placement_id
+                        --           AND ep.clae_cla_episode_start_date =
+                        --               clap.clap_cla_placement_start_date
+                        --           AND ep.clae_cla_episode_start_reason IS NOT NULL
+                        --         ORDER BY ep.clae_cla_episode_start_reason ASC
+                        --     ) AS placement_start_ep
+
+                        --     -- towards # 290
+                        --     OUTER APPLY
+                        --     (
+                        --         SELECT TOP (1)
+                        --             ep.clae_cla_episode_ceased_reason
+                        --         FROM ssd_cla_episodes ep
+                        --         WHERE ep.clae_cla_placement_id = clap.clap_cla_placement_id
+                        --           AND ep.clae_cla_episode_ceased_date =
+                        --               clap.clap_cla_placement_end_date
+                        --           AND ep.clae_cla_episode_ceased_reason IS NOT NULL
+                        --         ORDER BY ep.clae_cla_episode_ceased_reason ASC
+                        --     ) AS placement_end_ep
+
+                        --     WHERE EXISTS
+                        --     (
+                        --         SELECT 1
+                        --         FROM ssd_cla_episodes ep
+                        --         WHERE ep.clae_cla_placement_id = clap.clap_cla_placement_id
+                        --           AND ep.clae_referral_id = cine.cine_referral_id
+                        --     )
+
+                        --     -- <>T0 filter active IF LA is not reporting 'All types of temporary move' placements
+                        --     -- LA to consider whether filter should also include other TEMP codes T1,2,3,4
+                        --     -- AND clap.clap_cla_placement_type NOT IN ('T0','T1','T2','T3','T4')
+                        --     AND clap.clap_cla_placement_type <> 'T0'    
+                            
+                            
+                        --     AND clap.clap_cla_placement_start_date <= @ea_cohort_window_end
+                        --     AND (
+                        --             clap.clap_cla_placement_end_date IS NULL
+                        --         OR clap.clap_cla_placement_end_date >= @ea_cohort_window_start
+                        --         )
+
+                        --     ORDER BY
+                        --     clap.clap_cla_placement_start_date DESC,
+                        --     clap.clap_cla_placement_end_date DESC,
+                        --     clap.clap_cla_placement_type ASC
+
+                        -- FOR JSON PATH
+                        -- )) AS [child_looked_after_placements],
+
+
+
+                        /* ================= adoption (47..49), single object(or null) per episode =================
+                          - include adoption object when any permanence date in window
+                          - choose latest by placed, then matched, then decision
+                        */
+                        JSON_QUERY((
+                            SELECT TOP 1
+                                CONVERT(varchar(10), perm.perm_adm_decision_date, 23)        AS [initial_decision_date],        -- 47 [903]
+                                CONVERT(varchar(10), perm.perm_matched_date, 23)             AS [matched_date],                 -- 48 [903]
+                                CONVERT(varchar(10), perm.perm_placed_for_adoption_date, 23) AS [placed_date],                  -- 49 [903]
+                                CAST(0 AS bit) AS [purge]
+                            FROM ssd_permanence perm
+                            WHERE (perm.perm_person_id = p.pers_person_id
+                                   OR perm.perm_cla_id IN (
+                                        SELECT clae2.clae_cla_id
+                                        FROM ssd_cla_episodes clae2
+                                        WHERE clae2.clae_person_id = p.pers_person_id
+                                   ))
+                              AND (
+                                    perm.perm_adm_decision_date        BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+                                 OR perm.perm_matched_date             BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+                                 OR perm.perm_placed_for_adoption_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+                                  )
+                              ORDER BY
+                                  COALESCE(
+                                      perm.perm_placed_for_adoption_date,
+                                      perm.perm_matched_date,
+                                      perm.perm_adm_decision_date
+                                  ) DESC,
+                                  perm.perm_placed_for_adoption_date DESC,
+                                  perm.perm_matched_date DESC,
+                                  perm.perm_adm_decision_date DESC
+                            FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
+                        )) AS [adoption],
+
+
+                        /* ================= care_leavers (50..52), single object(or null) per episode =================
+                          - latest contact in window
+                        */
+                        JSON_QUERY((
+                            SELECT TOP 1
+                                CONVERT(varchar(10), clea.clea_care_leaver_latest_contact, 23) AS [contact_date],          -- 50 [903]
+                                LEFT(NULLIF(LTRIM(RTRIM(clea.clea_care_leaver_activity)), ''), 2) AS [activity],           -- 51 [903]
+                                LEFT(NULLIF(LTRIM(RTRIM(clea.clea_care_leaver_accommodation)), ''), 1) AS [accommodation], -- 52 [903]
+                                CAST(0 AS bit) AS [purge]
+                              FROM ssd_care_leavers clea
+                             WHERE clea.clea_person_id = p.pers_person_id
+                               -- NOTE: cohort gating for care leavers now handled in IsCareLeaver16to25 CTE
+                               -- AND clea.clea_care_leaver_latest_contact BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+                             ORDER BY clea.clea_care_leaver_latest_contact DESC
+                             FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
+                        )) AS [care_leavers],
+
+
+                        /* ================= care_worker_details (53..55), array (or []) per episode =================
+                          - join involvements by referral, include rows overlapping window
+                          - newest first by start date
+                          - involvement overlaps SSDA903 reporting period (between earliest and latest applicable 31 March dates)
+                        */
+
+                        /* care workers */
+                        JSON_QUERY(
+                            (
+                                SELECT
+                                    -- CAST(pr.prof_staff_id AS varchar(12)) AS [worker_id],    -- possible LA alternative
+                                    CAST(pr.prof_social_worker_registration_no AS varchar(12)) AS [worker_id],
+                                    CONVERT(varchar(10), i.invo_involvement_start_date, 23) AS [start_date],
+                                    CONVERT(varchar(10), i.invo_involvement_end_date, 23) AS [end_date]
+
+                                FROM ssd_involvements i
+
+                                JOIN ssd_professionals pr
+                                    ON pr.prof_professional_id = i.invo_professional_id
+
+                                WHERE i.invo_referral_id = cine.cine_referral_id
+
+                                  -- Social Worker registered only
+                                  -- LA source data for defining SW role status varied. Assumptions limited to :
+                                  -- -- SW reg number exists and role type desc/id
+
+                                  -- -- REMOVE FILTER if/to align with :
+                                  -- -- "episodes where child not in care may incl. non-qualified SW/CW without SWE number"
+                                  AND pr.prof_social_worker_registration_no IS NOT NULL
+
+                                  -- Case Worker/SW
+                                  -- Optional role filter:
+                                  -- 0 = return all involvements linked to registered Social Worker(s)
+                                  -- 1 = return only involvements with selected worker role ids
+                                  AND ( 
+                                          @restrict_to_worker_roles = 0
+                                      OR
+                                        UPPER(LTRIM(RTRIM(i.invo_professional_role_id))) IN (
+                                            'CW'
+                                            -- -- [LA REVIEW] edit role code list as required
+                                            -- , 'SW', 'CSW', 'ASW', 'PASW',
+                                            -- 'PSW', 'HSW', 'SSW', 'FFSW', 'RFFSW',
+                                            -- 'LLSWM', 'LLSWS', 'SWA'
+                                            -- , 'IRO', 'CHP' 
+                                        )
+                                  )
+
+                                  -- [REVIEW] 
+                                  -- rtn SW involvements overlapping SSDA903 reporting window
+                                  AND i.invo_involvement_start_date <= (
+                                          SELECT cla_window_end
+                                          FROM SSDA903Window
+                                      )
+                                  AND (
+                                          i.invo_involvement_end_date IS NULL
+                                      OR  i.invo_involvement_end_date >= (
+                                              SELECT cla_window_start
+                                              FROM SSDA903Window
+                                          )
+                                      )
+
+                                      
+                                ORDER BY
+                                i.invo_involvement_start_date DESC,
+                                i.invo_involvement_end_date DESC,
+                                pr.prof_social_worker_registration_no ASC
+
+                            FOR JSON PATH
+                            )
+                        ) AS [care_worker_details],
+
+
+                        CAST(0 AS bit) AS [purge]
+                        FROM ssd_development.ssd_cin_episodes AS cine
+
+                        LEFT JOIN #IdentityMap AS episode_identity
+                            ON episode_identity.entity_type = 'social_care_episode'
+                          AND episode_identity.person_id =
+                              CONVERT(NVARCHAR(20), cine.cine_person_id)
+                          AND episode_identity.source_record_id =
+                              CONVERT(NVARCHAR(100), cine.cine_referral_id)
+
+                        WHERE cine.cine_person_id = p.pers_person_id
+                          AND cine.cine_referral_date <= @ea_cohort_window_end
+                          AND (
+                              cine.cine_close_date IS NULL
+                              OR cine.cine_close_date >= @ea_cohort_window_start
+                          )
+
+                        ORDER BY
+                            cine.cine_referral_date DESC,
+                            episode_identity.stable_id ASC -- #100 deterministic ordering tie-breaker
+
+                        FOR JSON PATH
+                )) AS [social_care_episodes]
+
+            FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
+        ) AS json_payload
+
+    -- keep only records who (a) pass age/unborn gate and (b) match at least one api spec groups
+    FROM ssd_person p
+    JOIN EligibleBySpec elig ON elig.pers_person_id = p.pers_person_id -- either unborn, or 26th bday falls on or after @ea_cohort_window_start (deceased not filtered)
+    JOIN SpecInclusion  si   ON si.person_id        = p.pers_person_id -- appearing in ActiveReferral, WaitingAssessment, CIN plan, CP plan, LAC, Care leavers 16 to 25, Disabled
+
+    /* Disabilities array, return NULL when no codes, truncate codes to 4 chars max */
+    OUTER APPLY (
+        SELECT
+          CASE
+            WHEN EXISTS (
+              SELECT 1
+              FROM ssd_disability d0
+              WHERE d0.disa_person_id = p.pers_person_id
+                AND NULLIF(LTRIM(RTRIM(d0.disa_disability_code)), '') IS NOT NULL
+            )
+            THEN JSON_QUERY(
+              N'[' +
+              STUFF((
+                  SELECT N',' + QUOTENAME(u.code, '"')
+                  FROM (
+                      SELECT TOP (12)
+                          LEFT(UPPER(LTRIM(RTRIM(d2.disa_disability_code))), 4) AS code
+                      FROM ssd_disability d2
+                      WHERE d2.disa_person_id = p.pers_person_id
+                        AND NULLIF(LTRIM(RTRIM(d2.disa_disability_code)), '') IS NOT NULL
+                      GROUP BY LEFT(UPPER(LTRIM(RTRIM(d2.disa_disability_code))), 4)
+                      ORDER BY LEFT(UPPER(LTRIM(RTRIM(d2.disa_disability_code))), 4)
+                  ) u
+                  FOR XML PATH(''), TYPE
+              ).value('.', 'nvarchar(max)'), 1, 1, N'')
+              + N']'
+            )
+            ELSE NULL
+          END AS disabilities
+    ) AS disab
+
+    /* SDQ prebuild, reuse once, and flag presence */
+    OUTER APPLY (
+        SELECT
+            (
+                SELECT
+                    CONVERT(varchar(10), csdq.csdq_sdq_completed_date, 23) AS [date],   -- 45
+                    TRY_CONVERT(int, csdq.csdq_sdq_score)                  AS [score]   -- 46
+                FROM ssd_sdq_scores csdq
+                WHERE csdq.csdq_person_id = p.pers_person_id
+                  AND csdq.csdq_sdq_score IS NOT NULL
+                  AND csdq.csdq_sdq_completed_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+                ORDER BY
+                -- handle SDQ records recorded on same date with different scores
+                csdq.csdq_sdq_completed_date DESC,
+                TRY_CONVERT(int, csdq.csdq_sdq_score) DESC
+
+            FOR JSON PATH
+            ) AS sdq_assessments_json,
+            CASE WHEN EXISTS (
+                SELECT 1
+                FROM ssd_sdq_scores csdq
+                WHERE csdq.csdq_person_id = p.pers_person_id
+                  AND csdq.csdq_sdq_score IS NOT NULL
+                  AND csdq.csdq_sdq_completed_date BETWEEN @ea_cohort_window_start AND @ea_cohort_window_end
+            ) THEN 1 ELSE 0 END AS has_sdq
+    ) AS sdq
+
+    OUTER APPLY (
+        SELECT TOP 1
+            CAST(1 AS bit) AS uasc_flag,
+            CONVERT(varchar(10), s.immi_immigration_status_end_date, 23) AS uasc_end_date
+        FROM ssd_immigration_status s
+        WHERE s.immi_person_id = p.pers_person_id
+          AND UPPER(LTRIM(RTRIM(s.immi_immigration_status))) = 'U'
+          AND (
+                s.immi_immigration_status_end_date IS NULL
+            OR s.immi_immigration_status_end_date >= @ea_cohort_window_start
+          )
+          ORDER BY
+        CASE
+            -- prefer ongoing UASC status over ended, then select most recently ended status
+            WHEN s.immi_immigration_status_end_date IS NULL
+            THEN 0
+            ELSE 1
+        END,
+        s.immi_immigration_status_end_date DESC
+        
+    ) AS uasc
+
+)   -- close RawPayloads CTE
+  
+
+
+
+
+
+/*
+=============================================================================
+Build payload content and compute hash
+
+Hash calc direct from actual outgoing JSON payload
+
+RH - All JSON attributes, incl associated record IDs(now persistent),
+now included in change detection
+
+=============================================================================
+*/
+
+SELECT
+    rp.person_id,
+    rp.legacy_id,
+    rp.json_payload,
+
+    HASHBYTES(
+        'SHA2_256',
+        CAST(rp.json_payload AS NVARCHAR(MAX))
+    ) AS current_hash
+
+INTO #Hashed
+
+FROM RawPayloads AS rp;
+
+
+/* 
+  Uncomment the below to force hard-filter against LA known Stat-Returns cohort table
+   We anticipate / recommend that all LAs do this initially to enable internal cohort auditing
+   for records.
+   Behaviour:
+   - SOURCE is restricted to people present in the STAT cohort table
+   - Anyone already in the staging table who subsequently is not in STAT table
+     is treated as 'not found in source'
+   - Not in STAT table --> not in SOURCE --> soft-deleted in staging table i.e. marked Deleted
+*/
+-- INNER JOIN dbo.StoredStatReturnsCohortIdTable STATfilter
+--     ON STATfilter.person_id = rp.person_id;
+
+
+
+
+
+
+/*
+=============================================================================
+Update changed rows OR reactivate returning cohort members 
+Revision RH 181026
+
+Handles:
+- Existing person with materially changed payload
+- Previously Deleted person returning with changed payload
+- Previously Deleted person returning with unchanged payload
+- Existing person with NULL hash (legacy data)
+
+- One-time forced resubmission (this only to handle migration from prev SemHash)
+=============================================================================
+*/
+
+UPDATE tgt
+SET
+
+    tgt.previous_json_payload =
+        CASE
+            WHEN @force_resend = 1
+              OR tgt.current_hash IS NULL
+              OR tgt.current_hash <> src.current_hash
+            THEN tgt.json_payload
+            ELSE tgt.previous_json_payload
+        END,
+
+    tgt.json_payload = src.json_payload,
+
+    tgt.previous_hash =
+        CASE
+            WHEN @force_resend = 1
+              OR tgt.current_hash IS NULL
+              OR tgt.current_hash <> src.current_hash
+            THEN tgt.current_hash
+            ELSE tgt.previous_hash
+        END,
+
+    tgt.current_hash = src.current_hash,
+
+    tgt.submission_status = 'Pending',
+
+    tgt.row_state = 'Updated',
+
+    tgt.last_updated = GETDATE()
+
+FROM ssd_development.ssd_api_data_staging AS tgt
+
+INNER JOIN #Hashed AS src
+    ON src.person_id = tgt.person_id
+
+WHERE
+       @force_resend = 1
+    OR tgt.current_hash IS NULL
+    OR tgt.current_hash <> src.current_hash
+    OR tgt.row_state = 'Deleted';
+
+
+
+
+/* Insert new rows */
+INSERT INTO ssd_development.ssd_api_data_staging (
+    person_id,
+    legacy_id,
+    json_payload,
+    current_hash,
+    submission_status,
+    row_state,
+    last_updated
+)
+SELECT
+    src.person_id,
+    src.legacy_id,
+    src.json_payload,
+    src.current_hash,
+    'Pending',
+    'New',
+    GETDATE()
+FROM #Hashed src
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM ssd_development.ssd_api_data_staging tgt
+    WHERE tgt.person_id = src.person_id
+);
+
+
+/*
+=============================================================================
+Soft delete: person no longer in cohort and/or LA STAT table
+Revision RH 181026
+
+Only update when record not already marked Deleted
+=============================================================================
+*/
+
+UPDATE tgt
+SET
+    tgt.row_state = 'Deleted',
+    tgt.last_updated = GETDATE()
+
+FROM ssd_development.ssd_api_data_staging AS tgt
+
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM #Hashed AS src
+    WHERE src.person_id = tgt.person_id
+)
+
+AND (
+    tgt.row_state IS NULL
+    OR tgt.row_state <> 'Deleted'
+);
+
+
+
+
+-- -- -- Optional Idx
+-- -- CREATE UNIQUE INDEX UX_ssd_api_data_staging_person ON ssd_development.ssd_api_data_staging(person_id);
+-- IF NOT EXISTS (
+--     -- to avoid issues on re-runs
+--     SELECT 1
+--     FROM sys.indexes
+--     WHERE name = 'UX_ssd_api_data_staging_person'
+--       AND object_id = OBJECT_ID('ssd_development.ssd_api_data_staging')
+-- )
+-- BEGIN
+--     CREATE UNIQUE INDEX UX_ssd_api_data_staging_person
+--     ON ssd_development.ssd_api_data_staging(person_id)
+--     INCLUDE (current_hash);
+-- END;
+
+
+
+
+/* =============================================================================
+SECTION: TESTING / VERIFICATION SUPPORT (NON-LIVE|TEST)
+============================================================================= */
+
+/*
+SUBSECTION: Anonymised / TEST|ANON API payload and logging
+----------------------------------------------------------
+
+Purpose:
+This table is NON-live and solely for pre-live data/API testing.
+
+- Data from this table sent only to CSC TEST receiver endpoint
+- Intended for schema, payload and API contract validation
+- Safe to truncate, reseed or delete at any time
+
+Lifecycle:
+- Expected to be deprecated / removed by the LA once LIVE submissions
+  to DfE Pre-Production / Production endpoints are enabled.
+
+*/
+
+-- META-CONTAINER: {"type": "table", "name": "ssd_api_data_staging_anon"}
+
+
+IF OBJECT_ID('ssd_development.ssd_api_data_staging_anon', 'U') IS NULL
+BEGIN
+    -- create a structural clone only (no data)
+    SELECT TOP (0) *
+    INTO ssd_development.ssd_api_data_staging_anon
+    FROM ssd_development.ssd_api_data_staging;
+END
+ELSE
+BEGIN
+    -- Wipe any existing rows, identity col reset to 0 so next insert is 1
+    TRUNCATE TABLE ssd_development.ssd_api_data_staging_anon;
+
+
+    -- alternative (if TRUNCATE not permitted)
+    -- DBCC CHECKIDENT ('ssd_development.ssd_api_data_staging_anon', RESEED, 0);
+
+END
+
+-- GO
+
+SET NOCOUNT ON;
+
+
+
+
+--------------------------------------------------------------------------------
+/*
+SUBSECTION: Sample Payload Injection (!Send only to TEST!)
+----------------------------------------------------------
+Records simulate upstream API states for integration testing and UI validation
+
+Record types:
+Record0 --> Spec reference / maximal
+Record1 --> New --> Pending
+Record2 --> New --> Error
+Record3 --> Existing --> Sent --> Unchanged
+Record4 --> Existing --> Updated --> Re-submit
+*/
+
+
+--------------------------------------------------------------------------------
+-- Sample Record 0: Fully Populated (spec-maximal / reference payload)
+--------------------------------------------------------------------------------
+DECLARE @p0 NVARCHAR(MAX) = N'{
+  "la_child_id": "Child0034",
+  "mis_child_id": "Supplier-Child-0034",
+  "purge": false,
+
+  "child_details": {
+    "unique_pupil_number": "ABC0123456789",
+    "former_unique_pupil_number": "DEF0123456789",
+    "unique_pupil_number_unknown_reason": "UN1",
+    "first_name": "Jordan",
+    "surname": "Goldstandard",
+    "date_of_birth": "2007-06-14",
+    "expected_date_of_birth": "2007-06-14",
+    "sex": "M",
+    "ethnicity": "WBRI",
+    "disabilities": ["HAND", "VIS"],
+    "postcode": "AB12 3DE",
+    "uasc_flag": true,
+    "uasc_end_date": "2022-06-14",
+    "purge": false
+  },
+
+  "health_and_wellbeing": {
+    "sdq_assessments": [
+      { "date": "2022-06-14", "score": 20 }
+    ],
+    "purge": false
+  },
+
+  "social_care_episodes": [
+    {
+      "social_care_episode_id": "ABC123456",
+      "referral_date": "2022-06-14",
+      "referral_source": "1C",
+      "referral_no_further_action_flag": false,
+
+      "care_worker_details": [
+        {
+          "worker_id": "ABC123",
+          "start_date": "2022-06-14",
+          "end_date": "2023-01-01"
+        }
+      ],
+
+      "child_and_family_assessments": [
+        {
+          "child_and_family_assessment_id": "ABC123456",
+          "start_date": "2022-06-14",
+          "authorisation_date": "2022-06-14",
+          "factors": ["1C", "4A"],
+          "purge": false
+        }
+      ],
+
+      "child_in_need_plans": [
+        {
+          "child_in_need_plan_id": "ABC123456",
+          "start_date": "2022-06-14",
+          "end_date": "2023-06-14",
+          "purge": false
+        }
+      ],
+
+      "section_47_assessments": [
+        {
+          "section_47_assessment_id": "ABC123456",
+          "start_date": "2022-06-14",
+          "icpc_required_flag": true,
+          "icpc_date": "2022-06-14",
+          "end_date": "2022-09-01",
+          "purge": false
+        }
+      ],
+
+      "child_protection_plans": [
+        {
+          "child_protection_plan_id": "ABC123456",
+          "start_date": "2022-09-01",
+          "end_date": "2023-09-01",
+          "purge": false
+        }
+      ],
+
+      "child_looked_after_placements": [
+        {
+          "child_looked_after_placement_id": "ABC123456",
+          "start_date": "2022-06-14",
+          "start_reason": "S",
+          "placement_type": "K1",
+          "postcode": "AB12 3DE",
+          "end_date": "2023-03-01",
+          "end_reason": "E3",
+          "change_reason": "CHILD",
+          "purge": false
+        }
+      ],
+
+      "adoption": {
+        "initial_decision_date": "2022-06-14",
+        "matched_date": "2023-01-15",
+        "placed_date": "2023-03-20",
+        "purge": false
+      },
+
+      "care_leavers": {
+        "contact_date": "2024-02-01",
+        "activity": "F2",
+        "accommodation": "D",
+        "purge": false
+      },
+
+      "closure_date": "2023-09-01",
+      "closure_reason": "RC7",
+      "purge": false
+    }
+  ]
+}';
+
+--------------------------------------------------------------------------------
+-- Sample Record 1: Pending (New Awaiting First Submission)
+--------------------------------------------------------------------------------
+DECLARE @p1 NVARCHAR(MAX) = N'{
+  "la_child_id": "Child2234",
+  "mis_child_id": "Supplier-Child-2234",
+  "purge": false,
+  "child_details": {
+    "unique_pupil_number": "JKL0123456789",
+    "former_unique_pupil_number": "MNO0123456789",
+    "first_name": "Alice",
+    "surname": "Testchild",
+    "date_of_birth": "2004-09-23",
+    "expected_date_of_birth": "2004-09-23",
+    "sex": "F",
+    "ethnicity": "B2",
+    "postcode": "BN14 7ES",
+    "purge": false
+  },
+  "health_and_wellbeing": { "purge": false },
+  "social_care_episodes": [
+    {
+      "social_care_episode_id": "13423",
+      "referral_date": "2005-02-11",
+      "referral_source": "BB",
+      "care_worker_details": [
+        { "worker_id": "X3323345", "start_date": "2024-01-11" },
+        { "worker_id": "Y2234567", "start_date": "2022-01-22" },
+        { "worker_id": "Z2235432", "start_date": "2022-09-20", "end_date": "2024-10-21" },
+        { "worker_id": "X2234852", "start_date": "2020-04-12" }
+      ],
+      "child_and_family_assessments": [
+        {
+          "child_and_family_assessment_id": "BCD123456",
+          "start_date": "2022-06-14",
+          "authorisation_date": "2022-06-14",
+          "factors": ["1C", "4A"],
+          "purge": false
+        }
+      ],
+      "child_looked_after_placements": [
+        {
+          "child_looked_after_placement_id": "BCD123456",
+          "start_date": "2011-02-10",
+          "start_reason": "S",
+          "end_date": "2021-11-11",
+          "end_reason": "E17",
+          "placement_type": "U4",
+          "postcode": "BN14 7ES",
+          "change_reason": "CHILD", 
+          "purge": false
+        }
+      ],
+      "care_leavers": {
+        "contact_date": "2024-08-11",
+        "activity": "F2",
+        "accommodation": "Z",
+        "purge": false
+      },
+      "purge": false
+    }
+  ]
+}';
+
+INSERT INTO ssd_development.ssd_api_data_staging_anon
+(
+    person_id,
+    legacy_id,
+    previous_json_payload,
+    json_payload,
+    partial_json_payload,
+    previous_hash,
+    current_hash,
+    row_state,
+    last_updated,
+    submission_status,
+    api_response,
+    submission_timestamp
+)
+VALUES
+(
+    N'C001',
+    N'L001',
+    NULL,
+    @p1,
+    NULL,
+    NULL,
+    HASHBYTES('SHA2_256', CAST(@p1 AS NVARCHAR(4000))),
+    N'New',
+    GETDATE(),
+    N'Pending',
+    NULL,
+    GETDATE()
+);
+
+
+--------------------------------------------------------------------------------
+-- Sample Record 2: Error (New, & Submission Failed)
+--------------------------------------------------------------------------------
+DECLARE @p2 NVARCHAR(MAX) = N'{
+  "la_child_id": "Child3234",
+  "mis_child_id": "Supplier-Child-3234",
+  "purge": false,
+  "child_details": {
+    "unique_pupil_number": "PQR0123456789",
+    "former_unique_pupil_number": "STU0123456789",
+    "first_name": "Ben",
+    "surname": "Example",
+    "date_of_birth": "2005-10-10",
+    "expected_date_of_birth": "2005-10-10",
+    "sex": "M",
+    "ethnicity": "C3",
+    "postcode": "BN14 7ES",
+    "purge": false
+  },
+  "health_and_wellbeing": { "purge": false },
+  "social_care_episodes": [
+    {
+      "social_care_episode_id": "23423",
+      "referral_date": "2006-03-01",
+      "referral_source": "ZZ",
+      "care_worker_details": [
+        { "worker_id": "X4323345", "start_date": "2023-01-11" },
+        { "worker_id": "Y3234567", "start_date": "2022-02-22" }
+      ],
+      "child_and_family_assessments": [
+        {
+          "child_and_family_assessment_id": "CDE123456",
+          "start_date": "2021-06-14",
+          "authorisation_date": "2021-06-14",
+          "factors": ["1C"],
+          "purge": false
+        }
+      ],
+      "child_looked_after_placements": [],
+      "care_leavers": {
+        "contact_date": "2024-09-11",
+        "activity": "E2",
+        "accommodation": "A",
+        "purge": false
+      },
+      "purge": false
+    }
+  ]
+}';
+
+INSERT INTO ssd_development.ssd_api_data_staging_anon
+(
+    person_id,
+    legacy_id,
+    previous_json_payload,
+    json_payload,
+    partial_json_payload,
+    previous_hash,
+    current_hash,
+    row_state,
+    last_updated,
+    submission_status,
+    api_response,
+    submission_timestamp
+)
+VALUES
+(
+    N'C002',
+    N'L002',
+    NULL,
+    @p2,
+    NULL,
+    NULL,
+    HASHBYTES('SHA2_256', CAST(@p2 AS NVARCHAR(4000))),
+    N'New',
+    GETDATE(),
+    N'Error',
+    N'HTTP 400: Validation failed - missing expected field - invalid referral_source code',
+    GETDATE()
+);
+
+
+--------------------------------------------------------------------------------
+-- Sample Record 3: Sent (Existing, Unchanged)
+--------------------------------------------------------------------------------
+DECLARE @prev3 NVARCHAR(MAX) = N'{
+  "la_child_id": "Child4234",
+  "mis_child_id": "Supplier-Child-4234",
+  "purge": false
+}';
+
+DECLARE @p3 NVARCHAR(MAX) = N'{
+  "la_child_id": "Child4234",
+  "mis_child_id": "Supplier-Child-4234",
+  "purge": false,
+  
+  "child_details": {
+    "unique_pupil_number": "VWX0123456789",
+    "former_unique_pupil_number": "YZA0123456789",
+    "first_name": "Carl",
+    "surname": "Sample",
+    "date_of_birth": "2006-05-05",
+    "expected_date_of_birth": "2006-05-05",
+    "sex": "M",
+    "ethnicity": "D4",
+    "postcode": "BN14 7ES",
+    "purge": false
+  },
+
+  "health_and_wellbeing": { "purge": false },
+  "social_care_episodes": [
+    {
+      "social_care_episode_id": "33423",
+      "referral_date": "2007-01-15",
+      "referral_source": "AA",
+      "care_worker_details": [
+        { "worker_id": "X5323345", "start_date": "2024-01-11" }
+      ],
+      "child_and_family_assessments": [],
+      "child_looked_after_placements": [],
+      "care_leavers": {
+        "contact_date": "2024-07-11",
+        "activity": "H2",
+        "accommodation": "B",
+        "purge": false
+      },
+      "purge": false
+    }
+  ]
+}';
+
+INSERT INTO ssd_api_data_staging_anon
+(
+    person_id,
+    legacy_id,
+    previous_json_payload,
+    json_payload,
+    partial_json_payload,
+    previous_hash,
+    current_hash,
+    row_state,
+    last_updated,
+    submission_status,
+    api_response,
+    submission_timestamp
+)
+VALUES
+(
+    N'C003',
+    N'L003',
+    @prev3,
+    @p3,
+    NULL,
+    HASHBYTES('SHA2_256', CAST(@prev3 AS NVARCHAR(4000))),
+    HASHBYTES('SHA2_256', CAST(@p3 AS NVARCHAR(4000))),
+    N'Unchanged',
+    GETDATE(),
+    N'Sent',
+    N'HTTP 201: Created',
+    GETDATE()
+);
+
+
+--------------------------------------------------------------------------------
+-- Sample Record 4: Updated (existing record, payload changed)
+--------------------------------------------------------------------------------
+DECLARE @prev4 NVARCHAR(MAX) = N'{
+  "la_child_id": "Child5234",
+  "mis_child_id": "Supplier-Child-5234",
+  "purge": false,
+  "child_details": {
+    "unique_pupil_number": "XYZ0123456789",
+    "first_name": "Daisy",
+    "surname": "Updatecase",
+    "date_of_birth": "2005-03-15",
+    "expected_date_of_birth": "2005-03-15",
+    "sex": "F",
+    "ethnicity": "A1",
+    "postcode": "BN15 9AA",
+    "purge": false
+  },
+  "social_care_episodes": [
+    {
+      "social_care_episode_id": "43423",
+      "referral_date": "2010-06-01",
+      "care_worker_details": [
+        { "worker_id": "X1111111", "start_date": "2022-04-01" }
+      ],
+      "purge": false
+    }
+  ]
+}';
+
+DECLARE @p4 NVARCHAR(MAX) = N'{
+  "la_child_id": "Child5234",
+  "mis_child_id": "Supplier-Child-5234",
+  "purge": false,
+  "child_details": {
+    "unique_pupil_number": "XYZ0123456789",
+    "first_name": "Daisy",
+    "surname": "Updatecase",
+    "date_of_birth": "2005-03-15",
+    "sex": "F",
+    "ethnicity": "A1",
+    "postcode": "BN15 9AA",
+    "purge": false
+  },
+  "social_care_episodes": [
+    {
+      "social_care_episode_id": "43423",
+      "referral_date": "2010-06-01",
+      "care_worker_details": [
+        { "worker_id": "X1111111", "start_date": "2022-04-01" },
+        { "worker_id": "Y2222222", "start_date": "2024-02-10" }
+      ],
+      "purge": false
+    }
+  ]
+}';
+
+INSERT INTO ssd_development.ssd_api_data_staging_anon
+(
+    person_id,
+    legacy_id,
+    previous_json_payload,
+    json_payload,
+    partial_json_payload,
+    previous_hash,
+    current_hash,
+    row_state,
+    last_updated,
+    submission_status,
+    api_response,
+    submission_timestamp
+)
+VALUES
+(
+    N'C004',
+    N'L004',
+    @prev4,
+    @p4,
+    NULL,
+    HASHBYTES('SHA2_256', CAST(@prev4 AS NVARCHAR(4000))),
+    HASHBYTES('SHA2_256', CAST(@p4   AS NVARCHAR(4000))),
+    N'Updated',
+    GETDATE(),
+    N'Pending',
+    NULL,
+    GETDATE()
+);
+
+
+SET NOCOUNT OFF;
+
+
+
+--------------------------------------------------------------------------------
+/*
+SECTION: Payload Verification Queries
+===============================================================================
+Optional queries support manual inspection of payload content and
+shape after staging run
+
+All below queries read-only
+*/
+--------------------------------------------------------------------------------
+
+
+
+/*
+SUBSECTION: Basic Sanity Checks
+--------------------------------
+Verify recent rows exist in staging tables.
+*/
+select TOP (5) * from ssd_development.ssd_api_data_staging;
+select TOP (5) * from ssd_development.ssd_api_data_staging_anon; -- verify inclusion of x3 fake records added above 
+
+
+--------------------------------------------------------------------------------
+/*
+SUBSECTION: Extended Payload Size Inspection
+----------------------------------------------
+Return records with large or deeply nested payloads - to view full structure records
+*/
+
+-- SELECT TOP (3)
+--     person_id,
+--     LEN(json_payload)        AS payload_chars,
+--     json_payload  AS preview
+-- FROM ssd_development.ssd_api_data_staging
+-- ORDER BY DATALENGTH(json_payload) DESC, id DESC;
+
+
+
+
+--------------------------------------------------------------------------------
+/*
+SUBSECTION: Health & Wellbeing / SDQ Presence
+----------------------------------------------
+Identify records with SDQ assessments and approximate counts
+*/
+-- ;WITH WithCounts AS (
+--     SELECT
+--         s.person_id,
+--         s.id,
+--         s.json_payload,
+--         LEN(s.json_payload) AS payload_chars,
+--         -- crude count SDQ assessments: instances -date- appears
+--         CASE 
+--             WHEN j.sdq_text IS NULL OR j.sdq_text = '[]' THEN 0
+--             ELSE (LEN(j.sdq_text) - LEN(REPLACE(j.sdq_text, '"date"', ''))) / LEN('"date"')
+--         END AS AssessmentCount
+--     FROM ssd_development.ssd_api_data_staging AS s
+--     CROSS APPLY (
+--         SELECT CAST(
+--             JSON_QUERY(s.json_payload, '$.health_and_wellbeing.sdq_assessments')
+--             AS nvarchar(max)
+--         ) AS sdq_text
+--     ) AS j
+--     WHERE j.sdq_text IS NOT NULL
+--       AND j.sdq_text <> '[]'
+-- )
+-- SELECT TOP (3)
+--     person_id,
+--     payload_chars,
+--     json_payload AS preview
+-- FROM WithCounts
+-- ORDER BY
+--     CASE WHEN AssessmentCount > 1 THEN 0 ELSE 1 END,  -- multi-SDQ first
+--     AssessmentCount DESC,
+--     payload_chars DESC,
+--     id DESC;
+
+-- -- -- LEGACY-PRE2016 (no JSON functions)
+-- -- SELECT TOP (5) ...
+-- -- FROM ssd_development.ssd_api_data_staging
+-- -- WHERE json_payload LIKE '%"health_and_wellbeing"%sdq_assessments%"date"%'
+-- -- ORDER BY DATALENGTH(json_payload) DESC, id DESC;
+
+
+
+--------------------------------------------------------------------------------
+/*
+SUBSECTION: Adoption Payload Presence
+-------------------------------------
+Identify records where adoption data exists
+*/
+-- SELECT TOP (3)
+--     person_id,
+--     LEN(json_payload) AS payload_chars,
+--     json_payload AS preview
+-- FROM ssd_development.ssd_api_data_staging
+-- WHERE JSON_QUERY(json_payload, '$.social_care_episodes[0].adoption') IS NOT NULL
+-- -- -- LEGACY-PRE2016
+-- -- WHERE json_payload LIKE '%"adoption"%date_match"%'
+-- ORDER BY DATALENGTH(json_payload) DESC, id DESC;
+
+
+
+--------------------------------------------------------------------------------
+/*
+SUBSECTION: Section 47 / ICPC Indicators
+----------------------------------------
+Identify records containing S47 assessments and ICPC dates
+*/
+-- -- spot episodes with conference activity recorded
+-- SELECT TOP (5)
+--     person_id,
+--     LEN(json_payload) AS payload_chars,
+--     json_payload AS preview
+-- FROM ssd_development.ssd_api_data_staging
+-- WHERE json_payload LIKE '%"section_47_assessments"%'
+--   AND json_payload LIKE '%"icpc_date":"20%'   -- not ideal date presence test yyyy-mm-dd
+-- ORDER BY payload_chars DESC, id DESC;
+
+
+
+
+--------------------------------------------------------------------------------
+/*
+SUBSECTION: Section 47 Assessment Presence and Counts
+-----------------------------------------------------
+Show records with Section 47 (S47) assessments present in the payload
+*/
+-- ;WITH WithS47 AS (
+--     SELECT
+--         s.person_id,
+--         s.id,
+--         s.json_payload,
+--         LEN(s.json_payload) AS payload_chars,
+--         -- count S47 items by token occurrence, episode agnostic
+--         (LEN(s.json_payload) - LEN(REPLACE(s.json_payload, '"section_47_assessment_id"', '')))
+--             / NULLIF(LEN('"section_47_assessment_id"'), 0) AS s47_count,
+--         -- quick existence flag via array pattern
+--         CASE WHEN CHARINDEX('"section_47_assessments":[{', s.json_payload) > 0 THEN 1 ELSE 0 END AS has_s47
+--     FROM ssd_development.ssd_api_data_staging s
+-- )
+-- SELECT TOP (5)
+--     person_id,
+--     s47_count,
+--     payload_chars,
+--     json_payload AS preview
+-- FROM WithS47
+-- WHERE has_s47 = 1 OR s47_count > 0
+-- ORDER BY s47_count DESC, payload_chars DESC, id DESC;
+
+
+
+--------------------------------------------------------------------------------
+/*
+SUBSECTION: Age Distribution (Derived)
+---------------------------------------
+Quick age band check for records in staging
+*/
+-- SELECT
+--   DATEDIFF(year, p.pers_dob, CONVERT(date, GETDATE()))
+--     - CASE WHEN DATEADD(year, DATEDIFF(year, p.pers_dob, CONVERT(date, GETDATE())), p.pers_dob) > CONVERT(date, GETDATE()) THEN 1 ELSE 0 END
+--     AS age_years,
+--   COUNT(DISTINCT s.person_id) AS people
+-- FROM ssd_development.ssd_api_data_staging s
+-- JOIN ssd_person p
+--   ON p.pers_person_id = s.person_id
+-- WHERE p.pers_dob IS NOT NULL
+--   AND DATEADD(year, 16, p.pers_dob) > CONVERT(date, GETDATE())
+-- GROUP BY
+--   DATEDIFF(year, p.pers_dob, CONVERT(date, GETDATE()))
+--     - CASE WHEN DATEADD(year, DATEDIFF(year, p.pers_dob, CONVERT(date, GETDATE())), p.pers_dob) > CONVERT(date, GETDATE()) THEN 1 ELSE 0 END
+-- ORDER BY age_years;
+
+
+
+--------------------------------------------------------------------------------
+/*
+SUBSECTION: Records with multiple CW involvements
+---------------------------------------
+Find records that have multiple CW involvements to verify SW history 
+*/
+-- SELECT TOP (50)
+--     person_id,
+--     legacy_id,
+--     (
+--         LEN(json_payload)
+--         - LEN(REPLACE(json_payload, '"worker_id"', ''))
+--     ) / LEN('"worker_id"') AS worker_count,
+--     json_payload
+-- FROM ssd_development.ssd_api_data_staging
+-- WHERE (
+--         LEN(json_payload)
+--         - LEN(REPLACE(json_payload, '"worker_id"', ''))
+--       ) / LEN('"worker_id"') > 1
+-- ORDER BY worker_count DESC,
+--          person_id;
+
+
+
+
+--------------------------------------------------------------------------------
+/*
+SUBSECTION: Confidential records postcode mask
+---------------------------------------
+Simplistic chk records showing CON in address postcode, also have no placement postcodes
+as these must come through as either "" or "CON"
+*/
+-- ;WITH LatestAddress AS (
+--     SELECT
+--         a.addr_person_id,
+--         a.addr_address_postcode,
+--         ROW_NUMBER() OVER (
+--             PARTITION BY a.addr_person_id
+--             ORDER BY a.addr_address_start_date DESC
+--         ) AS rn
+--     FROM ssd_address a
+-- )
+-- SELECT DISTINCT
+--     s.person_id,
+--     s.legacy_id,
+--     la.addr_address_postcode AS source_postcode,
+--     clap.clap_cla_placement_postcode AS placement_postcode,
+--     s.json_payload
+-- FROM ssd_development.ssd_api_data_staging s
+-- JOIN LatestAddress la
+--     ON la.addr_person_id = s.person_id
+--    AND la.rn = 1
+-- JOIN ssd_cla_episodes clae
+--     ON clae.clae_person_id = s.person_id
+-- JOIN ssd_cla_placement clap
+--     ON clap.clap_cla_id = clae.clae_cla_id
+-- WHERE UPPER(LTRIM(RTRIM(la.addr_address_postcode))) = 'CON'
+--   AND NULLIF(LTRIM(RTRIM(clap.clap_cla_placement_postcode)), '') IS NOT NULL
+--   AND UPPER(LTRIM(RTRIM(clap.clap_cla_placement_postcode))) <> 'CON'
+--   AND LEN(LTRIM(RTRIM(clap.clap_cla_placement_postcode))) > 3
+-- ORDER BY s.person_id;
+
+
+
+--------------------------------------------------------------------------------
+/*
+SUBSECTION: Get an overview of records that show a correct/incorrect populating 
+of episode_ceased_reason and placement_end_date DfE validator CSC0155
+---------------------------------------
+Date and reason episode ceased if one is populated then both must be. This
+added in-part towards verifiying fix for issue # 290.
+*/
+-- SELECT
+--     CASE
+--         WHEN clap.clap_cla_placement_end_date IS NOT NULL
+--          AND placement_end_ep.clae_cla_episode_ceased_reason IS NOT NULL
+--             THEN 'Both populated'
+
+--         WHEN clap.clap_cla_placement_end_date IS NOT NULL
+--          AND placement_end_ep.clae_cla_episode_ceased_reason IS NULL
+--             THEN 'End date only'
+
+--         WHEN clap.clap_cla_placement_end_date IS NULL
+--          AND placement_end_ep.clae_cla_episode_ceased_reason IS NOT NULL
+--             THEN 'End reason only'
+
+--         ELSE 'Both empty'
+--     END AS ValidationResult,
+--     COUNT(*) AS PlacementCount
+-- FROM ssd_cla_placement clap
+-- OUTER APPLY
+-- (
+--     SELECT TOP (1)
+--         ep.clae_cla_episode_ceased_reason
+--     FROM ssd_cla_episodes ep
+--     WHERE ep.clae_cla_placement_id = clap.clap_cla_placement_id
+--       AND ep.clae_cla_episode_ceased_date =
+--           clap.clap_cla_placement_end_date
+-- ) placement_end_ep
+-- WHERE EXISTS
+-- (
+--     SELECT 1
+--     FROM ssd_cla_episodes ep
+--     WHERE ep.clae_cla_placement_id = clap.clap_cla_placement_id
+--       AND ep.clae_referral_id IS NOT NULL
+-- )
+-- GROUP BY
+--     CASE
+--         WHEN clap.clap_cla_placement_end_date IS NOT NULL
+--          AND placement_end_ep.clae_cla_episode_ceased_reason IS NOT NULL
+--             THEN 'Both populated'
+
+--         WHEN clap.clap_cla_placement_end_date IS NOT NULL
+--          AND placement_end_ep.clae_cla_episode_ceased_reason IS NULL
+--             THEN 'End date only'
+
+--         WHEN clap.clap_cla_placement_end_date IS NULL
+--          AND placement_end_ep.clae_cla_episode_ceased_reason IS NOT NULL
+--             THEN 'End reason only'
+
+--         ELSE 'Both empty'
+--     END;
+
+-- -- which records in the SSD fit the incorrect population profile
+-- SELECT
+--     clap.clap_cla_placement_id,
+--     clap.clap_cla_id,
+--     clap.clap_cla_placement_end_date,
+
+--     placement_end_ep.clae_cla_episode_ceased_reason
+
+-- FROM ssd_cla_placement clap
+
+-- OUTER APPLY
+-- (
+--     SELECT TOP (1)
+--         ep.clae_cla_episode_ceased_reason
+--     FROM ssd_cla_episodes ep
+--     WHERE ep.clae_cla_placement_id = clap.clap_cla_placement_id
+--       AND ep.clae_cla_episode_ceased_date =
+--           clap.clap_cla_placement_end_date
+-- ) placement_end_ep
+
+-- WHERE EXISTS
+-- (
+--     SELECT 1
+--     FROM ssd_cla_episodes ep
+--     WHERE ep.clae_cla_placement_id = clap.clap_cla_placement_id
+--       AND ep.clae_referral_id IS NOT NULL
+-- )
+
+-- AND clap.clap_cla_placement_end_date IS NOT NULL
+-- AND placement_end_ep.clae_cla_episode_ceased_reason IS NULL;
+
+-- -- and then add any placement ids output from the above query into the following
+-- -- to check whether they ahve also come through into the payload 
+-- SELECT
+--     id,
+--     person_id
+-- FROM ssd_development.ssd_api_data_staging
+-- WHERE json_payload LIKE '%"child_looked_after_placement_id":"<PlacementIdHere>"%';
+
+
+
+
+
+--------------------------------------------------------------------------------
+/*
+SECTION: Cleanup
+===============================================================================
+*/
+IF OBJECT_ID('tempdb..#Hashed') IS NOT NULL DROP TABLE #Hashed;

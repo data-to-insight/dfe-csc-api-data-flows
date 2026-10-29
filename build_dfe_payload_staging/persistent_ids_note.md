@@ -1,0 +1,873 @@
+# SSD Persistent ID Pipeline
+**Process and tech overview | Five entity types | SQL Server 2016+**
+
+## Purpose
+
+pipeline maintains permanent ids for social care records even when Data Warehouse (DW) refresh regenerates internal source ids.
+
+
+The process separates into 3:
+
+- **Capture:** Record what exists in latest SSD source data
+- **Identity management:** Determine whether each record already has permanent GUID or needs new one
+- **Staging:** Construct outgoing JSON using those permanent GUIDs rather than temp DW identifiers
+
+Five record types are currently supported: social care episodes, child and family assessments, child in need plans, Section 47 assessments, and child protection plans. Looked-after placements are excluded pending further development
+
+Quick notes:
+1) registry remembers what record is
+2) observation table remembers how record appeared in source on particular day
+
+A DW refresh may change second without changing first
+
+---
+
+# INITIAL SETUP
+
+*Executed once when establishing new persistent identity environment*
+
+## 01_create_identity_tables.sql
+
+**Purpose:** Establish permanent infrastructure used to preserve identities and history of how they were established
+
+**CREATE TABLE (once only):**
+
+- `ssd_api_identity_run`
+  - 1 row per source-data capture
+  - Records when snapshot was taken, how many observations were captured and its processing status
+  - Acts as control and audit record for each identity-processing run
+  - Primary identifier: `run_id`, GUID generated for each capture
+
+- `ssd_api_entity_observation`
+  - Stores individual records observed during every capture
+  - Contains source record ID, person ID, relevant dates and other identifying evidence
+  - After processing, also records assigned permanent GUID and matching rule used
+  - **Historical observations are retained**, allowing future runs to match against earlier versions of same record
+  - logical record may therefore appear in many observations across different runs, all sharing 1 permanent GUID
+
+- `ssd_api_entity_registry`
+  - permanent master list of logical record identities
+  - Stores 1 `stable_id` (GUID) per identified record, together with its person, entity type and identity metadata
+  - It is deliberately independent of current DW source ID
+  - same GUID is reused whenever that logical record is recognised in subsequent capture
+  - Existing registry GUIDs must not be regenerated during routine processing
+
+**Outcome:** Three persistent tables exist. No source records have yet been captured or assigned identities
+
+## 02_capture_five_entities.sql
+
+**Purpose:** Take first identity snapshot of SSD data. At this stage we are recording what exists, not yet determining permanent identities.
+
+**READ:**
+
+- `ssd_cin_episodes`
+- `ssd_cin_assessments`
+- `ssd_cin_plans`
+- `ssd_s47_enquiry`
+- `ssd_cp_plans`
+
+**DROP / CREATE TEMP:**
+
+- `#ReferralPerson`
+  - temp lookup linking referral IDs to person IDs
+  - Used to establish which child records belong to which person through their parent social care episode
+  - Validates that same referral identifier is not associated with multiple people
+
+- `#Incoming`
+  - temp combined snapshot containing observations from all five entity types
+  - Normalises their identifying attributes into consistent structure: entity type, person ID, source ID, parent referral ID, start/end dates and additional codes
+  - Supports common validation and insertion logic regardless of source table
+
+**VALIDATE:**
+
+- Required source and person identifiers are present
+- Records are unique within source snapshot
+- Child records have identifiable parent episodes
+- Source counts and exclusions can be inspected
+
+**INSERT:**
+
+- `ssd_api_identity_run`
+  - Inserts **1 new run** with generated `run_id`
+  - Sets `run_status = 'Captured'`
+  - Records observation count and capture timestamp
+
+- `ssd_api_entity_observation`
+  - Inserts 1 observation per captured source record
+  - Records its source ID and identifying attributes
+  - `stable_id = NULL`, because permanent identity assignment has not yet occurred
+  - `resolution_status = 'Unresolved'`
+
+**Outcome:** We have dated record of baseline source population, but no permanent identifiers have yet been allocated
+
+## 03_bootstrap_entity_registry.sql
+
+**Purpose:** Establish permanent identities for very first captured snapshot
+
+**a one-time operation. It must not run again once identity registry has been populated**
+
+**CREATE TEMP:**
+
+- `#BootstrapIds`
+  - 1 row per captured observation
+  - Generates new GUID using SQL Server's `NEWID()` function
+  - Materialises that GUID once so same value can be consistently inserted into registry and assigned to its observation.
+  - Also retains source referral linkage needed to assign parent identities
+
+**INSERT:**
+
+- `ssd_api_entity_registry`
+  - Inserts all baseline GUIDs as permanent identities
+  - `identity_origin = 'Generated'`, indicating GUID was generated by this solution
+  - `entity_status = 'Active'`
+  - Sets initial first-seen and last-seen timestamps
+
+**UPDATE:**
+
+- `ssd_api_entity_observation.stable_id`
+  - Assigns GUID generated for that individual baseline record
+  - This becomes its permanent identity, independent of future DW source IDs
+
+- `ssd_api_entity_observation.parent_stable_id`
+  - For assessments, CIN plans, Section 47 assessments and CP plans, records permanent GUID of their parent social care episode
+  - This preserves relationship between nested records independently of temp referral identifier
+  - Parent episodes themselves have `parent_stable_id = NULL`
+
+- `ssd_api_entity_observation.resolution_status = 'New'`
+  - Indicates observation received newly registered permanent identity
+  - During bootstrap, all observations are classified as `New`, even if underlying social care event occurred years ago
+
+- `ssd_api_entity_observation.match_rule = 'Baseline'`
+  - Records *why* identity was assigned
+  - `Baseline` means it originated from initial GUID allocation, rather than historical match
+  - Other rules used during subsequent reconciliation are explained below
+
+- `ssd_api_identity_run.run_status = 'Validated'`
+  - Indicates baseline capture was completely assigned and passed required identity checks
+  - **Validated does not mean approved for external/api submission**
+
+**VALIDATE:**
+
+- Every observation has permanent GUID
+- Each GUID is unique within current snapshot
+- Child records reference valid permanent parent GUIDs
+- Inserted and updated record counts agree
+
+**Outcome:** first source snapshot has become permanent identity baseline. These GUIDs must survive future DW rebuilds.
+
+## 04_verify_identity_baseline.sql
+
+**Purpose:** Independently verify baseline identity allocation.
+
+**READ ONLY:**
+
+- `ssd_api_identity_run`
+- `ssd_api_entity_observation`
+- `ssd_api_entity_registry`
+
+**CHECK:**
+
+- selected baseline run has status `Validated`
+- All observations have valid registry GUIDs
+- No permanent GUID is assigned to multiple observations within baseline
+- Every child has correct parent episode GUID
+- No parent episode incorrectly references another parent
+
+**No persistent tables are created, deleted or modified.**
+
+**Outcome:** Confirmation that initial identity registry and its relationships are internally consistent
+
+## Initial staging build
+
+**Purpose:** Use newly validated baseline to construct first outgoing JSON payloads
+
+The existing staging process is extended with permanent identity lookup, described in recurring workflow below
+
+**Outcome:** staging JSON contains persistent GUIDs instead of DW-generated IDs
+
+---
+
+# ONGOING DAILY / REFRESH PROCESS
+
+*Executed after completed, consistent SSD data refresh. established registry and historical observations are retained.*
+
+## 02_capture_five_entities.sql
+
+**Purpose:** Capture latest source population, whether or not DW regenerated its identifiers.
+
+**DROP / CREATE TEMP:**
+
+- `#ReferralPerson`
+  - Rebuilds current referral-to-person lookup from refreshed sources
+
+- `#Incoming`
+  - Rebuilds combined five-type observation snapshot
+
+**INSERT:**
+
+- `ssd_api_identity_run`
+  - Inserts **1 new run** with new `run_id`
+  - Sets `run_status = 'Captured'`
+
+- `ssd_api_entity_observation`
+  - Inserts new observations associated with new run
+  - Includes latest source IDs, dates and relationship evidence
+  - Initially assigns `stable_id = NULL` and `resolution_status = 'Unresolved'`
+
+**RETAIN:**
+
+- All historical observation runs.
+- All previously generated registry GUIDs.
+- existing staging table.
+
+**Outcome:** latest SSD population is captured, but its records are not yet linked to their permanent identities.
+
+## 06_apply_identity_reconciliation.sql
+
+**Purpose:** Compare new source snapshot with historical observations and determine which permanent identities should be reused.
+
+This is key recurring identity management step
+
+**CONFIGURATION:**
+
+- `@dry_run = 1`
+  - Default. Calculates proposed mappings but does not modify permanent tables
+
+- `@dry_run = 0`
+  - Applies proposed mappings transactionally, provided all observations resolve successfully
+
+- `@allow_safe_new_ids = 0`
+  - Default. Prevents automatic creation of new permanent identities during current controlled pilot
+
+- `@allow_safe_new_ids = 1`
+  - Enables restricted new-GUID allocation for records satisfying implemented conservative rules. Not yet recommended for unattended operation
+
+**DROP / CREATE TEMP:**
+
+- `#R06Current`
+  - Working copy of newly captured observations
+  - Contains current source IDs and identifying attributes
+
+- `#R06History`
+  - Working copy of trusted historical observations from previously validated, approved or published runs
+  - Provides evidence used to recognise an existing logical record
+  - Repeated historical observations of same `stable_id` are treated as evidence for 1 identity, rather than competing identities
+
+- `#R06Proposal`
+  - 1 proposed identity result per current observation
+  - Holds proposed GUID, parent GUID, status and matching rule
+  - Allows complete result to be validated before anything is committed
+
+- `#R06Candidates`
+  - temp matching candidates for each comparison pass
+  - Cleared and repopulated between passes so increasingly detailed matching rules can be evaluated
+  - script accepts only unambiguous one-to-1 candidate matches
+
+**READ:**
+
+- Current unresolved observations from newly captured run
+- Historical observations from trusted completed runs
+- Permanent identities in `ssd_api_entity_registry`
+
+**RECONCILE:**
+
+1. Match social care episodes using combinations of source ID, person ID, referral date and additional identifying attributes
+2. Resolve each matched episode's permanent GUID
+3. Propagate permanent parent episode GUID to its related current child observations
+4. Match child assessments and plans using their own identifying attributes and their resolved parent GUIDs
+5. Identify records requiring review when evidence does not establish unique historical identity
+6. Validate complete proposal, including uniqueness, registry ownership and parent-child relationships
+
+**INSERT (only when permitted):**
+
+- `ssd_api_entity_registry`
+  - Adds GUIDs for genuinely new records that satisfy conservative new-record criteria
+  - Existing GUIDs are never replaced
+  - With current default `@allow_safe_new_ids = 0`, no new registry identities are automatically created
+
+**UPDATE (only after successful commit):**
+
+- `ssd_api_entity_observation.stable_id`
+  - Assigns historical GUID recovered by reconciliation, or an authorised new GUID
+
+- `ssd_api_entity_observation.parent_stable_id`
+  - Assigns permanent parent episode GUID, independently of its latest DW referral ID
+
+- `ssd_api_entity_observation.resolution_status`
+  - Usually `Matched` for recognised historical records
+  - `New` for newly registered identities
+
+- `ssd_api_entity_observation.match_rule`
+  - Records which reconciliation method successfully established identity
+
+- `ssd_api_entity_registry.last_seen_at`
+  - Updates last-seen timestamp for identities observed in current run
+  - Existing `stable_id` values remain unchanged.
+
+- `ssd_api_identity_run.run_status = 'Validated'`
+  - Applied only when complete reconciliation passes its checks
+
+**SAFETY BEHAVIOUR:**
+
+- Dry-run produces proposed results without persistent writes
+- Ambiguous or unresolved records are reported for review
+- current pilot does not commit partially resolved run
+- If unresolved observations remain, an attempted commit fails and transaction is rolled back
+- run remains `Captured` until successfully reconciled
+- Source SSD tables and staging data are not modified by this script
+
+**Outcome:** latest source records have been associated with their historical permanent GUIDs, or run remains blocked for further investigation.
+
+## 06_verify_reconciled_run.sql
+
+**Purpose:** Independently check that reconciliation was successfully committed.
+
+**READ ONLY:**
+
+- Latest validated identity observations
+- Corresponding permanent registry identities
+- Run status and identity relationships
+
+**CHECK:**
+
+- selected run has completed successfully
+- All observations have permanent GUIDs
+- Each GUID belongs to correct person and entity type
+- No current record has an invalid or missing registry mapping
+- Parent-child relationships remain valid
+
+**No persistent tables are created, deleted or modified.**
+
+**Outcome:** Confirmation that new observation snapshot is ready to supply identity mappings to staging.
+
+## Staging build: CSC API staging v0.6.0
+
+**Purpose:** Construct outgoing JSON from current SSD source data, using validated persistent identities.
+
+**DROP / CREATE TEMP:**
+
+- `#IdentityMap`
+  - temp lookup built from selected validated identity run.
+  - Maps each current source record ID and person/entity type to its permanent GUID.
+  - Includes `parent_stable_id` for nested records.
+  - Enables JSON query to join source records to stable identities efficiently.
+
+- `#Hashed`
+  - temp result containing generated JSON and its SHA-256 hash.
+  - Supports comparison with previously staged payloads.
+  - hash changes when actual JSON changes, including relevant values, array ordering or persistent IDs.
+
+**READ:**
+
+- newly validated identity run.
+- Current SSD source tables.
+- Current contents of `ssd_api_data_staging`.
+
+**BUILD:**
+
+- Construct existing `RawPayloads` JSON.
+- Keep original SSD source joins for relating records.
+- Use `#IdentityMap.stable_id` for five supported outgoing identity properties.
+- Preserve nested JSON structure and reporting-window rules.
+- Calculate `current_hash` from completed outgoing JSON.
+
+**UPDATE / INSERT / SOFT DELETE:**
+
+- `ssd_api_data_staging`
+  - **UPDATE:** If person's JSON hash differs from previously staged version, replace current payload, retain previous payload/hash as applicable, and mark record as updated and pending.
+  - **INSERT:** If an eligible person is not already staged, insert new payload with its hash and initial submission state.
+  - **SOFT DELETE:** If previously staged person is genuinely absent from current eligible source population, update its row state to `Deleted` rather than physically removing row.
+
+**IMPORTANT:**
+
+- Staging must use correct, newly validated identity run.
+- Missing or unresolved identity mappings must block unsafe staging changes.
+- An identity exception must not accidentally cause person's staging record to be soft-deleted.
+- Existing staging records are not routinely truncated or recreated.
+- External API submission remains disabled throughout testing.
+
+**Outcome:** Outgoing staging data contains latest business information while retaining permanent nested record identities.
+
+## Staging identity verification
+
+**Purpose:** Confirm that persistent IDs in generated JSON correctly reference registry.
+
+**READ ONLY:**
+
+- `ssd_api_data_staging`
+- `ssd_api_entity_registry`
+- Optionally, current validated observation run.
+
+**CHECK:**
+
+- Each emitted identifier exists in registry.
+- Its associated person and entity type are correct.
+- Mandatory identities are present.
+- No unexpected ID changes have occurred between runs.
+- Payload changes can be distinguished from changes caused only by regenerated DW source identifiers.
+
+**Outcome:** Evidence that final staged payload has retained expected logical-record identities.
+
+---
+
+# KEY FIELDS AND STATUS VALUES
+
+## `ssd_api_entity_observation`
+
+### `stable_id`
+
+The permanent identity of an individual nested record.
+
+Created initially with `NEWID()` and stored in registry. In later refreshes, reconciliation process reuses an existing GUID where it can confidently recognise record.
+
+### `parent_stable_id`
+
+The permanent identity of parent social care episode.
+
+Allows assessments and plans to retain their association with particular episode even if original source referral identifier changes.
+
+### `resolution_status`
+
+| Value | Meaning |
+|---|---|
+| `Unresolved` | Captured but not yet assigned permanent GUID |
+| `New` | Assigned newly registered permanent GUID |
+| `Matched` | Reconciled to previously registered permanent GUID |
+| `Review` | Identity cannot be established confidently and requires investigation |
+
+All four are supported by observation table. In current `06` pilot, review proposals are reported, but run containing unresolved proposals is not committed.
+
+### `match_rule`
+
+Records which matching method was used or, in review proposal, why observation could not be resolved.
+
+| Value | Interpretation |
+|---|---|
+| `Baseline` | GUID generated during one-time initial bootstrap |
+| `EpisodeSourceAndDate` | Episode matched by person, source ID and referral date |
+| `EpisodeUniqueDate` | Episode matched uniquely by person and referral date, allowing source ID to differ |
+| `EpisodeExtended` | Episode matched using date plus closure and coded attribute evidence |
+| `ChildSourceParentDate` | Child record matched using person, source ID, resolved parent GUID and start date |
+| `ChildUniqueParentDate` | Child record matched uniquely by person, resolved parent GUID and start date |
+| `ChildExtended` | Child record matched using parent identity, dates and further available attributes |
+| `ConservativeNewEpisode` | New episode identity created under restricted new-record rules |
+| `ConservativeNewChild` | New child-record identity created under restricted new-record rules |
+| `ParentUnresolved` | Proposed child match blocked because its parent identity has not been resolved |
+| `MissingAnchor` | Required identifying date is missing |
+| `NewCandidateHold` | Possible new record held because automatic allocation is not permitted or sufficient evidence is lacking |
+| `ExistingHistoryReview` | Existing historical identity evidence exists but has not yielded confident match |
+
+**Implementation note:** last four values are currently diagnostic explanations in `06` proposal. They are not persisted when entire run is blocked.
+
+## `ssd_api_identity_run.run_status`
+
+| Value | Meaning |
+|---|---|
+| `Captured` | snapshot has been recorded and awaits identity resolution |
+| `Validated` | snapshot has passed applicable identity checks |
+| `Approved` | Reserved for later explicit approval stage |
+| `Published` | Reserved for recording later publication stage |
+| `Failed` | Available for recorded failed run |
+
+These are five values currently supported by run table's database constraint.
+
+The current scripts use `Captured` and `Validated`. They do not automatically transition runs to `Approved`, `Published` or `Failed`.
+
+**Important:** Identity validation is not permission for external submission.
+
+## `ssd_api_entity_registry`
+
+- `stable_id`: Permanent GUID used throughout identity history.
+- `person_id`: Stable person identifier to which nested identity belongs.
+- `entity_type`: Distinguishes episodes, assessments, CIN plans, Section 47 assessments and CP plans.
+- `first_seen_at`: When identity was first registered.
+- `last_seen_at`: When it was last recognised by reconciliation process.
+- `identity_origin`: identify provenance of permanent GUID. Supported values are `Generated`, `ExistingDownstream` and `Manual`.
+- `entity_status`: Operational status of identity. current scripts use `Active`.
+
+---
+
+# DEPLOYMENT AND OPERATING NOTES
+
+**First-time deployment:** `01 → 02 → 03 → 04 → staging → verification`.
+
+**Subsequent refreshes:** `02 → 06 (dry-run) → 06 (commit) → 06 verification → staging → staging verification`.
+
+The `05_identity_reconciliation_lab.sql` is development and acceptance test. It simulates source-ID regeneration using temp data and does not form part of normal daily processing.
+
+`00_OPTIONAL_TEST_ONLY_reset_identity_data.sql` is separate reset utility, not normal pipeline step. It must not be used once permanent GUIDs have been consumed or published.
+
+The permanent identity tables must be protected from upstream DW rebuild operations. They are retained history that makes entire solution work.
+
+The current `06` pilot is intentionally conservative. It does not yet automatically allocate every legitimate new record, particularly when person already has historical records of same type. Such cases may require review or future enhancements to matching and new-record classification.
+
+**Current testing position:** Baseline creation, subsequent-run matching, transactional reconciliation and staging GUID substitution have been demonstrated. Actual end-to-end preservation after regenerated DW identifiers, genuine new-record handling and exception scenarios still require further acceptance testing before unattended operation.
+
+
+
+
+
+
+
+
+
+# Example: 1 social care episode across three data warehouse refreshes
+
+**Scenario:** child has an existing social care episode containing child and family assessment. Across three successive captures, Data Warehouse (DW) regenerates its source identifiers, and later changes are recorded against both episode and assessment.
+
+The persistent identity solution must recognise these as **same two logical records**, rather than creating new identities each time data changes.
+
+*All identifiers and data in this example are fictional.*
+
+## 1. What changes between captures?
+
+### Parent: Social care episode
+
+| Attribute | Capture 1: Initial baseline | Capture 2: DW rebuild | Capture 3: Updated episode |
+|---|---|---|---|
+| Person ID | `P12345` | `P12345` | `P12345` |
+| DW referral ID | `117945` | `972006` | `972006` |
+| Referral start date | 14/01/2025 | 14/01/2025 | 14/01/2025 |
+| Closure date | NULL | NULL | 20/10/2026 |
+| Referral source code | `80` | `80` | `80` |
+| Closure reason | NULL | NULL | `AB22` |
+| Permanent episode GUID | `7CE583EA-...-7579AE5B` | **Same GUID** | **Same GUID** |
+| Identity result | `New` | `Matched` | `Matched` |
+
+### Nested record: Child and family assessment
+
+The assessment belongs to social care episode above.
+
+| Attribute | Capture 1 | Capture 2 | Capture 3 |
+|---|---|---|---|
+| Assessment source ID | `A100` | `A950` | `A950` |
+| Parent referral ID (DW) | `117945` | `972006` | `972006` |
+| Assessment start date | 15/01/2025 | 15/01/2025 | 15/01/2025 |
+| Authorisation date | 20/01/2025 | 20/01/2025 | 21/01/2025 (corrected) |
+| Permanent assessment GUID | `2B70C4B4-...-320A2C75` | **Same GUID** | **Same GUID** |
+| Permanent parent GUID | `7CE583EA-...-7579AE5B` | **Same GUID** | **Same GUID** |
+| Identity result | `New` | `Matched` | `Matched` |
+
+Notice that assessment has **separate permanent GUID** from its parent episode. Its `parent_stable_id` preserves relationship between them.
+
+---
+
+## 2. How pipeline handles each capture
+
+### Capture 1: Establishing baseline
+
+`02_capture_five_entities.sql` captures original source identifiers and their available identifying attribs
+
+`03_bootstrap_entity_registry.sql` generates new permanent GUID using `NEWID()` for each record
+
+It creates:
+
+- 1 permanent episode GUID for referral `117945`.
+- 1 permanent assessment GUID for assessment `A100`.
+- `parent_stable_id` on assessment pointing to permanent episode GUID.
+
+Both identities are registered in `ssd_api_entity_registry`.
+
+Their first observations receive:
+
+- `resolution_status = 'New'`
+- `match_rule = 'Baseline'`
+
+The initial staging JSON uses these permanent GUIDs, not temp source identifiers.
+
+### Capture 2: DW regenerates source identifiers
+
+A subsequent DW refresh changes:
+
+- Episode source ID from `117945` to `972006`.
+- Assessment source ID from `A100` to `A950`.
+- assessment's DW parent referral ID also changes to `972006`, preserving source relationship.
+
+The business attributes remain unchanged.
+
+`02_capture_five_entities.sql` creates new set of observations with these new source identifiers.
+
+`06_apply_identity_reconciliation.sql` now attempts to establish which historical identities belong to incoming records.
+
+#### What evidence is used to recognise episode?
+
+For social care episodes, our current reconciliation captures and can evaluate following identifying evidence:
+
+| Evidence | Purpose in matching |
+|---|---|
+| **Person ID** | Restricts candidate matches to same child |
+| **DW referral ID** | Useful when unchanged, but not relied upon alone because it may regenerate |
+| **Referral start date** | Primary date anchor for recognising an episode across different source IDs |
+| **Closure date** | Additional evidence that can distinguish episodes sharing same referral start date |
+| **Referral source code** | Additional distinguishing evidence |
+| **Closure reason** | Further distinguishing evidence when available |
+
+These fields are not all required to match simultaneously. reconciliation uses progressively more detailed matching rules.
+
+**First: `EpisodeSourceAndDate`**
+
+If person ID, source referral ID and referral start date match historical evidence, and there is unique one-to-one match, historical GUID can be reused.
+
+**Second: `EpisodeUniqueDate`**
+
+If source identifier has changed, engine looks for unique historical episode with same:
+
+- Person ID
+- Referral start date
+
+It requires candidate to be unambiguous in both directions: 1 incoming record must identify 1 historical GUID, and that GUID must not be claimed by another incoming record.
+
+**Third: `EpisodeExtended`**
+
+If referral start date alone is insufficient to distinguish between historical episodes, engine can apply more detailed comparisons using:
+
+- Closure date
+- Referral source code
+- Closure reason
+
+These additional fields help resolve situations where child has multiple episodes sharing same start date.
+
+**In this example:** Capture 2 has new DW referral ID, but same person and referral start date uniquely identify historical episode. engine can reuse its original GUID using `EpisodeUniqueDate`.
+
+The closure date and additional codes are available as evidence, but are not needed for this particular successful match.
+
+#### How is nested assessment recognised?
+
+Once parent episode has been resolved, engine can match its child records.
+
+For child and family assessments, available matching evidence includes:
+
+- Person ID
+- Assessment source ID
+- **Resolved permanent parent episode GUID**
+- Assessment start date
+- Assessment authorisation date
+
+The assessment source ID has changed from `A100` to `A950`.
+
+However, current assessment can be uniquely identified using same person, permanent parent episode GUID and assessment start date.
+
+The matching rule is `ChildUniqueParentDate`.
+
+The original assessment GUID is therefore reused, and its `parent_stable_id` continues to reference original episode GUID.
+
+**Result:** Both logical records retain their original permanent GUIDs, even though both DW source IDs have changed.
+
+No new registry identities are created.
+
+### Capture 3: Genuine data changes within episode and its nested assessment
+
+The next refresh introduces two business-data updates:
+
+1. social care episode now has closure date of 20/10/2026 and closure reason `AB22`
+2. child and family assessment has corrected authorisation date of 21/01/2025
+
+Neither source identifier changes during this particular refresh.
+
+`02` captures new attributes, and `06` performs another reconciliation.
+
+**At episode level:**
+
+The unchanged person ID, source referral ID and referral start date provide unique match to existing episode GUID
+
+The engine can use `EpisodeSourceAndDate`
+
+Although closure date and closure reason are now different from historical observation, episode's identity remains unchanged
+
+**At nested assessment level:**
+
+The unchanged person ID, assessment source ID, resolved parent episode GUID and assessment start date provide unique historical match
+
+The engine can use `ChildSourceParentDate`
+
+The corrected authorisation date is an update to assessment's business information, not proof that it is different assessment
+
+The original assessment GUID is therefore retained
+
+**Result:** Both records remain associated with their original GUIDs, while their latest business attributes are reflected in outgoing JSON
+
+---
+
+## 3. What persistent tables contain after three captures
+
+### `ssd_api_entity_registry`
+
+This table still holds **two logical identities**, not six
+
+| Entity | Person | Permanent identity |
+|---|---|---|
+| Social care episode | P12345 | `7CE583EA-...-7579AE5B` |
+| Child and family assessment | P12345 | `2B70C4B4-...-320A2C75` |
+
+The registry is not rebuilt or repopulated with replacement GUIDs
+
+### `ssd_api_entity_observation`
+
+This contains **six observations** across three capture runs, reflecting how two records appeared at different points in time.
+
+| Run | Record type | DW source ID | Permanent GUID | Resolution |
+|---|---|---|---|---|
+| R1 | Episode | 117945 | Episode GUID | New |
+| R1 | Assessment | A100 | Assessment GUID | New |
+| R2 | Episode | 972006 | Episode GUID | Matched |
+| R2 | Assessment | A950 | Assessment GUID | Matched |
+| R3 | Episode | 972006 | Episode GUID | Matched |
+| R3 | Assessment | A950 | Assessment GUID | Matched |
+
+The observation history also contains identifying attributes as they appeared during each capture. For example, episode closure date and assessment authorisation date differ between R2 and R3.
+
+This history provides evidence for matching during later refreshes.
+
+---
+
+## 4. What happens to outgoing staging JSON?
+
+| Capture | Episode GUID | Assessment GUID | Business data | Expected staging result |
+|---|---|---|---|---|
+| R1 | Original | Original | Initial episode and assessment | Insert initial payload |
+| R2 | Unchanged | Unchanged | No changes to outgoing attributes | No payload update needed |
+| R3 | Unchanged | Unchanged | Episode closed; assessment authorisation date corrected | Update existing payload |
+
+The staging SQL builds JSON using both permanent GUIDs, with assessment nested beneath episode.
+
+**Between R1 and R2:**
+
+The DW identifiers change, but those identifiers are not used as outgoing record identities. Assuming all other JSON content and array ordering remain unchanged, generated JSON and its SHA-256 hash remain same.
+
+**Between R2 and R3:**
+
+The episode's closure information and nested assessment's authorisation date have changed.
+
+These business-data changes are reflected in outgoing JSON and therefore change payload hash.
+
+The staging process updates person's JSON payload, but **both permanent GUIDs remain exactly same**.
+
+This means nested attribute change can trigger legitimate staging update without requiring new identity for either nested record or its parent.
+
+External submissions remain disabled throughout testing.
+
+---
+
+## 5. What if identifying evidence is insufficient?
+
+The pipeline must not assume that matching dates automatically means two records are same.
+
+For example, 1 child might have two separate social care episodes with:
+
+- Identical referral start dates
+- Identical closure dates
+- Identical referral source codes
+- Identical closure reasons
+
+If both DW source IDs subsequently regenerate, available evidence may not distinguish those two historical records.
+
+In that situation, correct behaviour is to mark proposed matches for review rather than arbitrarily assign their historical GUIDs.
+
+The same principle applies to nested assessments and plans, including cases where available start dates, parent GUIDs and other attributes are indistinguishable.
+
+The current reconciliation pilot requires complete, confident identity resolution before committing run.
+
+---
+
+## 6. What this example demonstrates
+
+**Source identity, permanent identity and business information are three separate concepts.**
+
+- **Source identity** describes how record is identified in current DW. It may change after rebuild.
+- **Permanent identity** describes which logical record data represents. It should remain stable across successive captures.
+- **Business information** describes record's current attributes. These can legitimately change without changing logical identity.
+
+For nested records, there is fourth important relationship:
+
+- **Permanent parent identity** identify social care episode to which nested record belongs, independently of changing DW referral identifier.
+
+The result is that **1 episode and 1 nested assessment can retain their two permanent GUIDs across multiple source-ID regenerations and genuine business-data updates**, while observation table retains evidence from every capture.
+
+
+
+
+
+
+
+
+## GUID Assignment Scope & Matching Evidence
+
+**1 permanent GUID per distinct logical record, not per person, source ID, data attribute or DW refresh**
+
+| Record type | GUID assignment | Example | Identity matching evidence (SSD fields) |
+|---|---|---|---|
+| Social care episode | 1 GUID per episode | Each referral/episode receives distinct GUID | Person ID (`cine_person_id`), referral ID (`cine_referral_id`), referral start date (`cine_referral_date`); closure date (`cine_close_date`), referral source (`cine_referral_source_code`) & closure reason (`cine_close_reason`) for additional differentiation |
+| Child & family assessment | 1 GUID per assessment | Multiple assessments within same episode receive separate GUIDs | Person ID (via parent referral), assessment ID (`cina_assessment_id`), permanent parent episode GUID (`parent_stable_id`), assessment start date (`cina_assessment_start_date`) & authorisation date (`cina_assessment_auth_date`) |
+| Child in need plan | 1 GUID per plan | Each distinct CIN plan receives separate GUID | Person ID (via parent referral), plan ID (`cinp_cin_plan_id`), permanent parent episode GUID (`parent_stable_id`), plan start date (`cinp_cin_plan_start_date`) & end date (`cinp_cin_plan_end_date`) |
+| Section 47 assessment | 1 GUID per assessment | Each distinct S47 enquiry receives separate GUID | Person ID (via parent referral), S47 ID (`s47e_s47_enquiry_id`), permanent parent episode GUID (`parent_stable_id`), S47 start date (`s47e_s47_start_date`) & end date (`s47e_s47_end_date`) |
+| Child protection plan | 1 GUID per plan | Each distinct CP plan receives separate GUID | Person ID (via parent referral), CP plan ID (`cppl_cp_plan_id`), permanent parent episode GUID (`parent_stable_id`), plan start date (`cppl_cp_plan_start_date`) & end date (`cppl_cp_plan_end_date`) |
+
+### How matching evidence is used
+
+- **Initial baseline:** `NEWID()` generates independent permanent GUID for each captured record; identifying attributes retained in observation history
+- **Subsequent captures:** Progressive matching rules compare source identifiers, person ID, dates & parent relationships against historical observations
+- **Source ID unchanged:** Person, source ID & start date checked; nested records additionally require matching permanent parent GUID
+- **Source ID regenerated:** Person & start date used for matching; nested records additionally use permanent parent GUID
+- **Extended matching:** End dates & available additional codes used to distinguish otherwise similar records
+- **Unique match:** Existing permanent GUID reused
+- **Genuinely new record:** New GUID allocated only when permitted & supported by sufficient evidence
+- **Ambiguous match:** Held for review; no arbitrary assignment
+
+### Parent-child relationship fields
+
+| Nested record type | Source parent referral field | Resolved permanent parent |
+|---|---|---|
+| Child & family assessment | `cina_referral_id` | `parent_stable_id` |
+| Child in need plan | `cinp_referral_id` | `parent_stable_id` |
+| Section 47 assessment | `s47e_referral_id` | `parent_stable_id` |
+| Child protection plan | `cppl_referral_id` | `parent_stable_id` |
+
+Each source parent referral field links to `ssd_cin_episodes.cine_referral_id`. Following reconciliation, `parent_stable_id` references permanent GUID of that episode, independently of its current DW referral ID.
+
+**Important:** GUIDs are randomly generated identifiers, **not hashes or calculations derived from these attributes**. Captured attributes provide matching evidence used to recognise & reuse existing GUIDs. Individual matching rules use subsets of available evidence, not necessarily every field simultaneously.
+
+**Implementation scope:** Five supported entity types; child looked after placements currently excluded. Automatic new-GUID allocation remains restricted within current reconciliation pilot.
+
+
+
+### Assignment principles
+
+- **Initial baseline:** `NEWID()` generates permanent GUID for each captured logical record
+- **Person scope:** 1 person potentially associated with many permanent GUIDs across different episodes, assessments & plans
+- **Parent-child relationships:** Each nested record receives own GUID; `parent_stable_id` references permanent GUID of associated social care episode
+- **DW refresh:** Existing logical records retain previously assigned GUIDs, even following source-ID regeneration
+- **Business attribute changes:** Updated dates, codes or other attributes do not automatically trigger new GUID assignment
+- **Genuinely new records:** Additional GUID allocated once record reliably classified as new; automatic allocation currently restricted within reconciliation pilot
+- **Ambiguous records:** Held for review; no arbitrary GUID assignment
+- **Historical observations:** Multiple snapshots of same logical record reference same permanent GUID
+- **Excluded scope:** Child looked after placements not currently included within five-type identity process
+- **Person identifiers:** Existing `person_id` retained; no replacement person GUID generated by this process
+
+### Eg: 1 child multiple records
+
+**Person P12345** (existing person identifier)
+
+- **Episode A** — `GUID-001`
+  - Child & family assessment 1 — `GUID-002`
+  - Child & family assessment 2 — `GUID-003`
+  - Child in need plan — `GUID-004`
+
+- **Episode B** — `GUID-005`
+  - Section 47 assessment — `GUID-006`
+  - Child protection plan — `GUID-007`
+
+Seven distinct logical records result in **seven permanent GUIDs**, all associated with 1 person.
+
+*GUID-001 to GUID-007 are illustrative labels not actual GUID values*
+
+### Important distinction
+
+`ssd_api_identity_run.run_id` is also GUID, but identifies **capture execution**, not social care record
+
+A new `run_id` is generated for each capture, while existing record-level `stable_id` values persist across captures
+
+**In summary:**
+- `run_id` = identify capture/processing run
+- `stable_id` = identify individual logical record permanently
+- `parent_stable_id` = identify associated parent social care episode
+- `source_record_id` = identify record within current DW snapshot; potentially regenerated during refresh
