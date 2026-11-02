@@ -1244,11 +1244,11 @@ This table is NON-live and solely for pre-live data/API testing
 - Data from this table sent only to CSC TEST receiver endpoint
 - Intended for schema, payload and API contract validation
 - Safe to truncate, reseed or delete at any time
-- NEVER LIVE DATA HERE
+- NEVER USE LIVE DATA HERE
 
 Lifecycle:
 - Expected to be deprecated / removed by the LA once LIVE submissions
-  to DfE Pre-Production / Production endpoints are enabled.
+  to DfE Pre-Production / Production endpoints are enabled
 
 */
 
@@ -1798,6 +1798,7 @@ SELECT
   -- TOP (5)
     person_id,
     legacy_id,
+    previous_json_payload,
     json_payload,
     row_state,
     submission_status
