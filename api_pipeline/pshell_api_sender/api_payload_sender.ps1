@@ -13,10 +13,12 @@
   Payload mode: 'full' or 'deltas'. 'deltas' prepares and uses partial_json_payload before sending
 
 .PARAMETER InternalTest
-  Dry run; skip real POST
+  Dry-run mode
+  Skips all external API POST operations whilst allowing local payload generation and validation logic to run
 
 .PARAMETER UseTestRecord
-  Sends single hard-coded fake record for connectivity tests and skips DB update
+  Uses single hard-coded test record instead of reading payloads from SQL Server
+  Enabled by default as safety measure and should be explicitly disabled before submitting live data
 
 .PARAMETER BatchSize
   Max records per POST (DfE default is 100)
@@ -48,7 +50,16 @@
   Requires: PowerShell 5.1+
   TLS: script forces TLS 1.2
   Retries: up to 3 with exponential backoff (not retried: 204, 400, 413)
-  Legacy mappings: $usePartialPayload, $internalTesting, $useTestRecord, $batchSize, $timeoutSec
+
+  Safety features:
+  - UseTestRecord defaults to $true
+  - Placeholder OAuth/API config values validated before auth is attempted
+  - FullLanguage mode required and validated at startup
+
+  Phase controls payload mode:
+    full   = json_payload
+    deltas = partial_json_payload
+
   Proxy defaults: if -Proxy not provided and $la_proxy is set, that proxy is used; if no proxy creds flags are passed, defaults to current Windows logon
 
   May require user to set pc/user Powershell policy before running allowed:
@@ -108,7 +119,7 @@ param(
   [switch]$InternalTest,                                   # simulate send
   [switch]$UseTestRecord,                                  # use hard-coded fake record
   [ValidateRange(1,100)] [int]$BatchSize = 100,            # DfE max batch size is 100
-  [ValidateRange(5,60)]  [int]$ApiTimeout = 30,            # in secs
+  [ValidateRange(5,60)]  [int]$ApiTimeout = 20,            # in secs
   [string]$Proxy,
   [switch]$ProxyUseDefaultCredentials,
   [PSCredential]$ProxyCredential,
@@ -117,8 +128,9 @@ param(
   [switch]$UseIntegratedSecurityDbConnection               # use Windows auth when present
 )
 
-$VERSION = '0.4.7'
+$VERSION = '0.5.1'
 Write-Host ("CSC API staging build: v{0}" -f $VERSION)
+
 
 
 # early fail on needed language mode 
@@ -153,10 +165,10 @@ Please provide this message to your IT/security team
 # LA's to replace the following details(in quotes) with your LA's credentials as supplied by DfE API portal
 # from https://pp-find-and-use-an-api.education.gov.uk/ (logged in)
 
-# Base URL (default:TEST)
+# Base URL :TEST
 $api_endpoint = "https://pp-api.education.gov.uk/children-in-social-care-data-receiver-test/1" 
 
-# Base URL PP/Live (switch over only when sending live records)
+# Base URL :LIVE (uncomment only when sending live records)
 # $api_endpoint = "https://pp-api.education.gov.uk/children-in-social-care-data-receiver/1"
 
 
@@ -176,14 +188,23 @@ $scope           = "OAUTH_SCOPE_LINK"                    # 'OAuth Scope'
 $la_code  = "000"     # Change to your 3 digit LA code(within quotes)
 
 # LA SQL Server target
-$server   = "ESLLREPORTS04V" # example
-$database = "HDM_Local" # SystemC default
+$server   = "ESLLREPORTS04V"  # LA example only
+$database = "HDM_Local"       # SystemC default
+
+# LA SQL auth defaults (optional)
+# Prefer DB_USER / DB_PASSWORD env vars
+# SQL auth credential order:
+#   1- Explicit CLI params
+#   2- Local vals $local_db_* below
+#   3- DB_USER / DB_PASSWORD environment vars
+$local_db_user     = $null
+$local_db_password = $null
 
 # Only some LAs will need to set this
 $la_proxy = $null     # LA default proxy ($null or '' disables, or use such as "http://proxy.myLA.local:8080")
 
-# payload table (_anon is non-live default)
-$api_data_staging_table = "ssd_api_data_staging_anon"  # live: ssd_api_data_staging | test: _anon
+# payload table (_test is non-live default)
+$api_data_staging_table = "ssd_api_data_staging_test"  # live: ssd_api_data_staging | test: _test (legacy naming was _anon)
 
 
 # Optional local paths
@@ -199,16 +220,8 @@ $logFile            = "C:\Users\d2i\Documents\api_temp_log.json"
 
 
 
-
-
-
-
-
-
-
-
-# ---- DEV OVERIDES (applied only when caller CLI/params not passed) ----------------
-# defaults to make manual runs easier, these do not override CLI values 
+# ---- DEV OVERRIDES (applied only when caller CLI/params not passed) ----------------
+# Dev defaults to make manual runs easier. These vals never override explicitly passed CLI params
 if (-not $PSBoundParameters.ContainsKey('Phase'))                             { $Phase  = 'full' } # 'full' or 'deltas'
 if (-not $PSBoundParameters.ContainsKey('InternalTest'))                      { $InternalTest = $false } # true=no external calls
 if (-not $PSBoundParameters.ContainsKey('UseTestRecord'))                     { $UseTestRecord = $true } # false switches to payload data being pulled from db
@@ -217,6 +230,38 @@ if (-not $PSBoundParameters.ContainsKey('ProxyUseDefaultCredentials'))        { 
 if (-not $PSBoundParameters.ContainsKey('ApiTimeout'))                        { $ApiTimeout = 20 } # seconds (HTTP tuning)
 if (-not $PSBoundParameters.ContainsKey('BatchSize'))                         { $BatchSize  = 100 }
 if (-not $PSBoundParameters.ContainsKey('UseIntegratedSecurityDbConnection')) { $UseIntegratedSecurityDbConnection = $true }
+
+if (
+    -not $PSBoundParameters.ContainsKey('DbUser') -and
+    [string]::IsNullOrWhiteSpace($DbUser) -and
+    $local_db_user
+) {
+    $DbUser = $local_db_user
+}
+
+if (
+    -not $PSBoundParameters.ContainsKey('DbPassword') -and
+    [string]::IsNullOrWhiteSpace($DbPassword) -and
+    $local_db_password
+) {
+    $DbPassword = $local_db_password
+}
+
+# ------------------------------------------------------------------------------
+# End DEV OVERRIDES
+# ------------------------------------------------------------------------------
+
+$isDeltaMode = ($Phase -eq 'deltas')
+
+
+# LA can remove this as required
+Write-Host ("Phase mode : {0}" -f $Phase)
+Write-Host ("Delta mode : {0}" -f $isDeltaMode)
+Write-Host ("Test record: {0}" -f $UseTestRecord)
+Write-Host ("Internal test: {0}" -f $InternalTest)
+# 
+
+
 
 ## Quick matrix for HTTP proxy flag above use as options varied:
 ## Proxy=$null, ProxyUseDefaultCredentials=$true --> System proxy + default creds (or direct if none)
@@ -247,12 +292,12 @@ $PSDefaultParameterValues['Invoke-RestMethod:Method'] = 'Post'
 
 
 # ---- Decide final Proxy first (include $la_proxy fallback) ----
-# If caller did not pass -Proxy, but LA has a default proxy, use it.
+# If caller did not pass -Proxy, but LA has default proxy use that
 if (-not $PSBoundParameters.ContainsKey('Proxy') -or [string]::IsNullOrWhiteSpace($Proxy)) {
   if ($la_proxy) { $Proxy = $la_proxy }
 }
 
-# If using a proxy and no creds choice was made, use current Windows user for NTLM
+# If using a proxy and no auth option specified, default to current Windows credentials (NTLM/Kerberos)
 if ($Proxy -and -not $PSBoundParameters.ContainsKey('ProxyUseDefaultCredentials') -and -not $PSBoundParameters.ContainsKey('ProxyCredential')) {
   $ProxyUseDefaultCredentials = $true
 }
@@ -298,12 +343,6 @@ try {
   }
 } catch { }
 
-# ---- Dev convenience mapping to legacy var names ----
-$usePartialPayload = ($Phase -eq 'deltas')   # full=false, deltas=true
-$internalTesting   = [bool]$InternalTest
-$useTestRecord     = [bool]$UseTestRecord
-$batchSize         = $BatchSize
-$timeoutSec        = $ApiTimeout
 
 
 
@@ -311,53 +350,14 @@ $timeoutSec        = $ApiTimeout
 
 
 
-# ----------- Config OVERIDE ---------------
-# D2I Overide block
-# ----------- Config OVERIDE END -----------
+# ----------- Config OVERRIDE ---------------
+# D2I OVERRIDE block
+# ----------- Config OVERRIDE END -----------
 
 
 
 
 
-
-
-
-
-
-# ---- Proxy auto-defaults + align .NET default proxy ---- 
-# uses # $la_proxy optional set in config above
-
-# Default proxy IF caller did not pass -Proxy (keeps friendly $la_proxy up top)
-if (-not $PSBoundParameters.ContainsKey('Proxy') -or [string]::IsNullOrWhiteSpace($Proxy)) {
-  if ($la_proxy) { $Proxy = $la_proxy } # Pass -Proxy at run time to override anything set in $la_proxy
-}
-
-# If LA using proxy and no creds choice was made, use current Windows user for NTLM
-if ($Proxy -and -not $PSBoundParameters.ContainsKey('ProxyUseDefaultCredentials') -and -not $PSBoundParameters.ContainsKey('ProxyCredential')) {
-  $ProxyUseDefaultCredentials = $true
-}
-
-# Align .NET's DefaultWebProxy so HTTP calls not passing -Proxy still use same settings
-try {
-  if ($Proxy) {
-    # Use explicit proxy (or default above) for all .NET web requests also
-    $wp = New-Object System.Net.WebProxy($Proxy, $true)  # $true = bypass local
-    if ($ProxyUseDefaultCredentials) {
-      $wp.Credentials = [System.Net.CredentialCache]::DefaultCredentials
-    } elseif ($ProxyCredential) {
-      # IMPORTANT: convert PSCredential to NetworkCredential for WebProxy
-      $wp.Credentials = $ProxyCredential.GetNetworkCredential()
-    }
-    [System.Net.WebRequest]::DefaultWebProxy = $wp
-  } else {
-    # No explicit proxy - keep machine-wide defaults but ensure NTLM with current user if creds empty
-    $def = [System.Net.WebRequest]::DefaultWebProxy
-    if ($def -and -not $def.Credentials) {
-      $def.Credentials = [System.Net.CredentialCache]::DefaultCredentials
-    }
-  }
-} catch { }
-# -----------------------------------------------------------------------------------------------
 
 
 # log helpers
@@ -402,7 +402,7 @@ function Test-Cfg {
   if(-not $La){ $missing += 'la_code' }
   if([string]::IsNullOrWhiteSpace($Table)){ $missing += 'api_data_staging_table' }
   if([string]::IsNullOrWhiteSpace($Server)){ $missing += 'server' }
-  if([string]::IsNullOrWhiteSpace($Db)){ $missing += 'database' }
+  # if([string]::IsNullOrWhiteSpace($Db)){ $missing += 'database' } # disabled to allow null db value to be passed if using <default>
   if($missing.Count){ W-Err ("cfg missing: {0}" -f ($missing -join ', ')); return $false }
   $true
 }
@@ -425,7 +425,7 @@ function Get-OAuthToken {
   }
   $proxy = Get-ProxySplat
   try {
-    $resp = Invoke-RestMethod -Uri $token_endpoint -Method Post -Body $body -ContentType "application/x-www-form-urlencoded" -TimeoutSec $timeoutSec -ErrorAction Stop @proxy
+    $resp = Invoke-RestMethod -Uri $token_endpoint -Method Post -Body $body -ContentType "application/x-www-form-urlencoded" -TimeoutSec $ApiTimeout -ErrorAction Stop @proxy
     return $resp.access_token
   } catch {
     W-Err ("oauth fail: {0}" -f $_.Exception.Message)
@@ -597,7 +597,7 @@ function Send-ApiBatch {
   )
 
   # If internal test mode, dont call API (this internal simulated test)
-  if ($InternalTest -or $internalTesting) {
+  if ($InternalTest) {
     W-Info "Test mode: simulate send, do not call API"
     return
   }
@@ -687,7 +687,7 @@ function Send-ApiBatch {
         Write-Host "Response count ($($responseItems.Count)) does not match batch count ($($batch.Count)). Skipping updates." -ForegroundColor Yellow
       } else {
         # Only write to DB when not using hard-coded test record
-        if (-not $useTestRecord) {
+        if (-not $UseTestRecord) {
           $dbSw = [System.Diagnostics.Stopwatch]::StartNew()
           Update-ApiResponseForBatch -batch $batch -responseItems $responseItems -connectionString $connectionString -tableName $tableName
           $dbSw.Stop()
@@ -715,7 +715,7 @@ function Get-PendingRecordsFromDb {
   param (
     [string]$connectionString,
     [string]$tableName,
-    [bool]$usePartialPayload = $false
+    [bool]$DeltaMode = $false
   )
 
   # Basic guard
@@ -725,7 +725,7 @@ function Get-PendingRecordsFromDb {
   }
 
   # Choose the field based on mode
-  if ($usePartialPayload) {
+  if ($DeltaMode) {
     $query = @"
 SELECT person_id, partial_json_payload
 FROM $tableName
@@ -768,7 +768,7 @@ WHERE (submission_status IN ('pending','error'))
           }
 
           # Choose the JSON field and coerce to string safely
-          $rawJsonVal = if ($usePartialPayload) { $reader["partial_json_payload"] } else { $reader["json_payload"] }
+          $rawJsonVal = if ($DeltaMode) { $reader["partial_json_payload"] } else { $reader["json_payload"] }
           if ($null -eq $rawJsonVal -or $rawJsonVal -is [System.DBNull]) {
             $rawJsonStr = $null
           } else {
@@ -1065,29 +1065,48 @@ if(-not (Test-Cfg -Api $api_endpoint -Token $token_endpoint -Id $client_id -Sec 
   exit 1
 }
 
+# PRE-checks on connection string build
+if ([string]::IsNullOrWhiteSpace($database)) {
+    W-Warn "No database specified. SQL Server default db will be used"
+}
+
+
 # Build connection string (integrated vs SQL auth)
+#
+
 if ($UseIntegratedSecurityDbConnection) {
+
+  # use integrated Windows auth; ignore passed|defined db usr auth details
   $csb = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
   $csb["Data Source"]            = $server
-  $csb["Initial Catalog"]        = $database
-  $csb["Integrated Security"]    = $true
+  if (-not [string]::IsNullOrWhiteSpace($database)) {
+      # if the db user defined str is NOT null/"" 
+      $csb["Initial Catalog"] = $database
+  }
+  $csb["Integrated Security"]    = $true # using Win creds
+
   # optional hardening:
   $csb["Encrypt"]                = $true
   $csb["TrustServerCertificate"] = $true # still get encryption, but bypassing CA validation (if SQL Server TLS cert is self-signed)
   $connectionString = $csb.ToString()
+
+
 } else {
+  
   # protect against missing DB creds (env vars not set)
   if ([string]::IsNullOrWhiteSpace($DbUser) -or [string]::IsNullOrWhiteSpace($DbPassword)) {
-    W-Err "DB credentials missing. Supply -DbUser and -DbPassword or set DB_USER/DB_PASSWORD environment variables."
+    W-Err "DB credentials missing, supply -DbUser and -DbPassword or set DB_USER/DB_PASSWORD environment variables"
     exit 1
   }
 
-  # Build conn string with explicit TLS opt
+  # use SQL defined/passed usr/pass not Win auth (Build conn string with explicit TLS opt)
   $csb = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
   $csb["Data Source"]     = $server
-  $csb["Initial Catalog"] = $database
-
-  $csb["Integrated Security"] = $false
+  if (-not [string]::IsNullOrWhiteSpace($database)) {
+      # if the db user defined str is NOT null/"" 
+      $csb["Initial Catalog"] = $database
+  }
+  $csb["Integrated Security"] = $false # not using Win creds
   $csb["User ID"]             = $DbUser
   $csb["Password"]            = $DbPassword
 
@@ -1102,6 +1121,31 @@ if ($UseIntegratedSecurityDbConnection) {
 }
 
 
+
+# Validate config vals have been LA populated
+$placeholderValues = @(
+    'SUBSCRIPTION_PRIMARY_KEY_CODE',
+    'OAUTH_TOKEN_ENDPOINT',
+    'OAUTH_CLIENT_ID_CODE',
+    'NATIVE_OAUTH_PRIMARY_KEY_CODE',
+    'OAUTH_SCOPE_LINK'
+)
+
+$cfgValues = @(
+    $supplier_key,
+    $token_endpoint,
+    $client_id,
+    $client_secret,
+    $scope
+)
+
+if ($cfgValues | Where-Object { $_ -in $placeholderValues }) {
+    W-Err "Config contains placeholder values. Complete the LA DfE config section"
+    exit 1
+}
+# end pre-OAuth check
+
+
 # fresh token + hdr
 $bearer_token = Get-OAuthToken
 # did we get a token ok
@@ -1111,19 +1155,19 @@ $headers = New-ApiHeaders -Token $bearer_token -SupplierKey $supplier_key
 # data pull
 $FailedResponses = New-Object System.Collections.ArrayList
 ### debug: testing partial|deltas data payload json
-if ($useTestRecord) {
+if ($UseTestRecord) {
   $JsonArray = Get-HardcodedTestRecord
   W-Info "API connection using hardcoded test data..."
 } else {
-  if ($usePartialPayload) {
+  if ($isDeltaMode) {
     # prepare deltas
     $partialStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     Prepare-PartialPayloads -connectionString $connectionString -tableName $api_data_staging_table
     $partialStopwatch.Stop()
   }
   # reload fresh set of valid records
-  $JsonArray = Get-PendingRecordsFromDb -connectionString $connectionString -tableName $api_data_staging_table -usePartialPayload:$usePartialPayload
-  if ($usePartialPayload) { W-Ok "Deltas payload mode active (using field partial_json_payload)" } else { W-Ok "Full payload mode active (using field json_payload)" }
+  $JsonArray = Get-PendingRecordsFromDb -connectionString $connectionString -tableName $api_data_staging_table -DeltaMode:$isDeltaMode
+  if ($isDeltaMode) { W-Ok "Deltas payload mode active (using field partial_json_payload)" } else { W-Ok "Full payload mode active (using field json_payload)" }
 }
 
 W-Info ("records in API payload: {0}" -f $JsonArray.Count)
@@ -1131,10 +1175,9 @@ W-Info ("records in API payload: {0}" -f $JsonArray.Count)
 
 if (-not $JsonArray -or $JsonArray.Count -eq 0) { W-Ok "no valid records to send. skipping API submission."; $swScript.Stop(); exit 0 }
 
-# batching / after fethching records
+# batching / after fetching records
 $totalRecords = $JsonArray.Count
-$batchSize = $BatchSize
-$totalBatches = [math]::Ceiling($totalRecords / $batchSize)
+$totalBatches = [math]::Ceiling($totalRecords / $BatchSize)
 $cumulativeDbWriteTime = 0.0 # reset db write stopwatch
 
 # ---- sender-side pacing (proactive rate limiting) ----
@@ -1158,8 +1201,8 @@ function Wait-MinGap {
 # Continue send logic
 for ($batchIndex = 0; $batchIndex -lt $totalBatches; $batchIndex++) {
   # Loop through each batch
-  $startIndex = $batchIndex * $batchSize
-  $endIndex = [math]::Min($startIndex + $batchSize - 1, $totalRecords - 1)
+  $startIndex = $batchIndex * $BatchSize
+  $endIndex = [math]::Min($startIndex + $BatchSize - 1, $totalRecords - 1)
 
   # Init batch slice container
   $batchSlice = @()
@@ -1222,7 +1265,7 @@ for ($batchIndex = 0; $batchIndex -lt $totalBatches; $batchIndex++) {
 $swScript.Stop()
 Write-Host ""
 Write-Host "Performance summary" -ForegroundColor Blue
-if ($usePartialPayload) { Write-Host ("Partial JSON generation time: {0:N2} seconds" -f $partialStopwatch.Elapsed.TotalSeconds) }
+if ($isDeltaMode) { Write-Host ("Partial JSON generation time: {0:N2} seconds" -f $partialStopwatch.Elapsed.TotalSeconds) }
 Write-Host ("DB write time                : {0:N2} seconds" -f $cumulativeDbWriteTime)
 Write-Host ("Total script runtime         : {0:N2} seconds" -f $swScript.Elapsed.TotalSeconds)
 
