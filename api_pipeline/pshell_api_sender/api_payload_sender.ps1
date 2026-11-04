@@ -402,7 +402,7 @@ function Test-Cfg {
   if(-not $La){ $missing += 'la_code' }
   if([string]::IsNullOrWhiteSpace($Table)){ $missing += 'api_data_staging_table' }
   if([string]::IsNullOrWhiteSpace($Server)){ $missing += 'server' }
-  # if([string]::IsNullOrWhiteSpace($Db)){ $missing += 'database' } # disabled to allow null db value to be passed if using <default>
+  # if([string]::IsNullOrWhiteSpace($Db)){ $missing += 'database' } # Db intentionally optional. If omitted/null, SQL Server uses logins configured default db
   if($missing.Count){ W-Err ("cfg missing: {0}" -f ($missing -join ', ')); return $false }
   $true
 }
@@ -1090,7 +1090,6 @@ if ($UseIntegratedSecurityDbConnection) {
   $csb["TrustServerCertificate"] = $true # still get encryption, but bypassing CA validation (if SQL Server TLS cert is self-signed)
   $connectionString = $csb.ToString()
 
-
 } else {
   
   # protect against missing DB creds (env vars not set)
@@ -1117,9 +1116,12 @@ if ($UseIntegratedSecurityDbConnection) {
   # $csb["Encrypt"] = $false                                             # not recommended
 
   $connectionString = $csb.ToString()
-
+  
 }
 
+# Diags
+W-Info ("Database setting: '{0}'" -f $database)
+W-Info ("Initial Catalog present: {0}" -f (-not [string]::IsNullOrWhiteSpace($database)))
 
 
 # Validate config vals have been LA populated
