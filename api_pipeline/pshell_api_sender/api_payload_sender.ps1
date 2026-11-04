@@ -1329,25 +1329,25 @@ Write-Host "#####################################################" -ForegroundCo
   # Submit full ALPHA|DELTA payloads (Pilot Phase)
   # Uses json_payload column
 
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 -Phase full
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 -Phase full -UseTestRecord:$false
 
 .EXAMPLE
-  # Submit delta payloads only (Not currently possible with this script in Pilot Phase)
+  # Submit delta payloads using partial_json_payload
   # Ask D2I about 'true deltas' options; in theory generates partial_json_payload
 
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 -Phase deltas
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 -Phase deltas -UseTestRecord:$false
 
 .EXAMPLE
   # Dry-run mode
   # Processes records but does NOT submit anything to DfE/API
 
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 -InternalTest
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 -InternalTest -UseTestRecord:$false
 
 .EXAMPLE
   # Spec smaller batch size
   # For troubleshooting or testing performance in larger LAs
 
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 -BatchSize 25
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 -BatchSize 25 -UseTestRecord:$false
 
 .EXAMPLE
   # Use explicit proxy with current Windows credentials
@@ -1364,14 +1364,20 @@ Write-Host "#####################################################" -ForegroundCo
   # Running from existing PShell session using SQL Auth
   # Useful where Windows Auth unavailable or failing
 
-  & ".\api_payload_sender.ps1" -UseIntegratedSecurityDbConnection:$false -DbUser "DW_USERNAME" -DbPassword "MyPassword"
+  & ".\api_payload_sender.ps1" -UseIntegratedSecurityDbConnection:$false -UseTestRecord:$false -DbUser "DW_USERNAME" -DbPassword "MyPassword"
 
 .EXAMPLE
   # Running using full path
   # Useful when not located in script dir
 
-  & "C:\Path\api_payload_sender.ps1" -UseIntegratedSecurityDbConnection:$false -DbUser "DW_USERNAME" -DbPassword "MyPassword"
+  & "C:\Path\api_payload_sender.ps1" -UseIntegratedSecurityDbConnection:$false -UseTestRecord:$false -DbUser "DW_USERNAME" -DbPassword "MyPassword"
 
+.EXAMPLE
+  # Use SQL Server login's default database
+  # Leave $database blank or $null in the script config
+
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\api_payload_sender.ps1 -UseIntegratedSecurityDbConnection:$false -UseTestRecord:$false -DbUser mySqlLogin -DbPassword myPassword
+  
 .EXAMPLE
   # Show all available script params
 
