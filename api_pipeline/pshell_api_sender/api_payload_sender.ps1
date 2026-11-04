@@ -1120,8 +1120,18 @@ if ($UseIntegratedSecurityDbConnection) {
 }
 
 # Diags
+W-Info ("Server: '{0}'" -f $server)
 W-Info ("Database setting: '{0}'" -f $database)
 W-Info ("Initial Catalog present: {0}" -f (-not [string]::IsNullOrWhiteSpace($database)))
+
+if ($UseIntegratedSecurityDbConnection) {
+    W-Info "Authentication mode: Windows Authentication"
+}
+else {
+    W-Info ("Authentication mode: SQL Authentication")
+    W-Info ("DB User: {0}" -f $DbUser)
+}
+# end conn diags
 
 
 # Validate config vals have been LA populated
