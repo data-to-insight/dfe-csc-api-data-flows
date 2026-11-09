@@ -24,6 +24,7 @@ DECLARE @force_resend BIT = 0;
 /*
 =============================================================================
 Table rebuild control. Use only when staging table structure changes.
+-- LA note: This MUST be reset back to default 0 after first run! --
 
 1 = DROP and recreate live|test staging table
 0 = Leave existing live|test table intact
