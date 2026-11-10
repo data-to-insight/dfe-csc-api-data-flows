@@ -530,8 +530,12 @@ RawPayloads AS (
                 */
                 JSON_QUERY((
                     SELECT
-                        -- str(id) for JSON
+                        -- NOTE: JSON expects type str(id) throughout
+
+                        -- MOSAIC LEGACY PERSISTENT-ID TOGGLE ON/OFF and comment out *_external_id 
+                        -- CAST(cine.cine_referral_id AS varchar(36)) AS [social_care_episode_id],                             -- 16 [CiN] [Mandatory]
                         CAST(cine.cine_external_id AS varchar(36)) AS [social_care_episode_id],                             -- 16 [CiN] [Mandatory]
+
                         CONVERT(varchar(10), cine.cine_referral_date, 23) AS [referral_date],                               -- 17 [CiN]
                         CASE
                           /* SSD data coerce into API JSON spec */
@@ -569,7 +573,10 @@ RawPayloads AS (
                         */
                         JSON_QUERY((
                             SELECT
-                                CAST(ca.cina_external_id AS varchar(36)) AS [child_and_family_assessment_id],             -- 22 [CiN] [Mandatory]
+                                -- MOSAIC LEGACY PERSISTENT-ID TOGGLE ON/OFF and comment out *_external_id 
+                                -- CAST(ca.cina_assessment_id AS varchar(36)) AS [child_and_family_assessment_id],             -- 22 [CiN] [Mandatory]
+                                CAST(ca.cina_external_id AS varchar(36)) AS [child_and_family_assessment_id],               -- 22 [CiN] [Mandatory]
+
                                 CONVERT(varchar(10), ca.cina_assessment_start_date, 23) AS [start_date],                    -- 23 [CiN]
                                 CONVERT(varchar(10), ca.cina_assessment_auth_date, 23)  AS [authorisation_date],            -- 24 [CiN]
                                 JSON_QUERY(
@@ -606,7 +613,10 @@ RawPayloads AS (
                         */
                         JSON_QUERY((
                             SELECT
+                                -- MOSAIC LEGACY PERSISTENT-ID TOGGLE ON/OFF and comment out *_external_id 
+                                -- CAST(cinp.cinp_cin_plan_id AS varchar(36)) AS [child_in_need_plan_id],                     -- 26 [CiN] [Mandatory]
                                 CAST(cinp.cinp_external_id AS varchar(36)) AS [child_in_need_plan_id],                     -- 26 [CiN] [Mandatory]
+
                                 CONVERT(varchar(10), cinp.cinp_cin_plan_start_date, 23) AS [start_date],                   -- 27 [CiN]
                                 CONVERT(varchar(10), cinp.cinp_cin_plan_end_date, 23)   AS [end_date],                     -- 28 [CiN]
                                 CAST(0 AS bit) AS [purge]
@@ -638,7 +648,11 @@ RawPayloads AS (
                           -- known bug impacting the extraction of these data points from MOSAIC
                           -- See https://github.com/data-to-insight/ssd-data-model/issues/265 for updates
                             SELECT
+                               -- MOSAIC LEGACY PERSISTENT-ID TOGGLE ON/OFF and comment out *_external_id 
+                               -- CAST(s47e.s47e_s47_enquiry_id AS varchar(36)) AS [section_47_assessment_id],            -- 29 [CiN] [Mandatory]
                                 CAST(s47e.s47e_external_id AS varchar(36)) AS [section_47_assessment_id],            -- 29 [CiN] [Mandatory]
+
+
                                 CONVERT(varchar(10), s47e.s47e_s47_start_date, 23) AS [start_date],                     -- 30 [CiN]
 
                                 -- CP conference flag derived, not gate for inclusion
@@ -693,7 +707,10 @@ RawPayloads AS (
                         */
                         JSON_QUERY((
                             SELECT
+                                -- MOSAIC LEGACY PERSISTENT-ID TOGGLE ON/OFF and comment out *_external_id 
+                                -- CAST(cppl.cppl_cp_plan_id AS varchar(36)) AS [child_protection_plan_id],                 -- 34 [CiN] [Mandatory]
                                 CAST(cppl.cppl_external_id AS varchar(36)) AS [child_protection_plan_id],                 -- 34 [CiN] [Mandatory]
+
                                 CONVERT(varchar(10), cppl.cppl_cp_plan_start_date, 23) AS [start_date],                  -- 35 [CiN]
                                 CONVERT(varchar(10), cppl.cppl_cp_plan_end_date, 23)   AS [end_date],                    -- 36 [CiN]
                                 CAST(0 AS bit) AS [purge]
@@ -721,7 +738,11 @@ RawPayloads AS (
                         */
                         JSON_QUERY((
                             SELECT
+                                -- MOSAIC LEGACY PERSISTENT-ID TOGGLE ON/OFF and comment out *_external_id 
+                                -- CAST(clap.clap_cla_placement_id AS varchar(36)) AS [child_looked_after_placement_id],             -- 37 [903] [Mandatory]
                                 CAST(clap.clap_external_id AS varchar(36)) AS [child_looked_after_placement_id],             -- 37 [903] [Mandatory]
+
+
                                 CONVERT(varchar(10), clap.clap_cla_placement_start_date, 23) AS [start_date],                     -- 38 [903]
                               
                                 placement_start_ep.clae_cla_episode_start_reason AS [start_reason],                               -- 39 [903] 
