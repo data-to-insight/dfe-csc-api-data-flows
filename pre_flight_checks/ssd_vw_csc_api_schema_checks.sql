@@ -322,7 +322,7 @@ FROM (
     FROM CareLeavers
 
     UNION ALL
-    SELECT 'care_leaver_accommodation code', 'care_leaver', 'IN (B,C,D,E,G,H,K,R,S,T,U,V)',
+    SELECT 'care_leaver_accommodation code', 'care_leaver', 'IN (B,C,D,E,G,H,K,R,S,T,U,V,Z)',
            SUM(
                CASE
                    WHEN accommodation_code IS NOT NULL
@@ -337,7 +337,7 @@ FROM (
                CASE
                    WHEN accommodation_code IS NOT NULL
                         AND accommodation_code NOT IN (
-                            'B','C','D','E','G','H','K','R','S','T','U','V'
+                            'B','C','D','E','G','H','K','R','S','T','U','V', 'Z'
                         )
                    THEN accommodation_code
                    ELSE ''
