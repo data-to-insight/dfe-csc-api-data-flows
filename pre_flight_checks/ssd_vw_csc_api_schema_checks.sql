@@ -238,9 +238,9 @@ FROM (
     FROM EpisodeReasons
 
     UNION ALL
-    SELECT 'placement_type length', 'placement', '<= 2',
-           SUM(CASE WHEN placement_type IS NOT NULL AND LEN(placement_type) > 2 THEN 1 ELSE 0 END),
-           MAX(CASE WHEN placement_type IS NOT NULL AND LEN(placement_type) > 2 THEN placement_type ELSE '' END),
+    SELECT 'placement_type length', 'placement', '<= 3',
+           SUM(CASE WHEN placement_type IS NOT NULL AND LEN(placement_type) > 3 THEN 1 ELSE 0 END),
+           MAX(CASE WHEN placement_type IS NOT NULL AND LEN(placement_type) > 3 THEN placement_type ELSE '' END),
            '' AS example_key
     FROM Placements
 
