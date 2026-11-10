@@ -238,9 +238,9 @@ FROM (
     FROM EpisodeReasons
 
     UNION ALL
-    SELECT 'placement_type length', 'placement', '<= 2',
-           SUM(CASE WHEN placement_type IS NOT NULL AND LEN(placement_type) > 2 THEN 1 ELSE 0 END),
-           MAX(CASE WHEN placement_type IS NOT NULL AND LEN(placement_type) > 2 THEN placement_type ELSE '' END),
+    SELECT 'placement_type length', 'placement', '<= 3',
+           SUM(CASE WHEN placement_type IS NOT NULL AND LEN(placement_type) > 3 THEN 1 ELSE 0 END),
+           MAX(CASE WHEN placement_type IS NOT NULL AND LEN(placement_type) > 3 THEN placement_type ELSE '' END),
            '' AS example_key
     FROM Placements
 
@@ -322,7 +322,7 @@ FROM (
     FROM CareLeavers
 
     UNION ALL
-    SELECT 'care_leaver_accommodation code', 'care_leaver', 'IN (B,C,D,E,G,H,K,R,S,T,U,V)',
+    SELECT 'care_leaver_accommodation code', 'care_leaver', 'IN (B,C,D,E,G,H,K,R,S,T,U,V,Z)',
            SUM(
                CASE
                    WHEN accommodation_code IS NOT NULL
@@ -337,7 +337,7 @@ FROM (
                CASE
                    WHEN accommodation_code IS NOT NULL
                         AND accommodation_code NOT IN (
-                            'B','C','D','E','G','H','K','R','S','T','U','V'
+                            'B','C','D','E','G','H','K','R','S','T','U','V', 'Z'
                         )
                    THEN accommodation_code
                    ELSE ''
