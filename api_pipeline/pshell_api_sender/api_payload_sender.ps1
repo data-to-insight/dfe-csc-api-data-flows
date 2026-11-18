@@ -484,7 +484,8 @@ function Update-ApiResponseForBatch {
       $uuid = $matches[3]
       $timestamp = "$datePart $timePart"
       try { $parsedTimestamp = [DateTime]::ParseExact($timestamp, "yyyy-MM-dd HH:mm:ss.ff", $null) } catch { $parsedTimestamp = [DateTime]::Now }
-      $rows += "SELECT '$($personId.Replace("'", "''"))' AS person_id, '$($uuid.Replace("'", "''"))' AS uuid, '$($parsedTimestamp.ToString("yyyy-MM-dd HH:mm:ss.fff"))' AS timestamp"
+      # create staging update sql, including explicit dt timestamp 121 format conversion
+      $rows += "SELECT '$($personId.Replace("'", "''"))' AS person_id, '$($uuid.Replace("'", "''"))' AS uuid, CONVERT(datetime,'$($parsedTimestamp.ToString("yyyy-MM-dd HH:mm:ss.fff"))',121) AS timestamp"
     } else {
       W-Warn ("resp format unexpected at idx {0}: {1}" -f $i, $responseLine)
     }
