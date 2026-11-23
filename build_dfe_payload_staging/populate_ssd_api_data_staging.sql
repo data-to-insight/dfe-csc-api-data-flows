@@ -3,7 +3,7 @@ use HDM_Local;  -- LA should change to bespoke or remove
                 -- HDM_Local is SystemC/LLogic default
 
 
-DECLARE @VERSION nvarchar(32) = N'0.5.2'; -- dev check .toml 
+DECLARE @VERSION nvarchar(32) = N'0.5.3'; -- dev check .toml 
 RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 
 
@@ -218,7 +218,7 @@ EligibleBySpec AS (
     /* pre-alpha cohort filter (remove this block as required)
       LA use during live PRE-alpha cohort testing, add known child IDs here (< 20 records) */
 
-    --AND p.pers_person_id IN ('1', '2', '3') 
+    --AND p.pers_person_id IN ('1', '2', '3')  -- note: IDs are String value in SSD source and in DfE json payload
 
     /* end pre-alpha cohort  */
 ),
@@ -369,12 +369,14 @@ SpecInclusion AS (
         SELECT person_id FROM WaitingAssessment
         UNION ALL
         SELECT person_id FROM HasCINPlan
-        -- UNION ALL SELECT person_id FROM HasCPPlan
+        -- UNION ALL 
+        -- SELECT person_id FROM HasCPPlan
         UNION ALL
         SELECT person_id FROM HasLAC
         UNION ALL
         SELECT person_id FROM IsCareLeaver16to25
-        -- UNION ALL SELECT person_id FROM IsDisabled
+        -- UNION ALL 
+        -- SELECT person_id FROM IsDisabled
     ) AS all_included
 ),
 
@@ -746,13 +748,10 @@ RawPayloads AS (
                                 CONVERT(varchar(10), clap.clap_cla_placement_start_date, 23) AS [start_date],                     -- 38 [903]
                               
                                 placement_start_ep.clae_cla_episode_start_reason AS [start_reason],                               -- 39 [903] 
-                                                                                                                                  -- 40 [903]
-                                CASE
-                                    -- protect CONfidential placement postcodes 
-                                    WHEN UPPER(LTRIM(RTRIM(ISNULL(clap.clap_cla_placement_postcode, '')))) = 'CON'
-                                        THEN 'CON'
-                                    ELSE clap.clap_cla_placement_postcode
-                                END AS [postcode],   
+                                                                                                                                  
+                                -- CONfidential placement postcodes must already be masked within SSD
+                                -- Assumes SSD extract OR LA's protection has masked restricted postcode 
+                                UPPER(LTRIM(RTRIM(ISNULL(clap.clap_cla_placement_postcode, '')))) AS [postcode],                  -- 40 [903]
 
                                 /* SSD data coerce into API JSON spec */
                                 -- Expect: U1, U2, Z1, H5, etc but some LAs use such H5a
@@ -1066,6 +1065,30 @@ RawPayloads AS (
         
     ) AS uasc
 
+    WHERE NOT EXISTS (
+        /* Filter/exclude child records that have EVER been given CONfidential flag|postcode == CON 
+        DfE Spec 1.12 */
+        SELECT 1
+        FROM ssd_development.ssd_address a
+        WHERE a.addr_person_id = p.pers_person_id
+          AND UPPER(LTRIM(RTRIM(a.addr_address_postcode))) = 'CON'
+    )
+      --   /* Filter/exclude child records that have CURRENT CONfidential flag|postcode == CON 
+      -- DfE Spec 1.12 */
+      --   SELECT 1
+      --   FROM (
+      --       SELECT TOP (1)
+      --           a.addr_address_postcode
+      --       FROM ssd_development.ssd_address a
+      --       WHERE a.addr_person_id = p.pers_person_id
+      --       ORDER BY
+      --           a.addr_address_start_date DESC,
+      --           a.addr_address_postcode ASC
+      --   ) latest_addr
+      --   WHERE UPPER(LTRIM(RTRIM(latest_addr.addr_address_postcode))) = 'CON'
+      -- )
+
+
 )   -- close RawPayloads CTE
   
 
@@ -1310,10 +1333,10 @@ Records simulate upstream API states for integration testing and UI validation
 
 Record types:
 Record0 --> Spec reference / maximal
-Record1 --> New --> Pending
-Record2 --> New --> Error
-Record3 --> Existing --> Sent --> Unchanged
-Record4 --> Existing --> Updated --> Re-submit
+Record1 --> new --> pending
+Record2 --> new --> error
+Record3 --> existing --> sent --> unchanged
+Record4 --> existing --> updated --> Re-submit
 */
 
 
@@ -1526,9 +1549,9 @@ VALUES
     NULL,
     NULL,
     HASHBYTES('SHA2_256', CAST(@p1 AS NVARCHAR(4000))),
-    N'New',
+    N'new',
     GETDATE(),
-    N'Pending',
+    N'pending',
     NULL,
     GETDATE()
 );
@@ -1608,9 +1631,9 @@ VALUES
     NULL,
     NULL,
     HASHBYTES('SHA2_256', CAST(@p2 AS NVARCHAR(4000))),
-    N'New',
+    N'new',
     GETDATE(),
-    N'Error',
+    N'error',
     N'HTTP 400: Validation failed - missing expected field - invalid referral_source code',
     GETDATE()
 );
@@ -1689,9 +1712,9 @@ VALUES
     NULL,
     HASHBYTES('SHA2_256', CAST(@prev3 AS NVARCHAR(4000))),
     HASHBYTES('SHA2_256', CAST(@p3 AS NVARCHAR(4000))),
-    N'Unchanged',
+    N'unchanged',
     GETDATE(),
-    N'Sent',
+    N'sent',
     N'HTTP 201: Created',
     GETDATE()
 );
@@ -1778,9 +1801,9 @@ VALUES
     NULL,
     HASHBYTES('SHA2_256', CAST(@prev4 AS NVARCHAR(4000))),
     HASHBYTES('SHA2_256', CAST(@p4   AS NVARCHAR(4000))),
-    N'Updated',
+    N'updated',
     GETDATE(),
-    N'Pending',
+    N'pending',
     NULL,
     GETDATE()
 );

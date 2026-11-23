@@ -9,6 +9,10 @@
   .NET DefaultWebProxy is aligned so underlying HTTP clients follow same proxy and credential rules
   DB auth can be Windows Integrated or SQL auth
 
+  When running script inside existing PowerShell console, exist statments terminates host session & closes PShell. 
+  To make life easier during testing, search 'exit' , comment those lines out using # and replace with 'return'. 
+  Your PShell session will now remain open. Remember change this back when handing over. 
+
 .PARAMETER Phase
   Payload mode: 'full' or 'deltas'. 'deltas' prepares and uses partial_json_payload before sending
 
@@ -63,7 +67,7 @@
   Proxy defaults: if -Proxy not provided and $la_proxy is set, that proxy is used; if no proxy creds flags are passed, defaults to current Windows logon
 
   May require user to set pc/user Powershell policy before running allowed:
-  In Powershell, type:
+  In Powershell, copy|paste or type:
   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
   .\api_payload_sender.ps1
 
@@ -128,7 +132,7 @@ param(
   [switch]$UseIntegratedSecurityDbConnection               # use Windows auth when present
 )
 
-$VERSION = '0.5.1'
+$VERSION = '0.5.2'
 Write-Host ("CSC API staging build: v{0}" -f $VERSION)
 
 
@@ -484,7 +488,8 @@ function Update-ApiResponseForBatch {
       $uuid = $matches[3]
       $timestamp = "$datePart $timePart"
       try { $parsedTimestamp = [DateTime]::ParseExact($timestamp, "yyyy-MM-dd HH:mm:ss.ff", $null) } catch { $parsedTimestamp = [DateTime]::Now }
-      $rows += "SELECT '$($personId.Replace("'", "''"))' AS person_id, '$($uuid.Replace("'", "''"))' AS uuid, '$($parsedTimestamp.ToString("yyyy-MM-dd HH:mm:ss.fff"))' AS timestamp"
+      # create staging update sql, including explicit dt timestamp 121 format conversion
+      $rows += "SELECT '$($personId.Replace("'", "''"))' AS person_id, '$($uuid.Replace("'", "''"))' AS uuid, CONVERT(datetime,'$($parsedTimestamp.ToString("yyyy-MM-dd HH:mm:ss.fff"))',121) AS timestamp"
     } else {
       W-Warn ("resp format unexpected at idx {0}: {1}" -f $i, $responseLine)
     }
@@ -1101,6 +1106,7 @@ if ($UseIntegratedSecurityDbConnection) {
   # use SQL defined/passed usr/pass not Win auth (Build conn string with explicit TLS opt)
   $csb = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
   $csb["Data Source"]     = $server
+  
   if (-not [string]::IsNullOrWhiteSpace($database)) {
       # if the db user defined str is NOT null/"" 
       $csb["Initial Catalog"] = $database
