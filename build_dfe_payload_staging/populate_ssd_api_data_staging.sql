@@ -3,7 +3,7 @@ use HDM_Local;  -- LA should change to bespoke or remove
                 -- HDM_Local is SystemC/LLogic default
 
 
-DECLARE @VERSION nvarchar(32) = N'0.5.2'; -- dev check .toml 
+DECLARE @VERSION nvarchar(32) = N'0.5.3'; -- dev check .toml 
 RAISERROR(N'== CSC API staging build: v%s ==', 10, 1, @VERSION) WITH NOWAIT;
 
 
@@ -218,7 +218,7 @@ EligibleBySpec AS (
     /* pre-alpha cohort filter (remove this block as required)
       LA use during live PRE-alpha cohort testing, add known child IDs here (< 20 records) */
 
-    --AND p.pers_person_id IN ('1', '2', '3') 
+    --AND p.pers_person_id IN ('1', '2', '3')  -- note: IDs are String value in SSD source and in DfE json payload
 
     /* end pre-alpha cohort  */
 ),
@@ -344,16 +344,6 @@ IsCareLeaver16to25 AS (
     -- AND @run_date <  DATEADD(year, 26, p.pers_dob) -- [REVIEW] classified 16-25 (at run date)
 ),
 
--- HasNonConfidentialPostcode AS (
---   /* Filter/exclude child records that have been given a CONfidential flag
---   Revised exclusion per DfE v1.12 spec
---   */
---     SELECT DISTINCT p.pers_person_id
---     FROM ssd_development.ssd_person p
---     JOIN ssd_development.ssd_address a
---         ON a.addr_person_id = p.pers_person_id
---     WHERE UPPER(LTRIM(RTRIM(a.addr_address_postcode))) <> 'CON' -- exclude if CON
--- ),
 
 -- IsDisabled AS (
 --     /*
