@@ -1066,15 +1066,16 @@ RawPayloads AS (
     ) AS uasc
 
     WHERE NOT EXISTS (
-        /* Filter/exclude child records that have EVER been given CONfidential flag|postcode == CON 
-        DfE Spec 1.12 */
+        /* Exclude if has EVER been given CURRENT CONfidential flag|postcode == CON 
+        High filter-level to DfE 1.12 spec logic */
         SELECT 1
         FROM ssd_development.ssd_address a
         WHERE a.addr_person_id = p.pers_person_id
           AND UPPER(LTRIM(RTRIM(a.addr_address_postcode))) = 'CON'
     )
-      --   /* Filter/exclude child records that have CURRENT CONfidential flag|postcode == CON 
-      -- DfE Spec 1.12 */
+
+      -- /* Exclude if has CURRENT CONfidential flag|postcode == CON 
+      -- Reduced filter-level to DfE 1.12 spec logic */
       --   SELECT 1
       --   FROM (
       --       SELECT TOP (1)
@@ -1087,6 +1088,43 @@ RawPayloads AS (
       --   ) latest_addr
       --   WHERE UPPER(LTRIM(RTRIM(latest_addr.addr_address_postcode))) = 'CON'
       -- )
+
+    AND NOT EXISTS (
+        /* Exclude if was ever in placement type
+          Adoption / Foster-for-Adoption exclusion
+          High filter-level to DfE 1.12 spec logic */
+        SELECT 1
+        FROM ssd_development.ssd_cla_episodes clae
+        INNER JOIN ssd_development.ssd_cla_placement clap
+            ON clap.clap_cla_id = clae.clae_cla_id
+        WHERE clae.clae_person_id = p.pers_person_id
+          AND UPPER(LTRIM(RTRIM(clap.clap_cla_placement_type))) IN (
+                'A3','A4','A5','A6',  -- adoption placement codes
+                'U2','U5'             -- foster for adoption codes
+          )
+    )
+
+
+    -- AND NOT EXISTS (
+    --     /* Exclude if is currently in placement type
+    --        Adoption / Foster-for-Adoption exclusion
+    --        Reduced/within window filter-level to DfE 1.12 spec logic */
+    --     SELECT 1
+    --     FROM ssd_development.ssd_cla_episodes clae
+    --     INNER JOIN ssd_development.ssd_cla_placement clap
+    --         ON clap.clap_cla_id = clae.clae_cla_id
+    --     WHERE clae.clae_person_id = p.pers_person_id
+    --       AND UPPER(LTRIM(RTRIM(clap.clap_cla_placement_type))) IN (
+    --             'A3','A4','A5','A6',
+    --             'U2','U5'
+    --       )
+    --       AND clap.clap_cla_placement_start_date <= @ea_cohort_window_end
+    --       AND (
+    --             clap.clap_cla_placement_end_date IS NULL
+    --         OR clap.clap_cla_placement_end_date >= @ea_cohort_window_start
+    --       )
+    -- )
+
 
 
 )   -- close RawPayloads CTE
