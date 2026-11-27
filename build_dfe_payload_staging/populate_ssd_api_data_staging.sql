@@ -1065,34 +1065,38 @@ RawPayloads AS (
         
     ) AS uasc
 
+
+    /* Confidential exclusion - applied option(s) */
+
+    /* 1a) Exclude if has EVER had CONfidential flag|postcode == CON
+       High filter-level to DfE 1.12 spec logic */
     WHERE NOT EXISTS (
-        /* Exclude if has EVER been given CURRENT CONfidential flag|postcode == CON 
-        High filter-level to DfE 1.12 spec logic */
         SELECT 1
         FROM ssd_development.ssd_address a
         WHERE a.addr_person_id = p.pers_person_id
           AND UPPER(LTRIM(RTRIM(a.addr_address_postcode))) = 'CON'
     )
 
-      -- /* Exclude if has CURRENT CONfidential flag|postcode == CON 
-      -- Reduced filter-level to DfE 1.12 spec logic */
-      --   SELECT 1
-      --   FROM (
-      --       SELECT TOP (1)
-      --           a.addr_address_postcode
-      --       FROM ssd_development.ssd_address a
-      --       WHERE a.addr_person_id = p.pers_person_id
-      --       ORDER BY
-      --           a.addr_address_start_date DESC,
-      --           a.addr_address_postcode ASC
-      --   ) latest_addr
-      --   WHERE UPPER(LTRIM(RTRIM(latest_addr.addr_address_postcode))) = 'CON'
-      -- )
+    -- /* 1b) Exclude if CURRENT address has CONfidential flag|postcode == CON
+    --    Reduced filter-level to DfE 1.12 spec logic */
+    -- WHERE NOT EXISTS (
+    --     SELECT 1
+    --     FROM (
+    --         SELECT TOP (1)
+    --             a.addr_address_postcode
+    --         FROM ssd_development.ssd_address a
+    --         WHERE a.addr_person_id = p.pers_person_id
+    --         ORDER BY
+    --             a.addr_address_start_date DESC,
+    --             a.addr_address_postcode ASC
+    --     ) latest_addr
+    --     WHERE UPPER(LTRIM(RTRIM(latest_addr.addr_address_postcode))) = 'CON'
+    -- )
 
+    /* 2a) Exclude if was ever in placement type
+       Adoption / Foster-for-Adoption exclusion
+       High filter-level to DfE 1.12 spec logic */
     AND NOT EXISTS (
-        /* Exclude if was ever in placement type
-          Adoption / Foster-for-Adoption exclusion
-          High filter-level to DfE 1.12 spec logic */
         SELECT 1
         FROM ssd_development.ssd_cla_episodes clae
         INNER JOIN ssd_development.ssd_cla_placement clap
@@ -1104,11 +1108,10 @@ RawPayloads AS (
           )
     )
 
-
+    -- /* 2b) Exclude if is currently in placement type
+    --    Adoption / Foster-for-Adoption exclusion
+    --    Reduced/within window filter-level to DfE 1.12 spec logic */
     -- AND NOT EXISTS (
-    --     /* Exclude if is currently in placement type
-    --        Adoption / Foster-for-Adoption exclusion
-    --        Reduced/within window filter-level to DfE 1.12 spec logic */
     --     SELECT 1
     --     FROM ssd_development.ssd_cla_episodes clae
     --     INNER JOIN ssd_development.ssd_cla_placement clap
@@ -1120,11 +1123,10 @@ RawPayloads AS (
     --       )
     --       AND clap.clap_cla_placement_start_date <= @ea_cohort_window_end
     --       AND (
-    --             clap.clap_cla_placement_end_date IS NULL
-    --         OR clap.clap_cla_placement_end_date >= @ea_cohort_window_start
+    --              clap.clap_cla_placement_end_date IS NULL
+    --           OR clap.clap_cla_placement_end_date >= @ea_cohort_window_start
     --       )
     -- )
-
 
 
 )   -- close RawPayloads CTE
